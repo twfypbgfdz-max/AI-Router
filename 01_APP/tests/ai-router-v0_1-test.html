@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Router v0.1 Test</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #1d232b;
+      --muted: #657080;
+      --line: #d9dee7;
+      --accent: #1769aa;
+      --accent-dark: #0f4f82;
+      --risk-low: #1d7f4f;
+      --risk-mid: #a96800;
+      --risk-high: #b42318;
+      --shadow: 0 10px 28px rgba(22, 34, 51, 0.09);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.45;
+    }
+
+    main {
+      width: min(760px, 100%);
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .app {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: clamp(1.6rem, 6vw, 2.2rem);
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: 0.98rem;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 150px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      color: var(--text);
+      font: inherit;
+      background: #fff;
+    }
+
+    textarea:focus,
+    button:focus {
+      outline: 3px solid rgba(23, 105, 170, 0.24);
+      outline-offset: 2px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      min-height: 44px;
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .primary:hover {
+      background: var(--accent-dark);
+    }
+
+    .secondary {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+    }
+
+    .result {
+      display: none;
+      margin-top: 20px;
+      border-top: 1px solid var(--line);
+      padding-top: 18px;
+    }
+
+    .result.is-visible {
+      display: block;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .field {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 86px;
+      background: #fbfcfe;
+    }
+
+    .field-title {
+      margin: 0 0 6px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .field-value {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .risk-low {
+      color: var(--risk-low);
+    }
+
+    .risk-mid {
+      color: var(--risk-mid);
+    }
+
+    .risk-high {
+      color: var(--risk-high);
+    }
+
+    .prompt-box {
+      width: 100%;
+      min-height: 170px;
+      margin-top: 8px;
+      background: #fbfcfe;
+    }
+
+    .copy-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    .copy-state {
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    @media (max-width: 640px) {
+      main {
+        padding: 12px;
+      }
+
+      .app {
+        padding: 16px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .actions button,
+      .copy-row button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="app" aria-labelledby="app-title">
+      <h1 id="app-title">AI Router</h1>
+      <p class="subtitle">Lokale Test-App v0.1 fuer einfache Keyword-Empfehlungen.</p>
+
+      <label for="taskInput">Was willst du machen?</label>
+      <textarea id="taskInput" placeholder="Beispiel: Ich habe einen CSS Fehler in einer HTML Datei und brauche einen kleinen Fix."></textarea>
+
+      <div class="actions">
+        <button class="primary" id="recommendButton" type="button">KI empfehlen</button>
+      </div>
+
+      <section class="result" id="result" aria-live="polite">
+        <div class="grid">
+          <div class="field">
+            <p class="field-title">Empfohlene KI</p>
+            <p class="field-value" id="aiName">-</p>
+          </div>
+          <div class="field">
+            <p class="field-title">Risikostufe</p>
+            <p class="field-value" id="riskLevel">-</p>
+          </div>
+          <div class="field">
+            <p class="field-title">Begruendung</p>
+            <p class="field-value" id="reason">-</p>
+          </div>
+        </div>
+
+        <label for="promptOutput">Fertiger Prompt zum Kopieren</label>
+        <textarea class="prompt-box" id="promptOutput" readonly></textarea>
+        <div class="copy-row">
+          <button class="secondary" id="copyButton" type="button">Prompt kopieren</button>
+          <span class="copy-state" id="copyState"></span>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const taskInput = document.getElementById("taskInput");
+    const recommendButton = document.getElementById("recommendButton");
+    const result = document.getElementById("result");
+    const aiName = document.getElementById("aiName");
+    const riskLevel = document.getElementById("riskLevel");
+    const reason = document.getElementById("reason");
+    const promptOutput = document.getElementById("promptOutput");
+    const copyButton = document.getElementById("copyButton");
+    const copyState = document.getElementById("copyState");
+
+    const rules = [
+      {
+        ai: "Codex",
+        risk: "mittel",
+        riskClass: "risk-mid",
+        keywords: ["bug", "fehler", "css", "html", "js", "git", "commit", "repo", "datei aendern", "datei ändern"],
+        reason: "Die Aufgabe klingt nach Code, Repo-Arbeit oder gezielter Dateiaenderung."
+      },
+      {
+        ai: "Claude",
+        risk: "mittel",
+        riskClass: "risk-mid",
+        keywords: ["konzept", "architektur", "ux", "grosses feature", "großes feature", "refactor-plan", "refactor plan"],
+        reason: "Die Aufgabe braucht eher Planung, Struktur oder eine groessere Konzeptentscheidung."
+      },
+      {
+        ai: "ChatGPT",
+        risk: "niedrig",
+        riskClass: "risk-low",
+        keywords: ["erklaerung", "erklärung", "text", "entscheidung", "prompt", "einschaetzung", "einschätzung"],
+        reason: "Die Aufgabe klingt nach Erklaerung, Textarbeit, Entscheidungshilfe oder Prompt-Formulierung."
+      },
+      {
+        ai: "Gemini oder ChatGPT",
+        risk: "hoch",
+        riskClass: "risk-high",
+        keywords: ["recherche", "aktuelle informationen", "aktuelle infos", "vergleich", "vergleiche", "online"],
+        reason: "Die Aufgabe braucht wahrscheinlich aktuelle Informationen oder einen Online-Vergleich."
+      }
+    ];
+
+    function normalizeText(value) {
+      return value.trim().toLowerCase();
+    }
+
+    function findRecommendation(task) {
+      const normalizedTask = normalizeText(task);
+
+      if (!normalizedTask) {
+        return {
+          ai: "ChatGPT",
+          risk: "niedrig",
+          riskClass: "risk-low",
+          reason: "Ohne konkrete Aufgabe ist eine allgemeine Klaerung oder Prompt-Schaerfung sinnvoll."
+        };
+      }
+
+      return rules.find((rule) => {
+        return rule.keywords.some((keyword) => normalizedTask.includes(keyword));
+      }) || {
+        ai: "ChatGPT",
+        risk: "mittel",
+        riskClass: "risk-mid",
+        reason: "Keine eindeutige Keyword-Regel getroffen; ChatGPT eignet sich als allgemeiner Startpunkt."
+      };
+    }
+
+    function buildPrompt(task, recommendation) {
+      const cleanTask = task.trim() || "Hilf mir, meine Aufgabe genauer zu formulieren.";
+
+      return [
+        "Du bist " + recommendation.ai + ".",
+        "",
+        "Aufgabe:",
+        cleanTask,
+        "",
+        "Bitte liefere:",
+        "- eine kurze Einschaetzung",
+        "- konkrete naechste Schritte",
+        "- Risiken oder offene Fragen",
+        "- eine knappe, umsetzbare Antwort"
+      ].join("\n");
+    }
+
+    function renderRecommendation() {
+      const task = taskInput.value;
+      const recommendation = findRecommendation(task);
+
+      aiName.textContent = recommendation.ai;
+      reason.textContent = recommendation.reason;
+      riskLevel.textContent = recommendation.risk;
+      riskLevel.className = "field-value " + recommendation.riskClass;
+      promptOutput.value = buildPrompt(task, recommendation);
+      copyState.textContent = "";
+      result.classList.add("is-visible");
+    }
+
+    async function copyPrompt() {
+      const prompt = promptOutput.value;
+
+      if (!prompt) {
+        copyState.textContent = "Noch kein Prompt vorhanden.";
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(prompt);
+        copyState.textContent = "Prompt kopiert.";
+      } catch (error) {
+        promptOutput.focus();
+        promptOutput.select();
+        copyState.textContent = "Prompt ist markiert und kann kopiert werden.";
+      }
+    }
+
+    recommendButton.addEventListener("click", renderRecommendation);
+    copyButton.addEventListener("click", copyPrompt);
+  </script>
+</body>
+</html>

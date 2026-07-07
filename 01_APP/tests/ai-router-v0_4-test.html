@@ -1,0 +1,1052 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Router v0.4 Test</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fa;
+      --panel: #ffffff;
+      --soft: #f9fafc;
+      --text: #1d232b;
+      --muted: #657080;
+      --line: #d9dee7;
+      --accent: #1769aa;
+      --accent-dark: #0f4f82;
+      --good: #1d7f4f;
+      --mid: #a96800;
+      --high: #b42318;
+      --shadow: 0 10px 28px rgba(22, 34, 51, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.45;
+    }
+
+    main {
+      width: min(860px, 100%);
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .app,
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .app {
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: clamp(1.6rem, 6vw, 2.2rem);
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 1.08rem;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: 0.98rem;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    textarea,
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      color: var(--text);
+      font: inherit;
+      background: #fff;
+    }
+
+    textarea {
+      min-height: 150px;
+      resize: vertical;
+    }
+
+    select {
+      min-height: 44px;
+      margin-bottom: 16px;
+    }
+
+    textarea:focus,
+    select:focus,
+    button:focus {
+      outline: 3px solid rgba(23, 105, 170, 0.24);
+      outline-offset: 2px;
+    }
+
+    button {
+      min-height: 44px;
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .primary {
+      margin-top: 12px;
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .primary:hover {
+      background: var(--accent-dark);
+    }
+
+    .secondary {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+    }
+
+    .result {
+      display: none;
+      margin-top: 20px;
+      gap: 12px;
+    }
+
+    .result.is-visible {
+      display: grid;
+    }
+
+    .card {
+      padding: 14px;
+      box-shadow: none;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .metric-title {
+      margin: 0 0 6px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .metric-value {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .spacing-top {
+      margin-top: 14px;
+    }
+
+    .ranking {
+      display: grid;
+      gap: 10px;
+    }
+
+    .rank-item {
+      display: grid;
+      grid-template-columns: 36px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .rank-pos {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: #e8f1f9;
+      color: var(--accent-dark);
+      font-weight: 700;
+    }
+
+    .rank-name {
+      margin: 0 0 4px;
+      font-weight: 700;
+    }
+
+    .rank-reason {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .rank-score {
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .criteria-list {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .criteria-list li {
+      margin: 6px 0;
+    }
+
+    .workflow {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .prompt-box {
+      width: 100%;
+      min-height: 170px;
+      margin-top: 8px;
+      background: var(--soft);
+    }
+
+    .copy-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    .copy-state {
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .history-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .history-item {
+      display: grid;
+      gap: 8px;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .history-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .history-task {
+      margin: 0;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .rating-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .rating-button {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .rating-button.is-active {
+      border-color: var(--accent);
+      background: #e8f1f9;
+      color: var(--accent-dark);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .empty-state {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .risk-low {
+      color: var(--good);
+    }
+
+    .risk-mid {
+      color: var(--mid);
+    }
+
+    .risk-high {
+      color: var(--high);
+    }
+
+    @media (max-width: 640px) {
+      main {
+        padding: 12px;
+      }
+
+      .app {
+        padding: 16px;
+      }
+
+      .summary-grid,
+      .stats-grid,
+      .rank-item {
+        grid-template-columns: 1fr;
+      }
+
+      .rank-score {
+        white-space: normal;
+      }
+
+      .primary,
+      .copy-row button,
+      .rating-button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="app" aria-labelledby="app-title">
+      <h1 id="app-title">AI Router</h1>
+      <p class="subtitle">Lokale Test-App v0.4 mit Prompt Engine, Verlauf und KI-Auswertung.</p>
+
+      <label for="projectMode">Projektmodus</label>
+      <select id="projectMode">
+        <option value="general">Allgemein</option>
+        <option value="plateau">Plateau-Brecher</option>
+        <option value="calories">Kalorien-App</option>
+        <option value="social">Social-Media-App</option>
+      </select>
+
+      <label for="workMode">Arbeitsmodus</label>
+      <select id="workMode">
+        <option value="analysis">Analyse</option>
+        <option value="bugfix">Bugfix</option>
+        <option value="feature">Feature</option>
+        <option value="refactor">Refactor</option>
+        <option value="deployment">Deployment</option>
+        <option value="research">Research</option>
+      </select>
+
+      <label for="taskInput">Was willst du machen?</label>
+      <textarea id="taskInput" placeholder="Beispiel: Ich habe einen CSS Fehler in einer HTML Datei und brauche einen kleinen Fix."></textarea>
+
+      <button class="primary" id="recommendButton" type="button">KI empfehlen</button>
+
+      <section class="result is-visible" id="result" aria-live="polite">
+        <div class="summary-grid">
+          <div class="card">
+            <h2>Empfehlung</h2>
+            <p class="metric-title">Beste KI</p>
+            <p class="metric-value" id="topAi">-</p>
+            <p class="metric-title spacing-top">Projektmodus</p>
+            <p class="metric-value" id="modeLabel">-</p>
+          </div>
+          <div class="card">
+            <h2>Vertrauen</h2>
+            <p class="metric-title">Vertrauenswert</p>
+            <p class="metric-value" id="confidence">-</p>
+            <p class="metric-title spacing-top">Risikostufe</p>
+            <p class="metric-value" id="riskLevel">-</p>
+          </div>
+          <div class="card">
+            <h2>Workflow</h2>
+            <p class="metric-title">Arbeitsmodus</p>
+            <p class="metric-value" id="workModeLabel">-</p>
+            <p class="metric-title spacing-top">Reihenfolge</p>
+            <p class="workflow" id="workflow">-</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Top 3 Empfehlungen</h2>
+          <div class="ranking" id="rankingList"></div>
+        </div>
+
+        <div class="card">
+          <h2>Detaillierte Begruendung</h2>
+          <ul class="criteria-list" id="criteriaList"></ul>
+        </div>
+
+        <div class="card">
+          <h2>Projektregeln</h2>
+          <ul class="criteria-list" id="projectRulesList"></ul>
+        </div>
+
+        <div class="card">
+          <label for="promptOutput">Fertiger Prompt zum Kopieren</label>
+          <textarea class="prompt-box" id="promptOutput" readonly></textarea>
+          <div class="copy-row">
+            <button class="secondary" id="copyButton" type="button">Prompt kopieren</button>
+            <span class="copy-state" id="copyState"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Verlauf</h2>
+          <div class="history-list" id="historyList"></div>
+        </div>
+
+        <div class="card">
+          <h2>KI-Auswertung</h2>
+          <div class="stats-grid" id="statsGrid"></div>
+          <p class="workflow" id="bestAi">-</p>
+        </div>
+
+        <div class="card">
+          <h2>Datenverwaltung</h2>
+          <div class="copy-row">
+            <button class="secondary" id="clearHistoryButton" type="button">Verlauf loeschen</button>
+            <button class="secondary" id="resetStatsButton" type="button">Statistik zuruecksetzen</button>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const taskInput = document.getElementById("taskInput");
+    const projectMode = document.getElementById("projectMode");
+    const workMode = document.getElementById("workMode");
+    const recommendButton = document.getElementById("recommendButton");
+    const result = document.getElementById("result");
+    const topAi = document.getElementById("topAi");
+    const confidence = document.getElementById("confidence");
+    const riskLevel = document.getElementById("riskLevel");
+    const modeLabel = document.getElementById("modeLabel");
+    const workModeLabel = document.getElementById("workModeLabel");
+    const rankingList = document.getElementById("rankingList");
+    const criteriaList = document.getElementById("criteriaList");
+    const projectRulesList = document.getElementById("projectRulesList");
+    const workflow = document.getElementById("workflow");
+    const promptOutput = document.getElementById("promptOutput");
+    const copyButton = document.getElementById("copyButton");
+    const copyState = document.getElementById("copyState");
+    const historyList = document.getElementById("historyList");
+    const statsGrid = document.getElementById("statsGrid");
+    const bestAi = document.getElementById("bestAi");
+    const clearHistoryButton = document.getElementById("clearHistoryButton");
+    const resetStatsButton = document.getElementById("resetStatsButton");
+
+    const STORAGE_KEYS = {
+      history: "aiRouter.history.v0_4",
+      learning: "aiRouter.learningBasis.v0_4"
+    };
+
+    const ratingScores = {
+      good: 3,
+      medium: 2,
+      bad: 1
+    };
+
+    const ratingLabels = {
+      good: "Gut",
+      medium: "Mittel",
+      bad: "Schlecht"
+    };
+
+    const modeLabels = {
+      general: "Allgemein",
+      plateau: "Plateau-Brecher",
+      calories: "Kalorien-App",
+      social: "Social-Media-App"
+    };
+
+    const workModeLabels = {
+      analysis: "Analyse",
+      bugfix: "Bugfix",
+      feature: "Feature",
+      refactor: "Refactor",
+      deployment: "Deployment",
+      research: "Research"
+    };
+
+    const aiProfiles = {
+      Codex: {
+        base: 8,
+        reason: "Stark fuer Code, Repo-Arbeit und gezielte Dateiaenderungen."
+      },
+      Claude: {
+        base: 8,
+        reason: "Stark fuer Konzept, UX, Architektur und groessere Planungen."
+      },
+      ChatGPT: {
+        base: 8,
+        reason: "Stark fuer Erklaerungen, Textarbeit, Entscheidungen und Prompts."
+      },
+      Gemini: {
+        base: 8,
+        reason: "Stark als Startpunkt fuer Recherche, aktuelle Infos und Vergleiche."
+      }
+    };
+
+    const keywordRules = [
+      { label: "Code/Repo", ai: "Codex", weight: 24, terms: ["bug", "fehler", "css", "html", "js", "javascript", "git", "commit", "repo", "datei aendern", "datei ändern"] },
+      { label: "Konzept/Architektur", ai: "Claude", weight: 24, terms: ["konzept", "architektur", "ux", "grosses feature", "großes feature", "refactor-plan", "refactor plan"] },
+      { label: "Text/Erklaerung", ai: "ChatGPT", weight: 22, terms: ["erklaerung", "erklärung", "text", "entscheidung", "prompt", "einschaetzung", "einschätzung"] },
+      { label: "Recherche/Aktualitaet", ai: "Gemini", weight: 24, terms: ["recherche", "aktuelle informationen", "aktuelle infos", "vergleich", "vergleiche", "online"] },
+      { label: "Recherche als Textauswertung", ai: "ChatGPT", weight: 12, terms: ["recherche", "aktuelle informationen", "aktuelle infos", "vergleich", "vergleiche", "online"] }
+    ];
+
+    const modeBoosts = {
+      general: [],
+      plateau: [
+        { label: "Plateau-Brecher: vorsichtige Code- und Datenlogik", ai: "Codex", weight: 8 },
+        { label: "Plateau-Brecher: Analyse und Trainingsentscheidung", ai: "ChatGPT", weight: 6 }
+      ],
+      calories: [
+        { label: "Kalorien-App: App-Logik und UI-Dateien", ai: "Codex", weight: 8 },
+        { label: "Kalorien-App: klare Nutzertexte und Entscheidungshilfe", ai: "ChatGPT", weight: 5 }
+      ],
+      social: [
+        { label: "Social-Media-App: UX und Inhaltskonzept", ai: "Claude", weight: 8 },
+        { label: "Social-Media-App: Text, Caption und Prompt", ai: "ChatGPT", weight: 7 }
+      ]
+    };
+
+    const workModeBoosts = {
+      analysis: [
+        { label: "Arbeitsmodus Analyse: erst klaeren und Risiken nennen", ai: "ChatGPT", weight: 10 },
+        { label: "Arbeitsmodus Analyse: strukturierte Bewertung", ai: "Claude", weight: 8 }
+      ],
+      bugfix: [
+        { label: "Arbeitsmodus Bugfix: Code und Dateien gezielt pruefen", ai: "Codex", weight: 18 },
+        { label: "Arbeitsmodus Bugfix: Ursache knapp erklaeren", ai: "ChatGPT", weight: 6 }
+      ],
+      feature: [
+        { label: "Arbeitsmodus Feature: Konzept zuerst planen", ai: "Claude", weight: 18 },
+        { label: "Arbeitsmodus Feature: danach Umsetzung vorbereiten", ai: "Codex", weight: 8 },
+        { label: "Arbeitsmodus Feature: Prompt und Text schaerfen", ai: "ChatGPT", weight: 5 }
+      ],
+      refactor: [
+        { label: "Arbeitsmodus Refactor: Plan und Grenzen definieren", ai: "Claude", weight: 16 },
+        { label: "Arbeitsmodus Refactor: kleinen Patch umsetzen", ai: "Codex", weight: 10 }
+      ],
+      deployment: [
+        { label: "Arbeitsmodus Deployment: hohes Risiko, erst pruefen", ai: "ChatGPT", weight: 10 },
+        { label: "Arbeitsmodus Deployment: technische Schritte nur nach Freigabe", ai: "Codex", weight: 8 }
+      ],
+      research: [
+        { label: "Arbeitsmodus Research: aktuelle Infos recherchieren", ai: "Gemini", weight: 18 },
+        { label: "Arbeitsmodus Research: Ergebnisse zusammenfassen", ai: "ChatGPT", weight: 8 }
+      ]
+    };
+
+    const workflowTemplates = {
+      analysis: ["ChatGPT", "Claude"],
+      bugfix: ["Codex", "ChatGPT"],
+      feature: ["Claude", "Codex", "ChatGPT"],
+      refactor: ["Claude", "Codex", "ChatGPT"],
+      deployment: ["ChatGPT", "Codex"],
+      research: ["Gemini", "ChatGPT"]
+    };
+
+    const projectRules = {
+      general: [
+        "Analyse zuerst",
+        "Risiken nennen",
+        "Aenderungen dokumentieren"
+      ],
+      plateau: [
+        "Dev Branch verwenden",
+        "Erst Analyse",
+        "Dann Patchplan",
+        "Kleine sichere Aenderungen",
+        "Keine Stable-Dateien aendern",
+        "Keine grossen Refactors ohne Freigabe"
+      ],
+      calories: [
+        "Source of Truth beachten",
+        "Keine Deploy-Dateien direkt ueberschreiben",
+        "Erst Analyse, dann Aenderungen"
+      ],
+      social: [
+        "Mobile First",
+        "iPhone Safari beruecksichtigen",
+        "Neue Testversion statt bestehende ueberschreiben"
+      ]
+    };
+
+    function normalizeText(value) {
+      return value.trim().toLowerCase();
+    }
+
+    function addScore(scores, criteria, ai, points, label) {
+      scores[ai] += points;
+      criteria.push(label + " -> " + ai + " +" + points);
+    }
+
+    function calculateRecommendation(task, mode, work) {
+      const normalizedTask = normalizeText(task);
+      const scores = {};
+      const criteria = [];
+      let signalCount = 0;
+
+      Object.keys(aiProfiles).forEach((ai) => {
+        scores[ai] = aiProfiles[ai].base;
+      });
+
+      keywordRules.forEach((rule) => {
+        const matches = rule.terms.filter((term) => normalizedTask.includes(term));
+        if (matches.length > 0) {
+          const points = rule.weight + Math.min((matches.length - 1) * 4, 12);
+          signalCount += matches.length;
+          addScore(scores, criteria, rule.ai, points, rule.label + ": " + matches.join(", "));
+        }
+      });
+
+      modeBoosts[mode].forEach((boost) => {
+        signalCount += 1;
+        addScore(scores, criteria, boost.ai, boost.weight, boost.label);
+      });
+
+      workModeBoosts[work].forEach((boost) => {
+        signalCount += 1;
+        addScore(scores, criteria, boost.ai, boost.weight, boost.label);
+      });
+
+      if (!normalizedTask) {
+        signalCount += 1;
+        addScore(scores, criteria, "ChatGPT", 18, "Leere Aufgabe: zuerst Aufgabe klaeren");
+      }
+
+      if (criteria.length === 0) {
+        signalCount += 1;
+        addScore(scores, criteria, "ChatGPT", 14, "Fallback: keine eindeutigen Kriterien erkannt");
+        addScore(scores, criteria, "Claude", 8, "Fallback: Strukturierung kann helfen");
+      }
+
+      const total = Object.values(scores).reduce((sum, score) => sum + score, 0);
+      const ranking = Object.keys(scores)
+        .map((ai) => ({
+          ai,
+          score: scores[ai],
+          percent: Math.round((scores[ai] / total) * 100),
+          reason: aiProfiles[ai].reason
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3);
+
+      const confidenceValue = Math.min(100, Math.round(35 + signalCount * 8 + (ranking[0].score - ranking[1].score)));
+
+      return {
+        ranking,
+        criteria,
+        confidence: confidenceValue,
+        risk: getRisk(confidenceValue, signalCount, ranking[0].ai),
+        workflow: buildWorkflow(work)
+      };
+    }
+
+    function buildWorkflow(work) {
+      const template = workflowTemplates[work];
+
+      return template.join(" -> ");
+    }
+
+    function getRisk(confidenceValue, signalCount, topName) {
+      if (topName === "Gemini" || confidenceValue < 55 || signalCount < 2) {
+        return { label: "hoch", className: "risk-high" };
+      }
+
+      if (confidenceValue < 75) {
+        return { label: "mittel", className: "risk-mid" };
+      }
+
+      return { label: "niedrig", className: "risk-low" };
+    }
+
+    function buildPrompt(task, mode, work, recommendation) {
+      const cleanTask = task.trim() || "Hilf mir, meine Aufgabe genauer zu formulieren.";
+      const top = recommendation.ranking[0];
+      const rules = projectRules[mode].map((rule) => "- " + rule).join("\n");
+      const promptFocus = getPromptFocus(top.ai, work);
+
+      return [
+        "Projektmodus: " + modeLabels[mode],
+        "Arbeitsmodus: " + workModeLabels[work],
+        "Empfohlene KI: " + top.ai,
+        "Workflow: " + recommendation.workflow,
+        "Vertrauenswert: " + recommendation.confidence + "%",
+        "",
+        "Projektregeln:",
+        rules,
+        "",
+        "Aufgabe:",
+        cleanTask,
+        "",
+        "Arbeitsauftrag fuer " + top.ai + ":",
+        promptFocus,
+        "",
+        "Bitte liefere:",
+        "- zuerst eine kurze Analyse",
+        "- relevante Risiken",
+        "- einen konkreten Patch- oder Arbeitsplan",
+        "- eine knappe, umsetzbare Antwort",
+        "- keine Schritte ausserhalb der genannten Regeln"
+      ].join("\n");
+    }
+
+    function getPromptFocus(ai, work) {
+      const common = "Halte die Antwort kurz, konkret und nachvollziehbar.";
+      const byAi = {
+        Codex: "Fokussiere auf Dateien, minimale Aenderungen, Tests und rueckbaubare Patches.",
+        Claude: "Fokussiere auf Struktur, Abhaengigkeiten, UX/Architektur und einen klaren Plan.",
+        ChatGPT: "Fokussiere auf Erklaerung, Entscheidungshilfe, Risiken und klare Formulierung.",
+        Gemini: "Fokussiere auf Recherchefragen, aktuelle Informationen, Vergleichskriterien und Quellenpruefung."
+      };
+      const byWork = {
+        analysis: "Arbeitsmodus Analyse: nicht direkt umsetzen, erst einordnen.",
+        bugfix: "Arbeitsmodus Bugfix: Ursache finden, dann minimalen Fix vorschlagen.",
+        feature: "Arbeitsmodus Feature: Konzept, Reihenfolge und Umsetzungsgrenzen klaeren.",
+        refactor: "Arbeitsmodus Refactor: keine grossen Umbauten ohne Freigabe, kleine Schritte planen.",
+        deployment: "Arbeitsmodus Deployment: keine Aktion ohne Freigabe, Risiken priorisieren.",
+        research: "Arbeitsmodus Research: aktuelle Infos sammeln und danach knapp zusammenfassen."
+      };
+
+      return [byAi[ai], byWork[work], common].join(" ");
+    }
+
+    function renderRanking(ranking) {
+      rankingList.innerHTML = "";
+
+      ranking.forEach((item, index) => {
+        const row = document.createElement("div");
+        row.className = "rank-item";
+        row.innerHTML = [
+          "<span class=\"rank-pos\">" + (index + 1) + "</span>",
+          "<div><p class=\"rank-name\">" + item.ai + "</p><p class=\"rank-reason\">" + item.reason + "</p></div>",
+          "<span class=\"rank-score\">" + item.percent + "%</span>"
+        ].join("");
+        rankingList.appendChild(row);
+      });
+    }
+
+    function renderCriteria(criteria) {
+      criteriaList.innerHTML = "";
+
+      criteria.forEach((item) => {
+        const li = document.createElement("li");
+        li.textContent = item;
+        criteriaList.appendChild(li);
+      });
+    }
+
+    function renderProjectRules(mode) {
+      projectRulesList.innerHTML = "";
+
+      projectRules[mode].forEach((item) => {
+        const li = document.createElement("li");
+        li.textContent = item;
+        projectRulesList.appendChild(li);
+      });
+    }
+
+    function loadHistory() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEYS.history)) || [];
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function saveHistory(entries) {
+      localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(entries));
+      saveLearningBasis(entries);
+    }
+
+    function saveLearningBasis(entries) {
+      const learningRows = entries.map((entry) => ({
+        id: entry.id,
+        recommendedAi: entry.recommendedAi,
+        rating: entry.rating || null,
+        ratingScore: entry.rating ? ratingScores[entry.rating] : null,
+        createdAt: entry.createdAt
+      }));
+
+      localStorage.setItem(STORAGE_KEYS.learning, JSON.stringify(learningRows));
+    }
+
+    function addHistoryEntry(task, mode, work, recommendation) {
+      const entries = loadHistory();
+      const top = recommendation.ranking[0];
+      const entry = {
+        id: "decision-" + Date.now(),
+        createdAt: new Date().toISOString(),
+        projectMode: mode,
+        projectLabel: modeLabels[mode],
+        workMode: work,
+        workLabel: workModeLabels[work],
+        task: task.trim() || "Keine Aufgabenbeschreibung",
+        recommendedAi: top.ai,
+        confidence: recommendation.confidence,
+        risk: recommendation.risk.label,
+        workflow: recommendation.workflow,
+        rating: null
+      };
+
+      entries.unshift(entry);
+      saveHistory(entries.slice(0, 50));
+      renderHistory();
+      renderStats();
+    }
+
+    function formatDate(value) {
+      return new Date(value).toLocaleString("de-DE", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function renderHistory() {
+      const entries = loadHistory();
+      historyList.innerHTML = "";
+
+      if (entries.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "empty-state";
+        empty.textContent = "Noch keine Entscheidungen gespeichert.";
+        historyList.appendChild(empty);
+        return;
+      }
+
+      entries.forEach((entry) => {
+        const item = document.createElement("div");
+        item.className = "history-item";
+
+        const meta = document.createElement("div");
+        meta.className = "history-meta";
+        meta.innerHTML = [
+          "<span>" + formatDate(entry.createdAt) + "</span>",
+          "<span>" + entry.projectLabel + "</span>",
+          "<span>" + entry.workLabel + "</span>",
+          "<span>" + entry.recommendedAi + "</span>",
+          "<span>" + entry.confidence + "%</span>"
+        ].join("");
+
+        const taskText = document.createElement("p");
+        taskText.className = "history-task";
+        taskText.textContent = entry.task;
+
+        const ratingRow = document.createElement("div");
+        ratingRow.className = "rating-row";
+        Object.keys(ratingLabels).forEach((rating) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "rating-button" + (entry.rating === rating ? " is-active" : "");
+          button.textContent = ratingLabels[rating];
+          button.addEventListener("click", () => updateRating(entry.id, rating));
+          ratingRow.appendChild(button);
+        });
+
+        item.appendChild(meta);
+        item.appendChild(taskText);
+        item.appendChild(ratingRow);
+        historyList.appendChild(item);
+      });
+    }
+
+    function updateRating(id, rating) {
+      const entries = loadHistory().map((entry) => {
+        if (entry.id === id) {
+          return { ...entry, rating };
+        }
+        return entry;
+      });
+
+      saveHistory(entries);
+      renderHistory();
+      renderStats();
+    }
+
+    function calculateStats() {
+      const entries = loadHistory();
+      const stats = {};
+
+      Object.keys(aiProfiles).forEach((ai) => {
+        stats[ai] = { count: 0, ratingTotal: 0, ratingCount: 0 };
+      });
+
+      entries.forEach((entry) => {
+        if (!stats[entry.recommendedAi]) {
+          return;
+        }
+
+        stats[entry.recommendedAi].count += 1;
+        if (entry.rating) {
+          stats[entry.recommendedAi].ratingTotal += ratingScores[entry.rating];
+          stats[entry.recommendedAi].ratingCount += 1;
+        }
+      });
+
+      return stats;
+    }
+
+    function renderStats() {
+      const stats = calculateStats();
+      const aiNames = Object.keys(stats);
+      statsGrid.innerHTML = "";
+
+      aiNames.forEach((ai) => {
+        const item = document.createElement("div");
+        const data = stats[ai];
+        const average = data.ratingCount > 0 ? (data.ratingTotal / data.ratingCount).toFixed(1) : "-";
+
+        item.className = "metric";
+        item.innerHTML = [
+          "<p class=\"metric-title\">" + ai + "</p>",
+          "<p class=\"metric-value\">" + data.count + " Empfehlungen</p>",
+          "<p class=\"metric-title spacing-top\">Durchschnitt</p>",
+          "<p class=\"metric-value\">" + average + "</p>"
+        ].join("");
+        statsGrid.appendChild(item);
+      });
+
+      bestAi.textContent = getBestAiLabel(stats);
+    }
+
+    function getBestAiLabel(stats) {
+      const rated = Object.keys(stats)
+        .filter((ai) => stats[ai].ratingCount > 0)
+        .map((ai) => ({
+          ai,
+          average: stats[ai].ratingTotal / stats[ai].ratingCount,
+          ratingCount: stats[ai].ratingCount
+        }))
+        .sort((a, b) => b.average - a.average || b.ratingCount - a.ratingCount);
+
+      if (rated.length === 0) {
+        return "Beste KI laut Bewertungen: noch keine Bewertung vorhanden.";
+      }
+
+      return "Beste KI laut Bewertungen: " + rated[0].ai + " (" + rated[0].average.toFixed(1) + "/3)";
+    }
+
+    function clearHistory() {
+      if (!confirm("Verlauf wirklich loeschen?")) {
+        return;
+      }
+
+      localStorage.removeItem(STORAGE_KEYS.history);
+      localStorage.removeItem(STORAGE_KEYS.learning);
+      renderHistory();
+      renderStats();
+    }
+
+    function resetStats() {
+      if (!confirm("Statistik wirklich zuruecksetzen? Bewertungen werden aus dem Verlauf entfernt.")) {
+        return;
+      }
+
+      const entries = loadHistory().map((entry) => ({ ...entry, rating: null }));
+      saveHistory(entries);
+      renderHistory();
+      renderStats();
+    }
+
+    function renderRecommendation() {
+      const task = taskInput.value;
+      const mode = projectMode.value;
+      const work = workMode.value;
+      const recommendation = calculateRecommendation(task, mode, work);
+
+      topAi.textContent = recommendation.ranking[0].ai;
+      confidence.textContent = recommendation.confidence + "%";
+      riskLevel.textContent = recommendation.risk.label;
+      riskLevel.className = "metric-value " + recommendation.risk.className;
+      modeLabel.textContent = modeLabels[mode];
+      workModeLabel.textContent = workModeLabels[work];
+      workflow.textContent = recommendation.workflow;
+      promptOutput.value = buildPrompt(task, mode, work, recommendation);
+      copyState.textContent = "";
+
+      renderRanking(recommendation.ranking);
+      renderCriteria(recommendation.criteria);
+      renderProjectRules(mode);
+      addHistoryEntry(task, mode, work, recommendation);
+      result.classList.add("is-visible");
+    }
+
+    async function copyPrompt() {
+      const prompt = promptOutput.value;
+
+      if (!prompt) {
+        copyState.textContent = "Noch kein Prompt vorhanden.";
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(prompt);
+        copyState.textContent = "Prompt kopiert.";
+      } catch (error) {
+        promptOutput.focus();
+        promptOutput.select();
+        copyState.textContent = "Prompt ist markiert und kann kopiert werden.";
+      }
+    }
+
+    recommendButton.addEventListener("click", renderRecommendation);
+    copyButton.addEventListener("click", copyPrompt);
+    clearHistoryButton.addEventListener("click", clearHistory);
+    resetStatsButton.addEventListener("click", resetStats);
+    renderHistory();
+    renderStats();
+  </script>
+</body>
+</html>
