@@ -1,0 +1,10 @@
+{
+  "name": "ai-router",
+  "private": true,
+  "version": "0.6.0-test",
+  "type": "module",
+  "scripts": {
+    "start": "node orchestrator/server.js",
+    "test": "node --test"
+  }
+}

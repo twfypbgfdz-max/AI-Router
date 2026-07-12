@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.6.0-test
+
+- Lokalen Node-Orchestrator fuer begrenzte Codex-Read-only-Analysen angelegt.
+- Repository-Allowlist, Git-Integritaetspruefung, Run-Status und JSONL-Auswertung ergaenzt.
+- Lokalen JSON-Run-Store und atomische Cockpit-Kurzstatusdatei vorbereitet.
+- Neue Testoberflaeche `ai-router-v0_6-test.html` und tests ohne Modellverbrauch angelegt.
+
 ## v0.5.1-test
 
 - Neue Design-Testversion `ai-router-v0_5_1-test.html` angelegt.

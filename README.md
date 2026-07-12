@@ -4,15 +4,34 @@ Lokale HTML-Test-App zur einfachen Empfehlung eines passenden KI-Tools fuer eine
 
 ## Version
 
-Aktuelle Testversion: `v0.5.1-test`
+Aktuelle Testversion: `v0.6.0-test`
 
-## Start lokal
+## Lokaler Read-only-Codex-MVP
 
-1. In VS Code den Ordner `09_AI_ROUTER/01_APP/tests` oeffnen oder die Datei direkt im Explorer auswaehlen.
-2. Rechtsklick auf `ai-router-v0_5_1-test.html`.
-3. `Open with Live Server` auswaehlen.
+`npm start` startet den aktuellen MVP-Teststand `v0.6.0-test` als lokalen
+Node-Server auf `http://127.0.0.1:8787`. `npm test` fuehrt die automatisierten
+Tests aus. Es gibt keine npm-Abhaengigkeiten; Node und die npm-Skripte werden
+dennoch fuer Start und Tests verwendet.
+Der MVP kann nur eine Analyseaufgabe an die lokale Codex-CLI senden. Die
+Ausfuehrung ist fest auf `read-only` begrenzt, verwendet keine Websuche und
+akzeptiert nur dieses AI-Router-Repository. Laufdaten liegen nicht versioniert
+unter `.ai-router-data/`. Schreibzugriff, Commits, Pushes und Deployments sind
+nicht implementiert.
 
-Die App benoetigt kein Backend, kein npm, keine APIs und keine externen Libraries.
+### Bekannte Grenze
+
+Der synthetische End-to-End-Integrationstest ist vorbereitet und standardmaessig
+deaktiviert. Ein echter Codex-Modelllauf ist noch nicht vollstaendig End-to-End
+bestaetigt, weil die installierte CLI keine harte Read-Root-Isolation auf nur das
+synthetische Test-Repository garantiert.
+
+## Historische v0.5.1-Demo
+
+`ai-router-v0_5_1-test.html` bleibt als historische, rein lokale HTML-Demo
+erhalten. Sie ist nicht der aktuelle MVP-Startweg und startet keine Codex-CLI.
+
+Die historische Demo benoetigt keinen Node-Server. Der aktuelle v0.6-MVP
+benoetigt dagegen den lokalen Node-Orchestrator, aber keine externen Libraries.
 
 ## Routing v0.5
 
