@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI Router v0.7 Test</title>
+  <style>
+    body{margin:0;background:#0f0f10;color:#e5e5e5;font:16px Arial,sans-serif}main{max-width:800px;margin:auto;padding:20px}.card{background:#1a1a1d;border:1px solid #323238;border-radius:14px;padding:18px}textarea,select,button{width:100%;box-sizing:border-box;border-radius:10px;padding:12px;font:inherit}textarea,select{background:#25252a;color:#fff;border:1px solid #323238}textarea{min-height:150px}button{margin-top:12px;background:#4f8cff;border:0;font-weight:700}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#25252a;padding:12px;border-radius:10px}small{color:#a0a0a0}label{display:block;margin-top:12px}.plan{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:12px 0}.plan div{background:#25252a;border-radius:10px;padding:10px}.plan span{display:block;color:#a0a0a0;font-size:.78rem}.warning{color:#ffcc75}.approval{color:#ff8f8f;font-weight:700}
+  </style>
+</head>
+<body><main><section class="card">
+  <h1>AI Router</h1>
+  <p>v0.7.0-test · Deterministischer Route-Plan und sichere Simulation</p>
+  <label for="adapter">Ausführungsadapter</label>
+  <select id="adapter"><option value="mock" selected>Simulation</option><option value="codex-cli">Codex Read-only (nur nach bewusster Auswahl)</option></select>
+  <label for="simulation-mode">Simulationsmodus</label>
+  <select id="simulation-mode"><option value="success" selected>Erfolg</option><option value="failure">Kontrollierter Fehler</option><option value="timeout">Kontrollierter Timeout</option></select>
+  <label for="task">Aufgabe</label>
+  <textarea id="task" maxlength="8000" placeholder="Beschreibe eine Aufgabe. Vor dem Run wird ein Route-Plan erstellt."></textarea>
+  <button id="start" type="button">Route planen und Run starten</button>
+  <button id="cancel" type="button">Lauf abbrechen</button>
+  <p id="state" role="status">Bereit.</p>
+  <section aria-labelledby="plan-title"><h2 id="plan-title">Route-Plan</h2><div class="plan" id="plan"></div><p id="reason"></p><ul id="warnings"></ul></section>
+  <pre id="result">Noch kein Ergebnis.</pre>
+  <small>Empfehlungen sind nur Metadaten. Externe Routen werden nie automatisch gestartet.</small>
+</section></main>
+<script>
+const state=document.querySelector('#state'),result=document.querySelector('#result'),task=document.querySelector('#task'),adapter=document.querySelector('#adapter'),simulationMode=document.querySelector('#simulation-mode'),cancel=document.querySelector('#cancel'),planNode=document.querySelector('#plan'),reason=document.querySelector('#reason'),warnings=document.querySelector('#warnings');let activeRunId=null;
+const labels={taskType:'Aufgabenart',recommendedRoute:'Empfohlene Route',executionAdapter:'Ausführung',complexity:'Komplexität',importance:'Wichtigkeit',risk:'Risiko',uncertainty:'Unsicherheit',estimatedUsage:'Erwarteter Verbrauch',reviewRequired:'Prüfschritt nötig',approvalRequired:'Freigabe nötig'};
+function showPlan(plan){planNode.textContent='';reason.textContent='';warnings.textContent='';if(!plan)return;Object.entries(labels).forEach(([key,label])=>{const box=document.createElement('div'),name=document.createElement('span'),value=document.createElement('strong');name.textContent=label;value.textContent=typeof plan[key]==='boolean'?(plan[key]?'Ja':'Nein'):String(plan[key]||'-');box.append(name,value);planNode.appendChild(box)});reason.textContent=String(plan.reason||'').slice(0,500);if(plan.approvalRequired)reason.className='approval';else reason.className='';if(Array.isArray(plan.warnings))plan.warnings.slice(0,10).forEach(item=>{if(typeof item!=='string')return;const li=document.createElement('li');li.className='warning';li.textContent=item.slice(0,300);warnings.appendChild(li)})}
+adapter.onchange=()=>{simulationMode.disabled=adapter.value!=='mock'};
+cancel.onclick=async()=>{if(activeRunId)await fetch('/api/runs/'+encodeURIComponent(activeRunId)+'/cancel',{method:'POST',headers:{'content-type':'application/json'},body:'{}'})};
+document.querySelector('#start').onclick=async()=>{state.textContent='Route wird geplant…';result.textContent='';showPlan(null);try{const body={task:task.value,adapter:adapter.value};if(adapter.value==='mock')body.simulationMode=simulationMode.value;const response=await fetch('/api/runs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});let run=await response.json();if(!response.ok)throw new Error(run.error||'Start fehlgeschlagen');showPlan(run.routePlan);activeRunId=run.runId;const poll=async()=>{const current=await fetch('/api/runs/'+encodeURIComponent(run.runId));run=await current.json();showPlan(run.routePlan);state.textContent=run.status;if(['succeeded','failed','cancelled','timed_out','awaiting_approval'].includes(run.status)){activeRunId=null;result.textContent=run.resultSummary||run.errorSummary||'Kein Ergebnis.';return}setTimeout(poll,700)};poll()}catch(error){state.textContent='Fehler';result.textContent=error.message}};
+</script></body></html>

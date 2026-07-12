@@ -19,7 +19,7 @@ export function isMockSimulationMode(value) { return MODES.has(value); }
 
 export function createMockAdapter({ stepDelayMs = 1_100 } = {}) {
   return {
-    async run({ task, runId, signal, simulationMode = "success" }) {
+    async run({ task, runId, signal, simulationMode = "success", routePlan }) {
       if (!isMockSimulationMode(simulationMode)) throw new Error("Unsupported simulation mode.");
       const events = [];
       const event = (phase, message) => events.push({ type: "simulation", phase, message, runId });
@@ -27,7 +27,8 @@ export function createMockAdapter({ stepDelayMs = 1_100 } = {}) {
       await wait(stepDelayMs, signal);
       event("route_selected", "Route gewählt");
       await wait(stepDelayMs, signal);
-      event("processing", "Aufgabe wird verarbeitet");
+      const planOnly = routePlan?.approvalRequired === true;
+      event("processing", planOnly ? "Route-Plan wird geprüft" : "Aufgabe wird verarbeitet");
       await wait(stepDelayMs, signal);
       if (simulationMode === "timeout") {
         event("waiting_for_timeout", "Simulation wartet auf den kontrollierten Timeout");
@@ -36,6 +37,11 @@ export function createMockAdapter({ stepDelayMs = 1_100 } = {}) {
       if (simulationMode === "failure") {
         event("simulated_failure", "Kontrollierter Simulationsfehler");
         return { exitCode: 1, issues: [], stderr: "Simulated adapter failure.", events, resultSummary: null };
+      }
+      if (planOnly) {
+        event("plan_only", "Freigabe-Gate aktiv; keine Aktion wird ausgeführt");
+        await wait(stepDelayMs, signal);
+        return { exitCode: 0, issues: [], stderr: "", events, resultSummary: "Nur der Route-Plan wurde simuliert. Die freigabepflichtige Aktion wurde nicht ausgeführt." };
       }
       event("result_created", "Ergebnis wird erstellt");
       await wait(stepDelayMs, signal);

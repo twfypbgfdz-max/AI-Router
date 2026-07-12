@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.0-test
+
+- Deterministische lokale Routing-Engine mit festem Route-Plan-Schema ergaenzt.
+- Aufgabenarten, Bewertungsstufen und Risikoregeln ueber Allowlists begrenzt.
+- R3/R4-Aufgaben stoppen am Freigabe-Gate als `awaiting_approval`, ohne einen Adapter zu starten.
+- Externe Zielrouten bleiben Metadaten; `mock` bleibt Standardausfuehrung.
+- Route-Plan in Run Store, Cockpit-Kurzstatus und v0.7-Testoberflaeche integriert.
+
 ## v0.6.0-test
 
 - Kontrollierten lokalen `mock`-Adapter fuer Run-, Timeout- und Abbruchtests ergaenzt.

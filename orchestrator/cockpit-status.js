@@ -13,8 +13,8 @@ export function projectCockpitStatus(run) {
     startedAt: run.startedAt || "",
     updatedAt: run.updatedAt,
     resultSummary: summary(run.resultSummary),
-    risk: "R0",
-    approvalRequired: false
+    risk: run.routePlan?.risk || "R0",
+    approvalRequired: run.routePlan?.approvalRequired === true
   };
 }
 

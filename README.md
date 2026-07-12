@@ -4,11 +4,11 @@ Lokale HTML-Test-App zur einfachen Empfehlung eines passenden KI-Tools fuer eine
 
 ## Version
 
-Aktuelle Testversion: `v0.6.0-test`
+Aktuelle Testversion: `v0.7.0-test`
 
 ## Lokaler Read-only-Codex-MVP
 
-`npm start` startet den aktuellen MVP-Teststand `v0.6.0-test` als lokalen
+`npm start` startet den aktuellen MVP-Teststand `v0.7.0-test` als lokalen
 Node-Server auf `http://127.0.0.1:8787`. `npm test` fuehrt die automatisierten
 Tests aus. Es gibt keine npm-Abhaengigkeiten; Node und die npm-Skripte werden
 dennoch fuer Start und Tests verwendet.
@@ -25,6 +25,19 @@ Die Testoberflaeche startet standardmaessig den Adapter `mock`. Er simuliert
 kontrolliert erfolgreiche, fehlgeschlagene und zeitueberschreitende Runs, ohne
 einen Prozess, Netzwerkzugriff oder ein externes Modell zu starten. `codex-cli`
 wird nur nach ausdruecklicher Auswahl verwendet und bleibt Read-only.
+
+### Deterministischer Route-Plan v0.7
+
+Vor jedem Run klassifiziert eine lokale Regel-Engine die Aufgabe und speichert
+Aufgabenart, empfohlene Route, tatsaechlichen Adapter, Begruendung, Komplexitaet,
+Wichtigkeit, Risiko, Unsicherheit, erwarteten Verbrauch sowie Pruef- und
+Freigabebedarf. Empfehlungen fuer Codex, ChatGPT oder Claude sind Metadaten und
+starten keinen externen Dienst. Standardausfuehrung bleibt `mock`.
+
+Riskante Aktionen werden mindestens als `R3`, produktive oder destruktive
+Aktionen als `R4` eingestuft. Sie erhalten ein Freigabe-Gate und koennen nur
+als Route-Plan gespeichert werden. Der Run stoppt als `awaiting_approval`, ohne
+einen Adapter zu starten, und der Router behauptet dabei keine Ausfuehrung.
 
 ### Bekannte Grenze
 

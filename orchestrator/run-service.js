@@ -6,8 +6,9 @@ import { saveRun } from "./run-store.js";
 import { saveCockpitStatus } from "./cockpit-status.js";
 import { reduceEvents, sanitizeText } from "./jsonl.js";
 import { isMockSimulationMode, runMock } from "./mock-adapter.js";
+import { createRoutePlan } from "./routing-engine.js";
 
-const TERMINAL = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
+const TERMINAL = new Set(["succeeded", "failed", "cancelled", "timed_out", "awaiting_approval"]);
 const ADAPTER_NAMES = new Set(["mock", "codex-cli"]);
 
 function defaultAdapters() {
@@ -30,14 +31,20 @@ export class RunService {
   }
   async create({ task, repository = REPOSITORY_ROOT, adapter, simulationMode } = {}) {
     if (typeof task !== "string" || !task.trim() || task.length > MAX_TASK_LENGTH) throw new Error("Task must be a non-empty bounded string.");
-    const adapterName = adapter || this.defaultAdapter;
+    const routePlan = createRoutePlan(task);
+    let adapterName = adapter || this.defaultAdapter;
     if (!ADAPTER_NAMES.has(adapterName) || !this.adapters[adapterName]) throw new Error("Unsupported adapter.");
     if (adapterName === "mock" && simulationMode !== undefined && !isMockSimulationMode(simulationMode)) throw new Error("Unsupported simulation mode.");
     if (adapterName !== "mock" && simulationMode !== undefined) throw new Error("Simulation mode is only available for the mock adapter.");
+    if (routePlan.approvalRequired && adapterName !== "mock") {
+      adapterName = "mock";
+      routePlan.warnings.push("Der angeforderte Adapter wurde wegen des Freigabe-Gates durch eine reine Simulation ersetzt.");
+    }
+    routePlan.executionAdapter = adapterName;
     if (this.activeRunId) throw new Error("A router run is already active.");
     const mode = adapterName === "mock" ? (simulationMode || "success") : null;
     const timeoutMs = adapterName === "mock" && mode === "timeout" ? MOCK_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
-    const run = { runId: `run_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), task: task.trim(), repository, branchBefore: null, branchAfter: null, gitStatusBefore: null, gitStatusAfter: null, adapter: adapterName, simulationMode: mode, executable: null, mode: "read-only", status: "created", startedAt: null, finishedAt: null, timeoutMs, exitCode: null, resultSummary: null, errorSummary: null, usage: null, events: [], warnings: [] };
+    const run = { runId: `run_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), task: task.trim(), repository, branchBefore: null, branchAfter: null, gitStatusBefore: null, gitStatusAfter: null, adapter: adapterName, simulationMode: mode, executable: null, mode: "read-only", status: "created", startedAt: null, finishedAt: null, timeoutMs, exitCode: null, resultSummary: null, errorSummary: null, usage: null, events: [], warnings: [...routePlan.warnings], routePlan };
     this.activeRunId = run.runId;
     this.runs.set(run.runId, run);
     try { await this.persist(run); await this.publish(run); }
@@ -55,6 +62,7 @@ export class RunService {
       const before = await this.git.captureGitState(run.repository);
       run.repository = before.repository; run.branchBefore = before.branch; run.gitStatusBefore = before.status; run.gitBefore = before;
       if (run.cancelRequested) return this.update(run, "cancelled", { branchAfter: before.branch, gitStatusAfter: before.status, finishedAt: new Date().toISOString(), errorSummary: "Cancelled by user." });
+      if (run.routePlan?.approvalRequired) return this.update(run, "awaiting_approval", { branchAfter: before.branch, gitStatusAfter: before.status, finishedAt: new Date().toISOString(), resultSummary: "Freigabe erforderlich. Der Route-Plan wurde gespeichert; die erkannte Aktion wurde nicht ausgeführt." });
       if (/^(main|master|production)$|^release\//.test(before.branch)) run.warnings.push("Read-only analysis is running on a production-named branch.");
       const adapter = this.adapters[run.adapter];
       if (adapter.resolveExecutable) run.executable = await adapter.resolveExecutable();
@@ -68,7 +76,7 @@ export class RunService {
     try {
       const adapter = this.adapters[run.adapter];
       const abortController = new AbortController();
-      const operation = adapter.run({ repository: run.repository, task: run.task, runId: run.runId, executable: run.executable, signal: abortController.signal, simulationMode: run.simulationMode });
+      const operation = adapter.run({ repository: run.repository, task: run.task, runId: run.runId, executable: run.executable, signal: abortController.signal, simulationMode: run.simulationMode, routePlan: run.routePlan });
       const adapterCancel = typeof operation.cancel === "function" ? operation.cancel.bind(operation) : null;
       operation.cancel = async () => { abortController.abort(); return (await adapterCancel?.()) || { outcome: "abort_requested" }; };
       this.operations.set(run.runId, operation);
