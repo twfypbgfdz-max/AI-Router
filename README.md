@@ -12,11 +12,19 @@ Aktuelle Testversion: `v0.6.0-test`
 Node-Server auf `http://127.0.0.1:8787`. `npm test` fuehrt die automatisierten
 Tests aus. Es gibt keine npm-Abhaengigkeiten; Node und die npm-Skripte werden
 dennoch fuer Start und Tests verwendet.
-Der MVP kann nur eine Analyseaufgabe an die lokale Codex-CLI senden. Die
-Ausfuehrung ist fest auf `read-only` begrenzt, verwendet keine Websuche und
-akzeptiert nur dieses AI-Router-Repository. Laufdaten liegen nicht versioniert
-unter `.ai-router-data/`. Schreibzugriff, Commits, Pushes und Deployments sind
-nicht implementiert.
+Der MVP kann eine Analyseaufgabe entweder kontrolliert simulieren oder nach
+bewusster Auswahl an die lokale Codex-CLI senden. Die Codex-Ausfuehrung ist
+fest auf `read-only` begrenzt, verwendet keine Websuche und akzeptiert nur
+dieses AI-Router-Repository. Laufdaten liegen nicht versioniert unter
+`.ai-router-data/`. Schreibzugriff, Commits, Pushes und Deployments sind nicht
+implementiert.
+
+### Lokale Simulation
+
+Die Testoberflaeche startet standardmaessig den Adapter `mock`. Er simuliert
+kontrolliert erfolgreiche, fehlgeschlagene und zeitueberschreitende Runs, ohne
+einen Prozess, Netzwerkzugriff oder ein externes Modell zu starten. `codex-cli`
+wird nur nach ausdruecklicher Auswahl verwendet und bleibt Read-only.
 
 ### Bekannte Grenze
 

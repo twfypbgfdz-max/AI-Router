@@ -5,6 +5,7 @@ export const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.me
 export const ALLOWED_REPOSITORIES = [REPOSITORY_ROOT];
 export const CODEX_FALLBACK = "C:\\Users\\felil\\AppData\\Local\\OpenAI\\Codex\\bin\\a7c12ebff69fb123\\codex.exe";
 export const DEFAULT_TIMEOUT_MS = 120_000;
+export const MOCK_TIMEOUT_MS = 3_000;
 export const MAX_TASK_LENGTH = 8_000;
 export const MAX_STDERR_LENGTH = 16_384;
 export const MAX_EVENT_COUNT = 200;

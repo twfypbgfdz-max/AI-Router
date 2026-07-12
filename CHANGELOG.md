@@ -2,6 +2,7 @@
 
 ## v0.6.0-test
 
+- Kontrollierten lokalen `mock`-Adapter fuer Run-, Timeout- und Abbruchtests ergaenzt.
 - Lokalen Node-Orchestrator fuer begrenzte Codex-Read-only-Analysen angelegt.
 - Repository-Allowlist, Git-Integritaetspruefung, Run-Status und JSONL-Auswertung ergaenzt.
 - Lokalen JSON-Run-Store und atomische Cockpit-Kurzstatusdatei vorbereitet.

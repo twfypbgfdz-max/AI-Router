@@ -9,7 +9,7 @@ export function projectCockpitStatus(run) {
     routerStatus: run.status === "created" || run.status === "queued" ? "validating" : run.status,
     runId: run.runId,
     taskSummary: summary(run.task, 180),
-    route: ["codex"],
+    route: [run.adapter === "mock" ? "mock" : "codex"],
     startedAt: run.startedAt || "",
     updatedAt: run.updatedAt,
     resultSummary: summary(run.resultSummary),
