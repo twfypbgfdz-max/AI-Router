@@ -2,7 +2,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { COCKPIT_STATUS_FILE } from "./config.js";
 
-function summary(value, maximum = 280) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximum); }
+function summary(value, maximum = 280) {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, "[REDACTED]")
+    .replace(/\b(api[_ -]?key|token|secret|password)\s*[:=]\s*\S+/gi, "$1=[REDACTED]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maximum);
+}
 
 export function projectCockpitStatus(run) {
   return {
@@ -14,7 +22,10 @@ export function projectCockpitStatus(run) {
     updatedAt: run.updatedAt,
     resultSummary: summary(run.resultSummary),
     risk: run.routePlan?.risk || "R0",
-    approvalRequired: run.routePlan?.approvalRequired === true
+    approvalRequired: run.approval ? run.approval.status === "pending" : run.routePlan?.approvalRequired === true,
+    approvalStatus: run.approval?.status || null,
+    actionSummary: summary(run.approvalContext?.plannedAction, 180),
+    reversible: run.approvalContext?.reversibility === "irreversible_or_limited" ? false : null
   };
 }
 

@@ -4,11 +4,11 @@ Lokale HTML-Test-App zur einfachen Empfehlung eines passenden KI-Tools fuer eine
 
 ## Version
 
-Aktuelle Testversion: `v0.7.0-test`
+Aktuelle Testversion: `v0.8.0-test`
 
 ## Lokaler Read-only-Codex-MVP
 
-`npm start` startet den aktuellen MVP-Teststand `v0.7.0-test` als lokalen
+`npm start` startet den aktuellen MVP-Teststand `v0.8.0-test` als lokalen
 Node-Server auf `http://127.0.0.1:8787`. `npm test` fuehrt die automatisierten
 Tests aus. Es gibt keine npm-Abhaengigkeiten; Node und die npm-Skripte werden
 dennoch fuer Start und Tests verwendet.
@@ -38,6 +38,14 @@ Riskante Aktionen werden mindestens als `R3`, produktive oder destruktive
 Aktionen als `R4` eingestuft. Sie erhalten ein Freigabe-Gate und koennen nur
 als Route-Plan gespeichert werden. Der Run stoppt als `awaiting_approval`, ohne
 einen Adapter zu starten, und der Router behauptet dabei keine Ausfuehrung.
+
+### Lokales Freigabe-Gate v0.8
+
+Ein Run in `awaiting_approval` kann genau einmal fuer seine eigene Run-ID
+freigegeben oder abgelehnt werden. Die Entscheidung, optionale Notiz und
+Zeitpunkte werden im Run Store protokolliert. Ablehnung endet ohne Adapterstart
+als `cancelled`. Freigabe startet ausschliesslich eine lokale Mock-Simulation;
+es gibt auch danach keine echte riskante Aktion, Shell oder externe API.
 
 ### Bekannte Grenze
 

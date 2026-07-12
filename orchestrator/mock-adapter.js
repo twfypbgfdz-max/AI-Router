@@ -19,7 +19,7 @@ export function isMockSimulationMode(value) { return MODES.has(value); }
 
 export function createMockAdapter({ stepDelayMs = 1_100 } = {}) {
   return {
-    async run({ task, runId, signal, simulationMode = "success", routePlan }) {
+    async run({ task, runId, signal, simulationMode = "success", routePlan, approvalSimulation = false }) {
       if (!isMockSimulationMode(simulationMode)) throw new Error("Unsupported simulation mode.");
       const events = [];
       const event = (phase, message) => events.push({ type: "simulation", phase, message, runId });
@@ -27,9 +27,14 @@ export function createMockAdapter({ stepDelayMs = 1_100 } = {}) {
       await wait(stepDelayMs, signal);
       event("route_selected", "Route gewählt");
       await wait(stepDelayMs, signal);
-      const planOnly = routePlan?.approvalRequired === true;
-      event("processing", planOnly ? "Route-Plan wird geprüft" : "Aufgabe wird verarbeitet");
+      const planOnly = routePlan?.approvalRequired === true && !approvalSimulation;
+      event("processing", approvalSimulation ? "Freigabe-Simulation wird verarbeitet" : (planOnly ? "Route-Plan wird geprüft" : "Aufgabe wird verarbeitet"));
       await wait(stepDelayMs, signal);
+      if (approvalSimulation) {
+        event("approval_simulated", "Freigabe registriert; riskante Aktion bleibt unausgeführt");
+        await wait(stepDelayMs, signal);
+        return { exitCode: 0, issues: [], stderr: "", events, resultSummary: "Freigabe wurde registriert. Die riskante Aktion wurde nicht real ausgeführt. Es wurde ausschließlich eine sichere Simulation durchgeführt." };
+      }
       if (simulationMode === "timeout") {
         event("waiting_for_timeout", "Simulation wartet auf den kontrollierten Timeout");
         await wait(stepDelayMs * 100, signal);

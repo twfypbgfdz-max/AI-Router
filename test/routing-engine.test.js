@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createRoutePlan, TASK_TYPES } from "../orchestrator/routing-engine.js";
+import { createApprovalContext, createRoutePlan, TASK_TYPES } from "../orchestrator/routing-engine.js";
 
 test("task type allowlist is complete and deterministic", () => {
   assert.deepEqual([...TASK_TYPES], ["code", "research", "planning", "writing", "obsidian", "social_media", "learning", "career", "finance", "everyday", "unknown"]);
@@ -68,4 +68,17 @@ test("negated actions do not trigger false approval and schema has no confidence
   assert.equal(plan.approvalRequired, false);
   assert.equal("confidence" in plan, false);
   assert.equal(JSON.stringify(plan).includes("%"), false);
+});
+
+test("approval context derives only bounded consequences, systems and resources", () => {
+  const task = "Lösche alle Dateien und pushe auf main";
+  const plan = createRoutePlan(task);
+  const context = createApprovalContext(task, plan);
+  assert.equal(context.plannedAction, task);
+  assert.equal(context.executionAdapter, "mock");
+  assert.equal(context.reversibility, "irreversible_or_limited");
+  assert.ok(context.affectedSystems.includes("Lokales Dateisystem"));
+  assert.ok(context.affectedSystems.includes("Git-Repository"));
+  assert.ok(context.affectedResources.every((item) => typeof item === "string"));
+  assert.equal(createApprovalContext("Nur lesen", createRoutePlan("Nur lesen")), null);
 });

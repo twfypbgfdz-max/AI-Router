@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.0-test
+
+- Einmalig konsumierbare Freigabe oder Ablehnung pro Run-ID ergaenzt.
+- Approval-Kontext mit Folgen, Systemen, Ressourcen und Rueckgaengigkeit vorbereitet.
+- Freigabe startet ausschliesslich eine lokale Mock-Simulation ohne reale Aktion.
+- Ablehnung endet ohne Adapterstart als `cancelled`.
+- v0.8-Testoberflaeche fuer sichere lokale Freigabeentscheidungen ergaenzt.
+
 ## v0.7.0-test
 
 - Deterministische lokale Routing-Engine mit festem Route-Plan-Schema ergaenzt.

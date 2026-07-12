@@ -13,6 +13,15 @@ function normalized(value) {
 
 function matches(text, patterns) { return patterns.some((pattern) => pattern.test(text)); }
 
+function safeSummary(value, maximum = 300) {
+  return String(value || "")
+    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, "[REDACTED]")
+    .replace(/\b(api[_ -]?key|token|secret|password)\s*[:=]\s*\S+/gi, "$1=[REDACTED]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maximum);
+}
+
 function classifyTask(text) {
   const rules = [
     ["obsidian", [/\bobsidian\b/, /\bvault\b/, /\bzettelkasten\b/]],
@@ -43,7 +52,7 @@ function assessRisk(text, taskType) {
   if (matches(riskText, r4)) return "R4";
   const r3 = [
     /\blosch/, /\bentfern/, /\bcommit/, /\bpush/, /\bdeploy/, /\bveroffentlich/,
-    /e-?mail.{0,20}send/, /kalender.{0,30}(?:ander|aktualisier|eintrag)/,
+    /e-?mail.{0,20}send/, /send.{0,20}e-?mail/, /kalender.{0,30}(?:ander|aktualisier|eintrag)/,
     /\bkaufen\b/, /\bbezahlen\b/, /\bvertrag/, /finanzdaten.{0,30}(?:ander|verander)/,
     /rechte.{0,30}(?:ander|verander)/, /(?:secret|secrets).{0,30}(?:ander|verander)/
   ];
@@ -105,4 +114,65 @@ export function createRoutePlan(task) {
   const plan = { taskType, recommendedRoute: route, executionAdapter: "mock", reason: REASONS[taskType], complexity, importance, risk, uncertainty, estimatedUsage, reviewRequired, approvalRequired, warnings };
   if (!TASK_TYPE_SET.has(plan.taskType) || !LEVELS.has(plan.complexity) || !LEVELS.has(plan.importance) || !RISKS.has(plan.risk) || !LEVELS.has(plan.uncertainty) || !LEVELS.has(plan.estimatedUsage)) throw new Error("Invalid route plan.");
   return plan;
+}
+
+export function createApprovalContext(task, routePlan) {
+  if (!routePlan?.approvalRequired) return null;
+  const text = normalized(task);
+  const affectedSystems = [];
+  const affectedResources = [];
+  const possibleConsequences = [];
+  const add = (list, value) => { if (!list.includes(value)) list.push(value); };
+
+  if (matches(text, [/\bdatei/, /\bordner/, /\blosch/, /\bentfern/])) {
+    add(affectedSystems, "Lokales Dateisystem");
+    add(affectedResources, "In der Aufgabe genannte Dateien oder Ordner");
+    add(possibleConsequences, "Daten können dauerhaft verloren gehen.");
+  }
+  if (matches(text, [/\bgit\b/, /\bcommit/, /\bpush/, /\bbranch/])) {
+    add(affectedSystems, "Git-Repository");
+    add(affectedResources, "Repository, Branch und Commit-Historie");
+    add(possibleConsequences, "Repository-Zustand oder veröffentlichte Historie können verändert werden.");
+  }
+  if (matches(text, [/\bdeploy/, /\bproduktion/, /\bveroffentlich/])) {
+    add(affectedSystems, "Produktions- oder Veröffentlichungssystem");
+    add(affectedResources, "Produktive Umgebung oder öffentlich sichtbare Inhalte");
+    add(possibleConsequences, "Änderungen können unmittelbar produktiv oder öffentlich wirksam werden.");
+  }
+  if (matches(text, [/\be-?mail/, /\bsend/])) {
+    add(affectedSystems, "E-Mail-System");
+    add(affectedResources, "E-Mail-Konto und Empfänger");
+    add(possibleConsequences, "Eine versendete Nachricht kann nicht zuverlässig zurückgerufen werden.");
+  }
+  if (matches(text, [/\bkalender/, /\btermin/])) {
+    add(affectedSystems, "Kalendersystem");
+    add(affectedResources, "Kalenderkonto, Termine und mögliche Teilnehmer");
+    add(possibleConsequences, "Termine oder Einladungen können für weitere Personen verändert werden.");
+  }
+  if (matches(text, [/\bzahlung/, /\bbezahlen/, /\bkaufen/, /\bfinanz/, /\bvertrag/])) {
+    add(affectedSystems, "Finanz-, Einkaufs- oder Vertragssystem");
+    add(affectedResources, "Zahlungskonto, Budget oder Vertragsdaten");
+    add(possibleConsequences, "Es können finanzielle oder rechtliche Verpflichtungen entstehen.");
+  }
+  if (matches(text, [/\bsecret/, /\bzugangsdaten/, /\brechte/])) {
+    add(affectedSystems, "Zugriffs- und Berechtigungssystem");
+    add(affectedResources, "Konten, Secrets, Zugangsdaten oder Rechte");
+    add(possibleConsequences, "Zugriffsschutz oder Kontosicherheit können beeinträchtigt werden.");
+  }
+  if (!affectedSystems.length) add(affectedSystems, "Nicht eindeutig ableitbar");
+  if (!affectedResources.length) add(affectedResources, "Keine konkreten Dateien oder Konten sicher ableitbar");
+  if (!possibleConsequences.length) add(possibleConsequences, "Die Aufgabe kann einen extern sichtbaren oder schwer rückgängig zu machenden Zustand verändern.");
+
+  const irreversible = routePlan.risk === "R4" || matches(text, [/\blosch/, /\bzahlung/, /\bbezahlen/, /\bveroffentlich/, /\be-?mail.{0,20}send/]);
+  return {
+    plannedAction: safeSummary(task),
+    whyApprovalRequired: routePlan.risk === "R4" ? "Produktive oder destruktive Aktion mit hohem Schadenspotenzial." : "Riskante Aktion mit externer oder dauerhafter Wirkung.",
+    possibleConsequences,
+    affectedSystems,
+    affectedResources,
+    reversibility: irreversible ? "irreversible_or_limited" : "limited_or_unknown",
+    recommendedRoute: routePlan.recommendedRoute,
+    executionAdapter: "mock",
+    warnings: [...routePlan.warnings]
+  };
 }

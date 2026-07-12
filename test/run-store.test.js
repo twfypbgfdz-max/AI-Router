@@ -10,3 +10,33 @@ test("Cockpit status projects route-plan risk and approval", () => {
   assert.equal(status.approvalRequired, true);
   assert.deepEqual(status.route, ["mock"]);
 });
+
+test("Cockpit approval projection is bounded, conservative and excludes sensitive details", () => {
+  const status = projectCockpitStatus({
+    runId: "r",
+    adapter: "mock",
+    status: "awaiting_approval",
+    task: "risk",
+    startedAt: "",
+    updatedAt: "b",
+    routePlan: { risk: "R4", approvalRequired: true },
+    approval: { status: "pending", decisionNote: "must-not-leak", approvedAction: "must-not-leak" },
+    approvalContext: {
+      plannedAction: `secret=my-secret-value ${"x".repeat(300)}`,
+      reversibility: "irreversible_or_limited",
+      affectedResources: ["private-account"],
+      possibleConsequences: ["private-detail"]
+    }
+  });
+  assert.equal(status.routerStatus, "awaiting_approval");
+  assert.equal(status.approvalStatus, "pending");
+  assert.equal(status.approvalRequired, true);
+  assert.equal(status.actionSummary.length <= 180, true);
+  assert.match(status.actionSummary, /\[REDACTED\]/);
+  assert.equal(status.reversible, false);
+  assert.equal("approval" in status, false);
+  assert.equal("approvalContext" in status, false);
+  assert.equal(JSON.stringify(status).includes("must-not-leak"), false);
+  assert.equal(JSON.stringify(status).includes("private-account"), false);
+  assert.equal(JSON.stringify(status).includes("private-detail"), false);
+});

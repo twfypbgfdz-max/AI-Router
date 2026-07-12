@@ -1,14 +1,14 @@
 import crypto from "node:crypto";
-import { DEFAULT_TIMEOUT_MS, MAX_RESULT_LENGTH, MAX_TASK_LENGTH, MOCK_TIMEOUT_MS, PROCESS_SETTLE_TIMEOUT_MS, REPOSITORY_ROOT } from "./config.js";
+import { DEFAULT_TIMEOUT_MS, MAX_EVENT_COUNT, MAX_RESULT_LENGTH, MAX_TASK_LENGTH, MOCK_TIMEOUT_MS, PROCESS_SETTLE_TIMEOUT_MS, REPOSITORY_ROOT } from "./config.js";
 import { captureGitState, compareGitState } from "./git-safety.js";
 import { resolveCodexExecutable, runCodex } from "./codex-adapter.js";
 import { saveRun } from "./run-store.js";
 import { saveCockpitStatus } from "./cockpit-status.js";
 import { reduceEvents, sanitizeText } from "./jsonl.js";
 import { isMockSimulationMode, runMock } from "./mock-adapter.js";
-import { createRoutePlan } from "./routing-engine.js";
+import { createApprovalContext, createRoutePlan } from "./routing-engine.js";
 
-const TERMINAL = new Set(["succeeded", "failed", "cancelled", "timed_out", "awaiting_approval"]);
+const TERMINAL = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
 const ADAPTER_NAMES = new Set(["mock", "codex-cli"]);
 
 function defaultAdapters() {
@@ -44,7 +44,10 @@ export class RunService {
     if (this.activeRunId) throw new Error("A router run is already active.");
     const mode = adapterName === "mock" ? (simulationMode || "success") : null;
     const timeoutMs = adapterName === "mock" && mode === "timeout" ? MOCK_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
-    const run = { runId: `run_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), task: task.trim(), repository, branchBefore: null, branchAfter: null, gitStatusBefore: null, gitStatusAfter: null, adapter: adapterName, simulationMode: mode, executable: null, mode: "read-only", status: "created", startedAt: null, finishedAt: null, timeoutMs, exitCode: null, resultSummary: null, errorSummary: null, usage: null, events: [], warnings: [...routePlan.warnings], routePlan };
+    const createdAt = new Date().toISOString();
+    const approvalContext = createApprovalContext(task, routePlan);
+    const approval = routePlan.approvalRequired ? { required: true, status: "pending", requestedAt: createdAt, decidedAt: null, decision: null, decisionNote: "", approvedAction: "", consumed: false } : null;
+    const run = { runId: `run_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`, createdAt, updatedAt: createdAt, task: task.trim(), repository, branchBefore: null, branchAfter: null, gitStatusBefore: null, gitStatusAfter: null, adapter: adapterName, simulationMode: mode, executable: null, mode: "read-only", status: "created", startedAt: null, finishedAt: null, timeoutMs, exitCode: null, resultSummary: null, errorSummary: null, usage: null, events: [], warnings: [...routePlan.warnings], routePlan, approvalContext, approval, approvalSimulation: false };
     this.activeRunId = run.runId;
     this.runs.set(run.runId, run);
     try { await this.persist(run); await this.publish(run); }
@@ -62,7 +65,11 @@ export class RunService {
       const before = await this.git.captureGitState(run.repository);
       run.repository = before.repository; run.branchBefore = before.branch; run.gitStatusBefore = before.status; run.gitBefore = before;
       if (run.cancelRequested) return this.update(run, "cancelled", { branchAfter: before.branch, gitStatusAfter: before.status, finishedAt: new Date().toISOString(), errorSummary: "Cancelled by user." });
-      if (run.routePlan?.approvalRequired) return this.update(run, "awaiting_approval", { branchAfter: before.branch, gitStatusAfter: before.status, finishedAt: new Date().toISOString(), resultSummary: "Freigabe erforderlich. Der Route-Plan wurde gespeichert; die erkannte Aktion wurde nicht ausgeführt." });
+      if (run.routePlan?.approvalRequired) {
+        const waiting = await this.update(run, "awaiting_approval", { branchAfter: before.branch, gitStatusAfter: before.status, finishedAt: new Date().toISOString(), resultSummary: "Freigabe erforderlich. Der Route-Plan wurde gespeichert; die erkannte Aktion wurde nicht ausgeführt." });
+        if (this.activeRunId === run.runId) this.activeRunId = null;
+        return waiting;
+      }
       if (/^(main|master|production)$|^release\//.test(before.branch)) run.warnings.push("Read-only analysis is running on a production-named branch.");
       const adapter = this.adapters[run.adapter];
       if (adapter.resolveExecutable) run.executable = await adapter.resolveExecutable();
@@ -109,6 +116,66 @@ export class RunService {
     finally { clearTimeout(timer); this.operations.delete(run.runId); }
   }
   get(runId) { return this.runs.get(runId) || null; }
+  async decideApproval(runId, { decision, decisionNote = "" } = {}) {
+    const run = this.get(runId);
+    if (!run) throw new Error("Run not found.");
+    if (run.status !== "awaiting_approval" || !run.approval?.required) throw new Error("Run is not awaiting approval.");
+    if (run.approval.consumed || run.approval.status !== "pending") throw new Error("Approval decision has already been consumed.");
+    if (!new Set(["approve", "reject"]).has(decision)) throw new Error("Approval decision must be approve or reject.");
+    if (typeof decisionNote !== "string" || decisionNote.length > 1_000) throw new Error("Decision note must be a bounded string.");
+    if (decision === "approve" && this.activeRunId) throw new Error("Another router run is already active.");
+
+    const decidedAt = new Date().toISOString();
+    const approved = decision === "approve";
+    run.approval.status = approved ? "approved" : "rejected";
+    run.approval.decidedAt = decidedAt;
+    run.approval.decision = approved ? "approved" : "rejected";
+    run.approval.decisionNote = sanitizeText(decisionNote, 500) || "";
+    run.approval.approvedAction = approved ? sanitizeText(run.approvalContext?.plannedAction, 300) || "" : "";
+    run.approval.consumed = true;
+    run.events = [...run.events, { timestamp: decidedAt, type: "approval_decision", status: run.approval.status, messageSummary: approved ? "Local approval registered for safe simulation." : "Local approval rejected." }].slice(-MAX_EVENT_COUNT);
+
+    if (!approved) return this.update(run, "cancelled", { finishedAt: decidedAt, resultSummary: "Freigabe abgelehnt. Es wurde keine Aktion ausgeführt.", errorSummary: null });
+
+    this.activeRunId = run.runId;
+    run.approvalSimulation = true;
+    try {
+      await this.update(run, "queued", { finishedAt: null, resultSummary: "Freigabe registriert. Sichere Simulation wird vorbereitet.", errorSummary: null });
+    } catch (error) {
+      if (this.activeRunId === run.runId) this.activeRunId = null;
+      throw error;
+    }
+    this.startApprovalSimulation(run).finally(() => { if (this.activeRunId === run.runId) this.activeRunId = null; });
+    return run;
+  }
+  async startApprovalSimulation(run) {
+    await this.update(run, "running", { startedAt: new Date().toISOString() });
+    let timer;
+    try {
+      const adapter = this.adapters.mock;
+      if (!adapter?.run) throw new Error("Safe mock adapter is unavailable.");
+      const abortController = new AbortController();
+      const operation = adapter.run({ task: run.task, runId: run.runId, signal: abortController.signal, simulationMode: "success", routePlan: run.routePlan, approvalSimulation: true });
+      operation.cancel = async () => { abortController.abort(); return { outcome: "abort_requested" }; };
+      this.operations.set(run.runId, operation);
+      const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve({ timeout: true }), DEFAULT_TIMEOUT_MS); });
+      const result = await Promise.race([operation, timeout]);
+      if (result?.timeout) {
+        const kill = await operation.cancel();
+        return this.update(run, "timed_out", { finishedAt: new Date().toISOString(), errorSummary: sanitizeText(`Approval simulation exceeded timeout. ${kill.outcome}`, 300) });
+      }
+      if (run.cancelRequested) return run;
+      const safeEvents = [...run.events, ...reduceEvents(result.events)].slice(-MAX_EVENT_COUNT);
+      if (result.exitCode !== 0 || result.issues?.length || !result.resultSummary) return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorSummary: sanitizeText(result.stderr || result.issues?.join(", ") || "Approval simulation produced no result.", 500), events: safeEvents });
+      return this.update(run, "succeeded", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, resultSummary: sanitizeText(result.resultSummary, MAX_RESULT_LENGTH), errorSummary: null, events: safeEvents });
+    } catch (error) {
+      if (run.cancelRequested) return run;
+      return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorSummary: sanitizeText(error.message, 500) });
+    } finally {
+      clearTimeout(timer);
+      this.operations.delete(run.runId);
+    }
+  }
   async cancel(runId) {
     const run = this.get(runId);
     if (!run || !["validating", "queued", "running"].includes(run.status)) return null;
@@ -120,6 +187,7 @@ export class RunService {
       operation.catch(() => null),
       new Promise((resolve) => setTimeout(resolve, PROCESS_SETTLE_TIMEOUT_MS))
     ]);
+    if (run.approvalSimulation) return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), resultSummary: "Freigabe-Simulation abgebrochen. Es wurde keine Aktion ausgeführt.", errorSummary: null });
     const after = await this.git.captureGitState(run.repository);
     run.branchAfter = after.branch; run.gitStatusAfter = after.status;
     const integrity = this.git.compareGitState(run.gitBefore, after);

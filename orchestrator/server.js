@@ -8,7 +8,7 @@ import { loadCockpitStatus } from "./cockpit-status.js";
 import { readJsonBody, sendJson, sendText } from "./http-utils.js";
 
 const service = new RunService();
-const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_7-test.html");
+const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_8-test.html");
 function isTrustedMutation(request) {
   const origin = request.headers.origin;
   const contentType = request.headers["content-type"] || "";
@@ -31,6 +31,11 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "POST" && cancelMatch) {
       if (!isTrustedMutation(request)) return sendJson(response, 403, { error: "Untrusted local request." });
       const run = await service.cancel(cancelMatch[1]); return run ? sendJson(response, 200, run) : sendJson(response, 409, { error: "Run cannot be cancelled." });
+    }
+    const approvalMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/approval$/);
+    if (request.method === "POST" && approvalMatch) {
+      if (!isTrustedMutation(request)) return sendJson(response, 403, { error: "Untrusted local request." });
+      return sendJson(response, 200, await service.decideApproval(approvalMatch[1], await readJsonBody(request)));
     }
     return sendJson(response, 404, { error: "Not found." });
   } catch (error) { return sendJson(response, 400, { error: error.message }); }
