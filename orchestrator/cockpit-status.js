@@ -13,6 +13,10 @@ function summary(value, maximum = 280) {
 }
 
 export function projectCockpitStatus(run) {
+  const workflow = run.workflow && typeof run.workflow === "object" ? run.workflow : null;
+  const steps = Array.isArray(workflow?.steps) ? workflow.steps : [];
+  const current = steps.find((step) => step.id === workflow?.currentStep) || null;
+  const reviewer = steps.find((step) => step.role === "reviewer") || null;
   return {
     routerStatus: run.status === "created" || run.status === "queued" ? "validating" : run.status,
     runId: run.runId,
@@ -25,7 +29,15 @@ export function projectCockpitStatus(run) {
     approvalRequired: run.approval ? run.approval.status === "pending" : run.routePlan?.approvalRequired === true,
     approvalStatus: run.approval?.status || null,
     actionSummary: summary(run.approvalContext?.plannedAction, 180),
-    reversible: run.approvalContext?.reversibility === "irreversible_or_limited" ? false : null
+    reversible: run.approvalContext?.reversibility === "irreversible_or_limited" ? false : null,
+    workflowType: ["direct", "plan_execute", "plan_execute_review"].includes(workflow?.type) ? workflow.type : null,
+    currentRole: ["planner", "executor", "reviewer", "synthesizer"].includes(current?.role) ? current.role : null,
+    currentStep: summary(workflow?.currentStep, 40),
+    completedSteps: steps.filter((step) => step.status === "succeeded").length,
+    totalSteps: Math.min(steps.length, 4),
+    workflowStatus: ["pending", "running", "succeeded", "failed", "cancelled"].includes(workflow?.status) ? workflow.status : null,
+    reviewerRequired: !!reviewer,
+    reviewStatus: reviewer && ["pending", "running", "succeeded", "failed", "skipped", "cancelled"].includes(reviewer.status) ? reviewer.status : "not_required"
   };
 }
 

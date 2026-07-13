@@ -8,7 +8,7 @@ import { loadCockpitStatus } from "./cockpit-status.js";
 import { readJsonBody, sendJson, sendText } from "./http-utils.js";
 
 const service = new RunService();
-const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_8-test.html");
+const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_9-test.html");
 function isTrustedMutation(request) {
   const origin = request.headers.origin;
   const contentType = request.headers["content-type"] || "";

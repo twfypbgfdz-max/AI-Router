@@ -5,15 +5,16 @@ import { resolveCodexExecutable, runCodex } from "./codex-adapter.js";
 import { saveRun } from "./run-store.js";
 import { saveCockpitStatus } from "./cockpit-status.js";
 import { reduceEvents, sanitizeText } from "./jsonl.js";
-import { isMockSimulationMode, runMock } from "./mock-adapter.js";
+import { isMockSimulationMode, runMock, runMockRole } from "./mock-adapter.js";
 import { createApprovalContext, createRoutePlan } from "./routing-engine.js";
+import { cancelWorkflow, completeWorkflow, createWorkflow, failStep, nextPendingStep, startStep, succeedStep } from "./workflow-engine.js";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
 const ADAPTER_NAMES = new Set(["mock", "codex-cli"]);
 
 function defaultAdapters() {
   return {
-    mock: { run: runMock },
+    mock: { run: runMock, runRole: runMockRole },
     "codex-cli": { resolveExecutable: resolveCodexExecutable, run: ({ repository, task, executable }) => runCodex({ repository, prompt: task, executable }) }
   };
 }
@@ -47,7 +48,9 @@ export class RunService {
     const createdAt = new Date().toISOString();
     const approvalContext = createApprovalContext(task, routePlan);
     const approval = routePlan.approvalRequired ? { required: true, status: "pending", requestedAt: createdAt, decidedAt: null, decision: null, decisionNote: "", approvedAction: "", consumed: false } : null;
-    const run = { runId: `run_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`, createdAt, updatedAt: createdAt, task: task.trim(), repository, branchBefore: null, branchAfter: null, gitStatusBefore: null, gitStatusAfter: null, adapter: adapterName, simulationMode: mode, executable: null, mode: "read-only", status: "created", startedAt: null, finishedAt: null, timeoutMs, exitCode: null, resultSummary: null, errorSummary: null, usage: null, events: [], warnings: [...routePlan.warnings], routePlan, approvalContext, approval, approvalSimulation: false };
+    const workflow = createWorkflow(routePlan);
+    if (mode === "failure_reviewer" && !workflow.steps.some((step) => step.role === "reviewer")) throw new Error("Reviewer failure simulation requires a reviewer workflow.");
+    const run = { runId: `run_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`, createdAt, updatedAt: createdAt, task: task.trim(), repository, branchBefore: null, branchAfter: null, gitStatusBefore: null, gitStatusAfter: null, adapter: adapterName, simulationMode: mode, executable: null, mode: "read-only", status: "created", startedAt: null, finishedAt: null, timeoutMs, exitCode: null, resultSummary: null, errorSummary: null, usage: null, events: [], warnings: [...routePlan.warnings], routePlan, approvalContext, approval, approvalSimulation: false, workflow };
     this.activeRunId = run.runId;
     this.runs.set(run.runId, run);
     try { await this.persist(run); await this.publish(run); }
@@ -62,6 +65,16 @@ export class RunService {
   async execute(run) {
     await this.update(run, "validating");
     try {
+      if (run.adapter === "mock") {
+        if (run.cancelRequested) { cancelWorkflow(run.workflow); return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), resultSummary: "Mock-Workflow abgebrochen. Es wurde keine reale Aktion ausgeführt." }); }
+        if (run.routePlan?.approvalRequired) {
+          const waiting = await this.update(run, "awaiting_approval", { finishedAt: new Date().toISOString(), resultSummary: "Freigabe erforderlich. Workflow wurde vorbereitet, aber nicht gestartet; die erkannte Aktion wurde nicht ausgeführt." });
+          if (this.activeRunId === run.runId) this.activeRunId = null;
+          return waiting;
+        }
+        await this.update(run, "queued");
+        return this.startMockWorkflow(run);
+      }
       const before = await this.git.captureGitState(run.repository);
       run.repository = before.repository; run.branchBefore = before.branch; run.gitStatusBefore = before.status; run.gitBefore = before;
       if (run.cancelRequested) return this.update(run, "cancelled", { branchAfter: before.branch, gitStatusAfter: before.status, finishedAt: new Date().toISOString(), errorSummary: "Cancelled by user." });
@@ -115,6 +128,57 @@ export class RunService {
     }
     finally { clearTimeout(timer); this.operations.delete(run.runId); }
   }
+  async startMockWorkflow(run, { approvalSimulation = false } = {}) {
+    run.approvalSimulation = approvalSimulation;
+    await this.update(run, "running", { startedAt: run.startedAt || new Date().toISOString(), finishedAt: null });
+    const adapter = this.adapters.mock;
+    if (!adapter) return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorSummary: "Safe mock adapter is unavailable." });
+    let finalSummary = "";
+    try {
+      let step = nextPendingStep(run.workflow);
+      while (step) {
+        if (run.cancelRequested) return run;
+        startStep(run.workflow, step.id);
+        await this.update(run, "running");
+        const abortController = new AbortController();
+        const runRole = adapter.runRole || ((options) => adapter.run({ ...options, workflowRole: options.role }));
+        const operation = runRole({ role: step.role, task: run.task, runId: run.runId, signal: abortController.signal, simulationMode: approvalSimulation ? "success" : run.simulationMode, approvalSimulation });
+        operation.cancel = async () => { abortController.abort(); return { outcome: "abort_requested" }; };
+        this.operations.set(run.runId, operation);
+        let timer;
+        const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve({ timeout: true }), run.timeoutMs); });
+        let result;
+        try { result = await Promise.race([operation, timeout]); }
+        catch (error) {
+          if (run.cancelRequested) return run;
+          result = { exitCode: 1, issues: [], stderr: error.message, events: [], resultSummary: null };
+        } finally { clearTimeout(timer); this.operations.delete(run.runId); }
+
+        if (result?.timeout) {
+          await operation.cancel();
+          failStep(run.workflow, step.id, "Workflow step exceeded timeout.");
+          return this.update(run, "timed_out", { finishedAt: new Date().toISOString(), errorSummary: `Workflow step timed out: ${step.role}.` });
+        }
+        const safeEvents = [...run.events, ...reduceEvents(result.events)].slice(-MAX_EVENT_COUNT);
+        if (result.exitCode !== 0 || result.issues?.length || !result.resultSummary) {
+          const errorSummary = sanitizeText(result.stderr || result.issues?.join(", ") || "Workflow step produced no result.", 500);
+          failStep(run.workflow, step.id, errorSummary);
+          return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorSummary, events: safeEvents });
+        }
+        succeedStep(run.workflow, step.id, result.resultSummary);
+        finalSummary = result.resultSummary;
+        await this.update(run, "running", { events: safeEvents });
+        step = nextPendingStep(run.workflow);
+      }
+      completeWorkflow(run.workflow);
+      return this.update(run, "succeeded", { finishedAt: new Date().toISOString(), exitCode: 0, resultSummary: sanitizeText(finalSummary, MAX_RESULT_LENGTH), errorSummary: null });
+    } catch (error) {
+      if (run.cancelRequested) return run;
+      const runningStep = run.workflow.steps.find((item) => item.status === "running");
+      if (runningStep) failStep(run.workflow, runningStep.id, error.message);
+      return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorSummary: sanitizeText(error.message, 500) });
+    } finally { this.operations.delete(run.runId); }
+  }
   get(runId) { return this.runs.get(runId) || null; }
   async decideApproval(runId, { decision, decisionNote = "" } = {}) {
     const run = this.get(runId);
@@ -135,7 +199,7 @@ export class RunService {
     run.approval.consumed = true;
     run.events = [...run.events, { timestamp: decidedAt, type: "approval_decision", status: run.approval.status, messageSummary: approved ? "Local approval registered for safe simulation." : "Local approval rejected." }].slice(-MAX_EVENT_COUNT);
 
-    if (!approved) return this.update(run, "cancelled", { finishedAt: decidedAt, resultSummary: "Freigabe abgelehnt. Es wurde keine Aktion ausgeführt.", errorSummary: null });
+    if (!approved) { cancelWorkflow(run.workflow, decidedAt); return this.update(run, "cancelled", { finishedAt: decidedAt, resultSummary: "Freigabe abgelehnt. Es wurde keine Aktion ausgeführt.", errorSummary: null }); }
 
     this.activeRunId = run.runId;
     run.approvalSimulation = true;
@@ -149,32 +213,7 @@ export class RunService {
     return run;
   }
   async startApprovalSimulation(run) {
-    await this.update(run, "running", { startedAt: new Date().toISOString() });
-    let timer;
-    try {
-      const adapter = this.adapters.mock;
-      if (!adapter?.run) throw new Error("Safe mock adapter is unavailable.");
-      const abortController = new AbortController();
-      const operation = adapter.run({ task: run.task, runId: run.runId, signal: abortController.signal, simulationMode: "success", routePlan: run.routePlan, approvalSimulation: true });
-      operation.cancel = async () => { abortController.abort(); return { outcome: "abort_requested" }; };
-      this.operations.set(run.runId, operation);
-      const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve({ timeout: true }), DEFAULT_TIMEOUT_MS); });
-      const result = await Promise.race([operation, timeout]);
-      if (result?.timeout) {
-        const kill = await operation.cancel();
-        return this.update(run, "timed_out", { finishedAt: new Date().toISOString(), errorSummary: sanitizeText(`Approval simulation exceeded timeout. ${kill.outcome}`, 300) });
-      }
-      if (run.cancelRequested) return run;
-      const safeEvents = [...run.events, ...reduceEvents(result.events)].slice(-MAX_EVENT_COUNT);
-      if (result.exitCode !== 0 || result.issues?.length || !result.resultSummary) return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorSummary: sanitizeText(result.stderr || result.issues?.join(", ") || "Approval simulation produced no result.", 500), events: safeEvents });
-      return this.update(run, "succeeded", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, resultSummary: sanitizeText(result.resultSummary, MAX_RESULT_LENGTH), errorSummary: null, events: safeEvents });
-    } catch (error) {
-      if (run.cancelRequested) return run;
-      return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorSummary: sanitizeText(error.message, 500) });
-    } finally {
-      clearTimeout(timer);
-      this.operations.delete(run.runId);
-    }
+    return this.startMockWorkflow(run, { approvalSimulation: true });
   }
   async cancel(runId) {
     const run = this.get(runId);
@@ -182,12 +221,13 @@ export class RunService {
     const operation = this.operations.get(runId);
     run.cancelRequested = true;
     const kill = await operation?.cancel?.();
+    if (!operation && run.workflow) { cancelWorkflow(run.workflow); return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), resultSummary: "Mock-Workflow abgebrochen. Es wurde keine reale Aktion ausgeführt.", errorSummary: null }); }
     if (!operation) return run;
     await Promise.race([
       operation.catch(() => null),
       new Promise((resolve) => setTimeout(resolve, PROCESS_SETTLE_TIMEOUT_MS))
     ]);
-    if (run.approvalSimulation) return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), resultSummary: "Freigabe-Simulation abgebrochen. Es wurde keine Aktion ausgeführt.", errorSummary: null });
+    if (run.workflow) { cancelWorkflow(run.workflow); return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), resultSummary: run.approvalSimulation ? "Freigabe-Simulation abgebrochen. Es wurde keine Aktion ausgeführt." : "Mock-Workflow abgebrochen. Es wurde keine reale Aktion ausgeführt.", errorSummary: null }); }
     const after = await this.git.captureGitState(run.repository);
     run.branchAfter = after.branch; run.gitStatusAfter = after.status;
     const integrity = this.git.compareGitState(run.gitBefore, after);

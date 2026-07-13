@@ -40,3 +40,37 @@ test("Cockpit approval projection is bounded, conservative and excludes sensitiv
   assert.equal(JSON.stringify(status).includes("private-account"), false);
   assert.equal(JSON.stringify(status).includes("private-detail"), false);
 });
+
+test("Cockpit workflow projection is compact and excludes step text", () => {
+  const status = projectCockpitStatus({
+    runId: "r",
+    adapter: "mock",
+    status: "running",
+    task: "workflow",
+    startedAt: "a",
+    updatedAt: "b",
+    workflow: {
+      type: "plan_execute_review",
+      currentStep: "reviewer",
+      status: "running",
+      steps: [
+        { id: "planner", role: "planner", status: "succeeded", summary: "private-plan", errorSummary: null },
+        { id: "executor", role: "executor", status: "succeeded", summary: "private-output", errorSummary: null },
+        { id: "reviewer", role: "reviewer", status: "running", summary: "", errorSummary: "private-error" },
+        { id: "synthesizer", role: "synthesizer", status: "pending", summary: "", errorSummary: null }
+      ]
+    }
+  });
+  assert.equal(status.workflowType, "plan_execute_review");
+  assert.equal(status.currentRole, "reviewer");
+  assert.equal(status.currentStep, "reviewer");
+  assert.equal(status.completedSteps, 2);
+  assert.equal(status.totalSteps, 4);
+  assert.equal(status.workflowStatus, "running");
+  assert.equal(status.reviewerRequired, true);
+  assert.equal(status.reviewStatus, "running");
+  const serialized = JSON.stringify(status);
+  assert.equal(serialized.includes("private-plan"), false);
+  assert.equal(serialized.includes("private-output"), false);
+  assert.equal(serialized.includes("private-error"), false);
+});

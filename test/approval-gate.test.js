@@ -25,7 +25,10 @@ function approvalService() {
   const mock = createMockAdapter({ stepDelayMs: 1 });
   const service = new RunService({
     adapters: {
-      mock: { run(options) { mockStarts += 1; return mock.run(options); } },
+      mock: {
+        run(options) { mockStarts += 1; return mock.run(options); },
+        runRole(options) { mockStarts += 1; return mock.runRole(options); }
+      },
       "codex-cli": { resolveExecutable: async () => "codex", run: async () => { codexStarts += 1; return {}; } }
     },
     git: { captureGitState: async () => { gitCalls += 1; return { ...gitState }; }, compareGitState: () => ({ safe: true, changed: [] }) },
@@ -40,6 +43,8 @@ test("approval is bound to one run, consumed once and starts only safe mock simu
   const created = await fixture.service.create({ task: "Lösche alle Dateien und pushe auf main", adapter: "mock" });
   const waiting = await waitFor(fixture.service, created.runId);
   assert.equal(waiting.status, "awaiting_approval");
+  assert.equal(waiting.workflow.status, "pending");
+  assert.ok(waiting.workflow.steps.every((step) => step.status === "pending"));
   assert.deepEqual(waiting.approval, {
     required: true,
     status: "pending",
@@ -60,12 +65,14 @@ test("approval is bound to one run, consumed once and starts only safe mock simu
   assert.ok(completed.approval.decidedAt);
   assert.match(completed.approval.decisionNote, /\[REDACTED\]/);
   assert.equal(completed.approval.approvedAction, "Lösche alle Dateien und pushe auf main");
-  assert.equal(fixture.mockStarts(), 1);
+  assert.equal(fixture.mockStarts(), 4);
   assert.equal(fixture.codexStarts(), 0);
   assert.equal(fixture.gitCalls(), gitCallsBeforeDecision);
   assert.match(completed.resultSummary, /Freigabe wurde registriert/i);
   assert.match(completed.resultSummary, /nicht real ausgeführt/i);
   assert.match(completed.resultSummary, /Simulation/i);
+  assert.equal(completed.workflow.status, "succeeded");
+  assert.deepEqual(completed.workflow.steps.map((step) => step.role), ["planner", "executor", "reviewer", "synthesizer"]);
   assert.ok(fixture.states.includes("queued") && fixture.states.includes("running") && fixture.states.includes("succeeded"));
   const cockpit = projectCockpitStatus(completed);
   assert.equal(cockpit.approvalRequired, false);
@@ -88,6 +95,8 @@ test("rejection is terminal, logged and starts no adapter", async () => {
   assert.equal(fixture.codexStarts(), 0);
   assert.match(rejected.resultSummary, /Freigabe abgelehnt/i);
   assert.match(rejected.resultSummary, /keine Aktion ausgeführt/i);
+  assert.equal(rejected.workflow.status, "cancelled");
+  assert.ok(rejected.workflow.steps.every((step) => step.status === "cancelled"));
   await assert.rejects(fixture.service.decideApproval(waiting.runId, { decision: "reject" }), /not awaiting approval|already been consumed/);
   await assert.rejects(fixture.service.decideApproval(waiting.runId, { decision: "approve" }), /not awaiting approval|already been consumed/);
 });
@@ -107,7 +116,7 @@ test("simultaneous approve and reject consume exactly one decision", async () =>
   const completed = await waitFor(fixture.service, waiting.runId, new Set(["succeeded", "cancelled", "failed"]));
   assert.equal(completed.approval.consumed, true);
   assert.ok(["approved", "rejected"].includes(completed.approval.status));
-  assert.ok(fixture.mockStarts() <= 1);
+  assert.ok(fixture.mockStarts() === 0 || fixture.mockStarts() === 4);
   assert.equal(fixture.codexStarts(), 0);
 });
 

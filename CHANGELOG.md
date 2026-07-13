@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.0-test
+
+- Deterministische Workflow-Typen `direct`, `plan_execute` und `plan_execute_review` ergaenzt.
+- Feste Mock-Rollen Planer, Ausfuehrer, Pruefer und Zusammenfuehrung sequenziell orchestriert.
+- Schrittstatus, Fehler, Timeout, Abbruch und begrenzte Ergebnis-Metadaten persistiert.
+- Approval-Gate so erweitert, dass ein Workflow erst nach Freigabe startet.
+- Kompakte Workflow-Projektion fuer das Cockpit und v0.9-Testoberflaeche ergaenzt.
+
 ## v0.8.0-test
 
 - Einmalig konsumierbare Freigabe oder Ablehnung pro Run-ID ergaenzt.

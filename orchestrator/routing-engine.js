@@ -1,3 +1,5 @@
+import { selectWorkflowType } from "./workflow-engine.js";
+
 export const TASK_TYPES = Object.freeze(["code", "research", "planning", "writing", "obsidian", "social_media", "learning", "career", "finance", "everyday", "unknown"]);
 const TASK_TYPE_SET = new Set(TASK_TYPES);
 const LEVELS = new Set(["low", "medium", "high"]);
@@ -112,6 +114,7 @@ export function createRoutePlan(task) {
   if (approvalRequired) warnings.push("Freigabe erforderlich: Die erkannte Aktion wird nicht ausgeführt; nur der Route-Plan darf simuliert werden.");
 
   const plan = { taskType, recommendedRoute: route, executionAdapter: "mock", reason: REASONS[taskType], complexity, importance, risk, uncertainty, estimatedUsage, reviewRequired, approvalRequired, warnings };
+  plan.workflowType = selectWorkflowType(plan);
   if (!TASK_TYPE_SET.has(plan.taskType) || !LEVELS.has(plan.complexity) || !LEVELS.has(plan.importance) || !RISKS.has(plan.risk) || !LEVELS.has(plan.uncertainty) || !LEVELS.has(plan.estimatedUsage)) throw new Error("Invalid route plan.");
   return plan;
 }

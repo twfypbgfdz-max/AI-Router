@@ -4,11 +4,11 @@ Lokale HTML-Test-App zur einfachen Empfehlung eines passenden KI-Tools fuer eine
 
 ## Version
 
-Aktuelle Testversion: `v0.8.0-test`
+Aktuelle Testversion: `v0.9.0-test`
 
 ## Lokaler Read-only-Codex-MVP
 
-`npm start` startet den aktuellen MVP-Teststand `v0.8.0-test` als lokalen
+`npm start` startet den aktuellen MVP-Teststand `v0.9.0-test` als lokalen
 Node-Server auf `http://127.0.0.1:8787`. `npm test` fuehrt die automatisierten
 Tests aus. Es gibt keine npm-Abhaengigkeiten; Node und die npm-Skripte werden
 dennoch fuer Start und Tests verwendet.
@@ -46,6 +46,24 @@ freigegeben oder abgelehnt werden. Die Entscheidung, optionale Notiz und
 Zeitpunkte werden im Run Store protokolliert. Ablehnung endet ohne Adapterstart
 als `cancelled`. Freigabe startet ausschliesslich eine lokale Mock-Simulation;
 es gibt auch danach keine echte riskante Aktion, Shell oder externe API.
+
+### Mehrstufiger Mock-Workflow v0.9
+
+Der Router waehlt deterministisch `direct`, `plan_execute` oder
+`plan_execute_review`. Abhaengig vom Typ durchlaeuft ein Run die festen Rollen
+Planer, Ausfuehrer, Pruefer und Zusammenfuehrung. Rollen laufen ausschliesslich
+nacheinander; es gibt keinen parallelen Rollenbetrieb und keine dynamischen
+Rollennamen.
+
+Jede Rolle wird nur lokal durch Mock simuliert. Schrittresultate sind begrenzt,
+maskiert und enthalten keine Chats, Rohprompts, Tool-Ausgaben oder Dateiinhalte.
+Riskante Aufgaben bleiben bis zur Freigabe ungestartet. Auch nach Freigabe laeuft
+nur der Mock-Workflow ohne externe KI, Shell oder reale Aktion. Echte
+Multi-KI-Orchestrierung folgt erst in einer spaeteren Ausbaustufe.
+
+Bei einem Schritt-Timeout endet der Run als `timed_out`; der Workflow selbst
+endet innerhalb seiner festen Status-Allowlist als `failed`, und alle offenen
+Schritte werden uebersprungen.
 
 ### Bekannte Grenze
 

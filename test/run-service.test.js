@@ -33,6 +33,11 @@ test("Run service accepts only its explicit adapter registry", async () => {
   await assert.rejects(service.create({ task: "No.", adapter: "mock", simulationMode: "command" }), /Unsupported simulation mode/);
 });
 
+test("Reviewer failure mode requires a server-selected reviewer workflow", async () => {
+  const service = new RunService({ adapters: { mock: { run: async () => ({}) } }, persist: async () => {}, publish: async () => {} });
+  await assert.rejects(service.create({ task: "Sortiere meine Einkaufsliste", adapter: "mock", simulationMode: "failure_reviewer" }), /requires a reviewer workflow/);
+});
+
 test("Mock timeout uses the fixed short test timeout", async () => {
   const state = { repository: "C:\\repo", branch: "dev", head: "a", status: "", diffStat: "", stagedDiffStat: "" };
   let received;

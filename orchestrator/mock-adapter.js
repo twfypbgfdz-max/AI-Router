@@ -1,4 +1,5 @@
-const MODES = new Set(["success", "failure", "timeout"]);
+const MODES = new Set(["success", "failure", "failure_executor", "failure_reviewer", "timeout"]);
+const ROLES = new Set(["planner", "executor", "reviewer", "synthesizer"]);
 
 function abortError() {
   const error = new Error("Mock simulation cancelled.");
@@ -18,7 +19,7 @@ function wait(delayMs, signal) {
 export function isMockSimulationMode(value) { return MODES.has(value); }
 
 export function createMockAdapter({ stepDelayMs = 1_100 } = {}) {
-  return {
+  const adapter = {
     async run({ task, runId, signal, simulationMode = "success", routePlan, approvalSimulation = false }) {
       if (!isMockSimulationMode(simulationMode)) throw new Error("Unsupported simulation mode.");
       const events = [];
@@ -51,9 +52,30 @@ export function createMockAdapter({ stepDelayMs = 1_100 } = {}) {
       event("result_created", "Ergebnis wird erstellt");
       await wait(stepDelayMs, signal);
       return { exitCode: 0, issues: [], stderr: "", events, resultSummary: "Die Aufgabe wurde im Simulationsmodus erfolgreich verarbeitet. Es wurde kein externes Modell gestartet." };
+    },
+    async runRole({ role, signal, simulationMode = "success", approvalSimulation = false }) {
+      if (!ROLES.has(role)) throw new Error("Unsupported mock workflow role.");
+      if (!isMockSimulationMode(simulationMode)) throw new Error("Unsupported simulation mode.");
+      const events = [{ type: "workflow_role", phase: role, status: "running", message: `${role} simulation started.` }];
+      await wait(stepDelayMs, signal);
+      if (simulationMode === "timeout" && role === "executor") await wait(stepDelayMs * 100, signal);
+      if ((simulationMode === "failure" || simulationMode === "failure_executor") && role === "executor") return { exitCode: 1, issues: [], stderr: "Controlled executor failure.", events, resultSummary: null };
+      if (simulationMode === "failure_reviewer" && role === "reviewer") return { exitCode: 1, issues: [], stderr: "Controlled reviewer failure.", events, resultSummary: null };
+      const summaries = {
+        planner: "Planer-Simulation: Ziel verstanden, sichere Schritte und Risiken bestimmt, erwartetes Mock-Ergebnis festgelegt.",
+        executor: "Ausführer-Simulation: Aufgabe im Mock-Modus verarbeitet. Keine externe KI und keine reale Aktion wurden ausgeführt.",
+        reviewer: "Prüfer-Simulation: Plan und Mock-Ausführung geprüft; Widersprüche und offene Punkte wurden begrenzt bewertet.",
+        synthesizer: approvalSimulation
+          ? "Freigabe wurde registriert. Der sichere Mock-Workflow wurde zusammengeführt. Die riskante Aktion wurde nicht real ausgeführt; alles war nur Simulation."
+          : "Zusammenführung: Der lokale Mock-Workflow wurde kompakt abgeschlossen. Alle Rollen und Ergebnisse waren ausschließlich Simulation."
+      };
+      events.push({ type: "workflow_role", phase: role, status: "succeeded", message: `${role} simulation completed.` });
+      return { exitCode: 0, issues: [], stderr: "", events, resultSummary: summaries[role] };
     }
   };
+  return adapter;
 }
 
 const productionMockAdapter = createMockAdapter();
 export const runMock = productionMockAdapter.run;
+export const runMockRole = productionMockAdapter.runRole;

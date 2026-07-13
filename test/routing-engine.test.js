@@ -23,7 +23,7 @@ test("task type allowlist is complete and deterministic", () => {
 
 test("route plan exposes only the fixed MVP schema", () => {
   assert.deepEqual(Object.keys(createRoutePlan("Analysiere Code ohne Änderungen.")), [
-    "taskType", "recommendedRoute", "executionAdapter", "reason", "complexity", "importance", "risk", "uncertainty", "estimatedUsage", "reviewRequired", "approvalRequired", "warnings"
+    "taskType", "recommendedRoute", "executionAdapter", "reason", "complexity", "importance", "risk", "uncertainty", "estimatedUsage", "reviewRequired", "approvalRequired", "warnings", "workflowType"
   ]);
   assert.equal(Object.isFrozen(TASK_TYPES), true);
 });
