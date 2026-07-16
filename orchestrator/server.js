@@ -6,6 +6,8 @@ import { RunService } from "./run-service.js";
 import { loadLatestRun } from "./run-store.js";
 import { loadCockpitStatus } from "./cockpit-status.js";
 import { readJsonBody, sendJson, sendText } from "./http-utils.js";
+import { buildResponse, errorPayload } from "./response-builder.js";
+import { RouterError } from "./contracts.js";
 
 const service = new RunService();
 const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_9-test.html");
@@ -18,26 +20,26 @@ const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url, "http://127.0.0.1");
     if (request.method === "GET" && url.pathname === "/") return sendText(response, 200, await fs.readFile(uiFile, "utf8"), "text/html; charset=utf-8");
-    if (request.method === "GET" && url.pathname === "/api/health") return sendJson(response, 200, { ok: true });
+    if (request.method === "GET" && url.pathname === "/api/health") return sendJson(response, 200, { ok: true, version: "0.10.0-test" });
     if (request.method === "POST" && url.pathname === "/api/runs") {
-      if (!isTrustedMutation(request)) return sendJson(response, 403, { error: "Untrusted local request." });
-      return sendJson(response, 202, await service.create(await readJsonBody(request)));
+      if (!isTrustedMutation(request)) return sendJson(response, 403, buildResponse(null, new RouterError("INVALID_REQUEST", "Untrusted local request.")));
+      return sendJson(response, 202, buildResponse(await service.create(await readJsonBody(request))));
     }
-    if (request.method === "GET" && url.pathname === "/api/runs/latest") return sendJson(response, 200, await loadLatestRun());
+    if (request.method === "GET" && url.pathname === "/api/runs/latest") return sendJson(response, 200, buildResponse(await loadLatestRun()));
     if (request.method === "GET" && url.pathname === "/api/cockpit-status") return sendJson(response, 200, await loadCockpitStatus());
     const match = url.pathname.match(/^\/api\/runs\/([^/]+)$/);
-    if (request.method === "GET" && match) return sendJson(response, 200, service.get(match[1]) || { error: "Run not found." });
+    if (request.method === "GET" && match) return sendJson(response, 200, buildResponse(service.get(match[1]), service.get(match[1]) ? null : new RouterError("RUN_NOT_FOUND", "Run not found.")));
     const cancelMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/cancel$/);
     if (request.method === "POST" && cancelMatch) {
-      if (!isTrustedMutation(request)) return sendJson(response, 403, { error: "Untrusted local request." });
-      const run = await service.cancel(cancelMatch[1]); return run ? sendJson(response, 200, run) : sendJson(response, 409, { error: "Run cannot be cancelled." });
+      if (!isTrustedMutation(request)) return sendJson(response, 403, buildResponse(null, new RouterError("INVALID_REQUEST", "Untrusted local request.")));
+      const run = await service.cancel(cancelMatch[1]); return run ? sendJson(response, 200, buildResponse(run)) : sendJson(response, 409, buildResponse(null, new RouterError("RUN_ALREADY_FINISHED", "Run cannot be cancelled.")));
     }
     const approvalMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/approval$/);
     if (request.method === "POST" && approvalMatch) {
-      if (!isTrustedMutation(request)) return sendJson(response, 403, { error: "Untrusted local request." });
-      return sendJson(response, 200, await service.decideApproval(approvalMatch[1], await readJsonBody(request)));
+      if (!isTrustedMutation(request)) return sendJson(response, 403, buildResponse(null, new RouterError("INVALID_REQUEST", "Untrusted local request.")));
+      return sendJson(response, 200, buildResponse(await service.decideApproval(approvalMatch[1], await readJsonBody(request))));
     }
-    return sendJson(response, 404, { error: "Not found." });
-  } catch (error) { return sendJson(response, 400, { error: error.message }); }
+    return sendJson(response, 404, buildResponse(null, new RouterError("INVALID_REQUEST", "Not found.")));
+  } catch (error) { return sendJson(response, 400, buildResponse(null, error)); }
 });
 server.listen(8787, "127.0.0.1", () => console.log("AI Router local server: http://127.0.0.1:8787"));

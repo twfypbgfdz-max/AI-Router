@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { COCKPIT_STATUS_FILE } from "./config.js";
+import { COCKPIT_STATUS_FILE, ROUTER_VERSION } from "./config.js";
 
 function summary(value, maximum = 280) {
   if (typeof value !== "string") return "";
@@ -17,28 +17,7 @@ export function projectCockpitStatus(run) {
   const steps = Array.isArray(workflow?.steps) ? workflow.steps : [];
   const current = steps.find((step) => step.id === workflow?.currentStep) || null;
   const reviewer = steps.find((step) => step.role === "reviewer") || null;
-  return {
-    routerStatus: run.status === "created" || run.status === "queued" ? "validating" : run.status,
-    runId: run.runId,
-    taskSummary: summary(run.task, 180),
-    route: [run.adapter === "mock" ? "mock" : "codex"],
-    startedAt: run.startedAt || "",
-    updatedAt: run.updatedAt,
-    resultSummary: summary(run.resultSummary),
-    risk: run.routePlan?.risk || "R0",
-    approvalRequired: run.approval ? run.approval.status === "pending" : run.routePlan?.approvalRequired === true,
-    approvalStatus: run.approval?.status || null,
-    actionSummary: summary(run.approvalContext?.plannedAction, 180),
-    reversible: run.approvalContext?.reversibility === "irreversible_or_limited" ? false : null,
-    workflowType: ["direct", "plan_execute", "plan_execute_review"].includes(workflow?.type) ? workflow.type : null,
-    currentRole: ["planner", "executor", "reviewer", "synthesizer"].includes(current?.role) ? current.role : null,
-    currentStep: summary(workflow?.currentStep, 40),
-    completedSteps: steps.filter((step) => step.status === "succeeded").length,
-    totalSteps: Math.min(steps.length, 4),
-    workflowStatus: ["pending", "running", "succeeded", "failed", "cancelled"].includes(workflow?.status) ? workflow.status : null,
-    reviewerRequired: !!reviewer,
-    reviewStatus: reviewer && ["pending", "running", "succeeded", "failed", "skipped", "cancelled"].includes(reviewer.status) ? reviewer.status : "not_required"
-  };
+  return { reachable: true, routerVersion: ROUTER_VERSION, lastRunStatus: run.status, activeOrWaitingRuns: ["created", "validating", "queued", "running", "awaiting_approval"].includes(run.status) ? 1 : 0, lastSuccessfulRunAt: run.status === "succeeded" ? run.finishedAt || run.updatedAt : null, lastSafeErrorCode: run.status === "timed_out" ? "STEP_TIMEOUT" : run.status === "failed" ? "ADAPTER_FAILED" : null, updatedAt: run.updatedAt };
 }
 
 export function createCockpitStatusStore({ file }) {

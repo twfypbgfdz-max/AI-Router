@@ -1,4 +1,4 @@
-const MODES = new Set(["success", "failure", "failure_executor", "failure_reviewer", "timeout"]);
+const MODES = new Set(["success", "failure", "failure_once", "failure_executor", "failure_reviewer", "timeout"]);
 const ROLES = new Set(["planner", "executor", "reviewer", "synthesizer"]);
 
 function abortError() {
@@ -53,12 +53,13 @@ export function createMockAdapter({ stepDelayMs = 1_100 } = {}) {
       await wait(stepDelayMs, signal);
       return { exitCode: 0, issues: [], stderr: "", events, resultSummary: "Die Aufgabe wurde im Simulationsmodus erfolgreich verarbeitet. Es wurde kein externes Modell gestartet." };
     },
-    async runRole({ role, signal, simulationMode = "success", approvalSimulation = false }) {
+    async runRole({ role, signal, simulationMode = "success", approvalSimulation = false, attempt = 1 }) {
       if (!ROLES.has(role)) throw new Error("Unsupported mock workflow role.");
       if (!isMockSimulationMode(simulationMode)) throw new Error("Unsupported simulation mode.");
       const events = [{ type: "workflow_role", phase: role, status: "running", message: `${role} simulation started.` }];
       await wait(stepDelayMs, signal);
       if (simulationMode === "timeout" && role === "executor") await wait(stepDelayMs * 100, signal);
+      if (simulationMode === "failure_once" && role === "executor" && attempt === 1) return { exitCode: 1, issues: [], stderr: "Controlled transient adapter failure.", events, resultSummary: null };
       if ((simulationMode === "failure" || simulationMode === "failure_executor") && role === "executor") return { exitCode: 1, issues: [], stderr: "Controlled executor failure.", events, resultSummary: null };
       if (simulationMode === "failure_reviewer" && role === "reviewer") return { exitCode: 1, issues: [], stderr: "Controlled reviewer failure.", events, resultSummary: null };
       const summaries = {

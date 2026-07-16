@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { DEFAULT_TIMEOUT_MS, MAX_EVENT_COUNT, MAX_RESULT_LENGTH, MAX_TASK_LENGTH, MOCK_TIMEOUT_MS, PROCESS_SETTLE_TIMEOUT_MS, REPOSITORY_ROOT } from "./config.js";
+import { DEFAULT_TIMEOUT_MS, MAX_EVENT_COUNT, MAX_RESULT_LENGTH, MOCK_TIMEOUT_MS, PROCESS_SETTLE_TIMEOUT_MS, REPOSITORY_ROOT } from "./config.js";
 import { captureGitState, compareGitState } from "./git-safety.js";
 import { resolveCodexExecutable, runCodex } from "./codex-adapter.js";
 import { saveRun } from "./run-store.js";
@@ -8,6 +8,8 @@ import { reduceEvents, sanitizeText } from "./jsonl.js";
 import { isMockSimulationMode, runMock, runMockRole } from "./mock-adapter.js";
 import { createApprovalContext, createRoutePlan } from "./routing-engine.js";
 import { cancelWorkflow, completeWorkflow, createWorkflow, failStep, nextPendingStep, startStep, succeedStep } from "./workflow-engine.js";
+import { normalizeRunRequest, RouterError } from "./contracts.js";
+import { logger as defaultLogger } from "./logger.js";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
 const ADAPTER_NAMES = new Set(["mock", "codex-cli"]);
@@ -20,23 +22,26 @@ function defaultAdapters() {
 }
 
 export class RunService {
-  constructor({ adapters, adapter, git = { captureGitState, compareGitState }, persist = saveRun, publish = saveCockpitStatus } = {}) {
+  constructor({ adapters, adapter, git = { captureGitState, compareGitState }, persist = saveRun, publish = saveCockpitStatus, logger = defaultLogger } = {}) {
     this.adapters = adapters || (adapter ? { "codex-cli": { resolveExecutable: adapter.resolveCodexExecutable, run: ({ repository, task, executable }) => adapter.runCodex({ repository, prompt: task, executable }) } } : defaultAdapters());
     this.defaultAdapter = adapter ? "codex-cli" : "mock";
-    this.git = git; this.persist = persist; this.publish = publish; this.runs = new Map(); this.operations = new Map(); this.activeRunId = null;
+    this.git = git; this.persist = persist; this.publish = publish; this.logger = logger; this.runs = new Map(); this.operations = new Map(); this.activeRunId = null;
   }
+  log(event, run, status, safeMetadata = {}) { return this.logger?.log?.({ event, requestId: run?.requestId || null, runId: run?.runId || null, workflowId: run?.workflow?.type || null, stepId: run?.workflow?.currentStep || null, status, safeMetadata }).catch(() => {}); }
   async update(run, status, fields = {}) {
     if (TERMINAL.has(run.status) && run.status !== status) throw new Error("Terminal run state cannot change.");
     run.status = status; Object.assign(run, fields, { updatedAt: new Date().toISOString() });
-    await this.persist(run); await this.publish(run); return run;
+    await this.persist(run); await this.publish(run); this.log(status === "failed" ? "run_failed" : (TERMINAL.has(status) ? "run_completed" : "workflow_started"), run, status); return run;
   }
-  async create({ task, repository = REPOSITORY_ROOT, adapter, simulationMode } = {}) {
-    if (typeof task !== "string" || !task.trim() || task.length > MAX_TASK_LENGTH) throw new Error("Task must be a non-empty bounded string.");
-    const routePlan = createRoutePlan(task);
-    let adapterName = adapter || this.defaultAdapter;
+  async create(input = {}) {
+    const request = normalizeRunRequest({ ...input, requestedAdapter: input.requestedAdapter ?? input.adapter ?? this.defaultAdapter });
+    const { task, repository = REPOSITORY_ROOT } = input;
+    const routePlan = createRoutePlan(request.task);
+    let adapterName = request.requestedAdapter || this.defaultAdapter;
     if (!ADAPTER_NAMES.has(adapterName) || !this.adapters[adapterName]) throw new Error("Unsupported adapter.");
-    if (adapterName === "mock" && simulationMode !== undefined && !isMockSimulationMode(simulationMode)) throw new Error("Unsupported simulation mode.");
-    if (adapterName !== "mock" && simulationMode !== undefined) throw new Error("Simulation mode is only available for the mock adapter.");
+    const simulationMode = request.options.simulationMode;
+    if (adapterName === "mock" && simulationMode !== undefined && !isMockSimulationMode(simulationMode)) throw new RouterError("INVALID_REQUEST", "Unsupported simulation mode.");
+    if (adapterName !== "mock" && simulationMode !== undefined) throw new RouterError("INVALID_REQUEST", "Simulation mode is only available for the mock adapter.");
     if (routePlan.approvalRequired && adapterName !== "mock") {
       adapterName = "mock";
       routePlan.warnings.push("Der angeforderte Adapter wurde wegen des Freigabe-Gates durch eine reine Simulation ersetzt.");
@@ -46,11 +51,11 @@ export class RunService {
     const mode = adapterName === "mock" ? (simulationMode || "success") : null;
     const timeoutMs = adapterName === "mock" && mode === "timeout" ? MOCK_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
     const createdAt = new Date().toISOString();
-    const approvalContext = createApprovalContext(task, routePlan);
+    const approvalContext = createApprovalContext(request.task, routePlan);
     const approval = routePlan.approvalRequired ? { required: true, status: "pending", requestedAt: createdAt, decidedAt: null, decision: null, decisionNote: "", approvedAction: "", consumed: false } : null;
     const workflow = createWorkflow(routePlan);
     if (mode === "failure_reviewer" && !workflow.steps.some((step) => step.role === "reviewer")) throw new Error("Reviewer failure simulation requires a reviewer workflow.");
-    const run = { runId: `run_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`, createdAt, updatedAt: createdAt, task: task.trim(), repository, branchBefore: null, branchAfter: null, gitStatusBefore: null, gitStatusAfter: null, adapter: adapterName, simulationMode: mode, executable: null, mode: "read-only", status: "created", startedAt: null, finishedAt: null, timeoutMs, exitCode: null, resultSummary: null, errorSummary: null, usage: null, events: [], warnings: [...routePlan.warnings], routePlan, approvalContext, approval, approvalSimulation: false, workflow };
+    const run = { runId: `run_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`, ...request, createdAt, updatedAt: createdAt, task: request.task, repository, branchBefore: null, branchAfter: null, gitStatusBefore: null, gitStatusAfter: null, adapter: adapterName, simulationMode: mode, executable: null, mode: "read-only", status: "created", startedAt: null, finishedAt: null, timeoutMs, exitCode: null, resultSummary: null, errorSummary: null, usage: null, events: [], retry: { count: 0, maxAttempts: 2, lastReason: null }, warnings: [...routePlan.warnings], routePlan, approvalContext, approval, approvalSimulation: false, workflow };
     this.activeRunId = run.runId;
     this.runs.set(run.runId, run);
     try { await this.persist(run); await this.publish(run); }
@@ -59,6 +64,7 @@ export class RunService {
       if (this.activeRunId === run.runId) this.activeRunId = null;
       throw error;
     }
+    this.log("request_received", run, "created");
     this.execute(run).finally(() => { if (this.activeRunId === run.runId) this.activeRunId = null; });
     return run;
   }
@@ -140,32 +146,41 @@ export class RunService {
         if (run.cancelRequested) return run;
         startStep(run.workflow, step.id);
         await this.update(run, "running");
-        const abortController = new AbortController();
         const runRole = adapter.runRole || ((options) => adapter.run({ ...options, workflowRole: options.role }));
-        const operation = runRole({ role: step.role, task: run.task, runId: run.runId, signal: abortController.signal, simulationMode: approvalSimulation ? "success" : run.simulationMode, approvalSimulation });
-        operation.cancel = async () => { abortController.abort(); return { outcome: "abort_requested" }; };
-        this.operations.set(run.runId, operation);
-        let timer;
-        const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve({ timeout: true }), run.timeoutMs); });
-        let result;
-        try { result = await Promise.race([operation, timeout]); }
-        catch (error) {
-          if (run.cancelRequested) return run;
-          result = { exitCode: 1, issues: [], stderr: error.message, events: [], resultSummary: null };
-        } finally { clearTimeout(timer); this.operations.delete(run.runId); }
+        let result; let operation;
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+          const abortController = new AbortController();
+          operation = runRole({ role: step.role, task: run.task, runId: run.runId, signal: abortController.signal, simulationMode: approvalSimulation ? "success" : run.simulationMode, approvalSimulation, attempt });
+          operation.cancel = async () => { abortController.abort(); return { outcome: "abort_requested" }; };
+          this.operations.set(run.runId, operation);
+          let timer;
+          const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve({ timeout: true }), run.timeoutMs); });
+          try { result = await Promise.race([operation, timeout]); }
+          catch (error) { if (run.cancelRequested) return run; result = { exitCode: 1, issues: [], stderr: error.message, events: [], resultSummary: null }; }
+          finally { clearTimeout(timer); this.operations.delete(run.runId); }
+          if (result?.timeout || (result.exitCode === 0 && !result.issues?.length && result.resultSummary)) break;
+          if (attempt === 1) {
+            run.retry.count += 1; run.retry.lastReason = "adapter_failed";
+            this.log("step_failed", run, "retrying", { retry: "1" });
+            await this.update(run, "running");
+          }
+        }
 
         if (result?.timeout) {
           await operation.cancel();
           failStep(run.workflow, step.id, "Workflow step exceeded timeout.");
+          this.log("step_failed", run, "timed_out");
           return this.update(run, "timed_out", { finishedAt: new Date().toISOString(), errorSummary: `Workflow step timed out: ${step.role}.` });
         }
         const safeEvents = [...run.events, ...reduceEvents(result.events)].slice(-MAX_EVENT_COUNT);
         if (result.exitCode !== 0 || result.issues?.length || !result.resultSummary) {
           const errorSummary = sanitizeText(result.stderr || result.issues?.join(", ") || "Workflow step produced no result.", 500);
           failStep(run.workflow, step.id, errorSummary);
+          this.log("step_failed", run, "failed");
           return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorSummary, events: safeEvents });
         }
         succeedStep(run.workflow, step.id, result.resultSummary);
+        this.log("step_completed", run, "succeeded");
         finalSummary = result.resultSummary;
         await this.update(run, "running", { events: safeEvents });
         step = nextPendingStep(run.workflow);

@@ -9,11 +9,17 @@ async function atomicWrite(file, value) {
   await fs.rename(temporary, file);
 }
 
+function persistentRun(run) {
+  const { task, context, repository, executable, gitBefore, approvalContext, ...safe } = run;
+  return safe;
+}
+
 export function createRunStore({ runsDir, latestRunFile }) {
   return {
     async saveRun(run) {
-      await atomicWrite(path.join(runsDir, `${run.runId}.json`), run);
-      await atomicWrite(latestRunFile, run);
+      const safe = persistentRun(run);
+      await atomicWrite(path.join(runsDir, `${run.runId}.json`), safe);
+      await atomicWrite(latestRunFile, safe);
     },
     async loadRun(runId) {
       return JSON.parse(await fs.readFile(path.join(runsDir, `${runId}.json`), "utf8"));

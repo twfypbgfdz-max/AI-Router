@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.10.0-test
+
+- Zentralen Request-Vertrag, Allowlists, Groessenlimits und kontrollierte Fehlercodes eingefuehrt.
+- Einheitlichen, datensparsamen API-Response-Builder fuer Erfolg und Fehler ergaenzt.
+- Run-Persistenz von Prompt, Kontext, Pfaden und Approval-Kontext bereinigt; strukturiertes, rotierendes Ereignislogging ergaenzt.
+- Kontrollierten einmaligen Retry fuer technische Mock-Schrittfehler hinzugefuegt.
+- Read-only-Cockpit-Status auf sichere Betriebsdaten ohne Aufgaben- oder Freigabeinhalte begrenzt.
+- Vertrags-, Response-, Persistenz- und Retry-Tests ergaenzt; reale Aktionen bleiben nicht implementiert.
+
 ## v0.9.0-test
 
 - Deterministische Workflow-Typen `direct`, `plan_execute` und `plan_execute_review` ergaenzt.

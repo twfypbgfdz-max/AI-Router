@@ -4,11 +4,43 @@ Lokale HTML-Test-App zur einfachen Empfehlung eines passenden KI-Tools fuer eine
 
 ## Version
 
-Aktuelle Testversion: `v0.9.0-test`
+Aktuelle Testversion: `v0.10.0-test`
+
+## Vertrags- und Sicherheitsbasis v0.10
+
+`POST /api/runs` normalisiert Eingaben auf Schema `1`: `requestId`, `task`,
+`project`, `requestedMode`, `requestedAdapter`, `source`, `context`, `options`
+und `createdAt`. `task` ist Pflicht; unbekannte Felder werden verworfen.
+Erlaubt sind nur die Adapter `mock` und `codex-cli`, die Modi `simulation` und
+`read-only`, die Quellen `ui`, `api`, `cockpit`, `local` sowie die sicheren
+Action-Typen Analyse, Planung, Pruefung, Zusammenfuehrung, Simulation und
+Read-only-Codex. Andere Werte werden mit einem kontrollierten Fehler abgelehnt.
+
+Alle API-Antworten verwenden ein gemeinsames Grundformat mit `schemaVersion`,
+`requestId`, `runId`, `status`, `success`, `routePlan`, `workflow`, `result`,
+`error`, `warnings` und Zeitstempeln. `result` und `error` sind gegenseitig
+ausschliessend. Fehler enthalten nur Code, sichere Nachricht, Retry-Hinweis,
+sichere Details und Zeitstempel; keine Stacktraces oder lokalen Pfade.
+
+Run-Dateien speichern keine Aufgaben, Kontexte, Repository-Pfade,
+Ausfuehrungsdateien oder Approval-Kontexte. Strukturierte Ereignislogs liegen
+nicht versioniert unter `.ai-router-data/router-events.jsonl`; sie enthalten
+keine Prompt-Volltexte, Secrets, Datei-Inhalte oder Tool-Ausgaben und werden
+bei etwa 512 KB einfach rotiert.
+
+Bei einem technischen Mock-Schrittfehler erfolgt genau ein Retry. Validierung,
+Allowlist-Ablehnungen, Timeouts und fehlende Freigaben werden nicht wiederholt.
+Der Retry-Zaehler und die Ursache stehen im Run. Das Freigabe-Gate bleibt auch
+beim Retry unveraendert: Es startet ausschliesslich die sichere Mock-Simulation.
+
+`GET /api/cockpit-status` ist bewusst nur lesend. Es liefert Erreichbarkeit,
+Router-Version, letzten Run-Status, aktive/wartende Runs, Zeitpunkt des letzten
+Erfolgs und den letzten sicheren Fehlercode – keine Aufgabe, Prompts,
+Tool-Ausgaben oder Freigabesteuerung.
 
 ## Lokaler Read-only-Codex-MVP
 
-`npm start` startet den aktuellen MVP-Teststand `v0.9.0-test` als lokalen
+`npm start` startet den aktuellen MVP-Teststand `v0.10.0-test` als lokalen
 Node-Server auf `http://127.0.0.1:8787`. `npm test` fuehrt die automatisierten
 Tests aus. Es gibt keine npm-Abhaengigkeiten; Node und die npm-Skripte werden
 dennoch fuer Start und Tests verwendet.
