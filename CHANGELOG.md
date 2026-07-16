@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.12.0-test
+
+- Sichere, begrenzte Run-Historie ergaenzt: zentrale Metadaten-Projektion (`run-summary.js`), bounded Index (`run-history.json`, max. 200), `GET /api/history` mit neueste-zuerst-Sortierung, Limit/Offset und Filtern nach Status, Adapter und Zeitraum sowie sichere Detailansicht `GET /api/history/:id`.
+- Einheitlichen Health-Endpunkt `GET /api/health` mit Service-, Adapter-, Speicher- und Logging-Status, Uptime und sicheren Betriebszaehlern eingefuehrt.
+- Sicheren Diagnose-Endpunkt `GET /api/diagnostics` mit zusammengefassten Betriebsdaten (Runs nach Status, Fehler nach sicherem Code, Durchschnittsdauer, Retries, Timeouts, Abbrueche, grobe Loggroessenklasse) ohne Rohlogs, Pfade oder Schreibfunktion ergaenzt.
+- Kontrollierten Adapter-Verfuegbarkeits-Monitor (`adapter-status.js`) mit Zustaenden `unchecked`/`checking`/`available`/`unavailable`/`unsupported`, kurzer Cache-Dauer (60 s), geteiltem In-Flight-Check und manueller Neupruefung `POST /api/adapters/check` hinzugefuegt.
+- Cockpit-Schnittstelle als stabilen, rein lesenden Vertrag finalisiert (`reachable`, `serviceStatus`, `version`, `activeRuns`, `awaitingApprovalRuns`, `lastSuccessfulRunAt`, `lastSafeErrorCode`, `mockAvailable`, `codexReadOnlyStatus`, `checkedAt`); Feldnamen gegenueber v0.11 umbenannt.
+- Logging-Schicht um sichere Betriebs-Events und eine pfadfreie Log-Health-Auskunft (Vorhandensein, grobe Groessenklasse, Status) erweitert.
+- Betriebsoberflaeche `ai-router-v0_12-test.html` mit Betriebsuebersicht, Run-Historie, Filtern, sicherer Detailansicht, deutschen Statuslabels und sicheren Fehlererklaerungen ergaenzt; Server liefert diese UI aus.
+- Abbruch weiter gehaertet und getestet: nur erlaubte Zustaende, idempotent, kein Retry nach Abbruch, Read-only-Nachkontrolle bei echten Laeufen, mit sicheren Cancel-Events.
+- Resilienz gegen beschaedigten Run-Store, nicht beschreibbaren Datenordner und Logging-Ausfall ergaenzt: sicherer eingeschraenkter Modus statt Absturz, keine erfundenen Daten, kein automatisches Loeschen.
+- Umfangreiche Tests fuer Health, Diagnose, Cockpit-Vertrag, Adapterstatus/Cache, Historie, Filter, sichere Detailansicht, unbekannte Run-ID, Datensparsamkeit in Historie/Diagnose/Logs sowie Resilienz ergaenzt.
+- Keine neuen echten Anbieter, keine externen Aktionen und keine neuen npm-Abhaengigkeiten. Der echte Codex-End-to-End-Test bleibt deaktiviert und wurde nicht ausgefuehrt.
+
 ## v0.11.0-test
 
 - Zentralen, wiederverwendbaren Adaptervertrag (`adapter-contract.js`) fuer Ein- und Ausgaben eingefuehrt; keine zweite parallele Adapterstruktur.

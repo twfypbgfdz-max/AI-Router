@@ -4,7 +4,86 @@ Lokale HTML-Test-App zur einfachen Empfehlung eines passenden KI-Tools fuer eine
 
 ## Version
 
-Aktuelle Testversion: `v0.11.0-test`
+Aktuelle Testversion: `v0.12.0-test`
+
+## Betrieb, Diagnose und Transparenz v0.12
+
+v0.12 macht den Router lokal besser ueberpruefbar, ohne neue echte Anbieter
+oder riskante Aktionen. Es wurden keine Claude-, ChatGPT- oder Gemini-APIs und
+keine externen Aktionen ergaenzt.
+
+**Sichtbare Betriebsdaten (bewusst begrenzt):** Pro Run werden ausschliesslich
+sichere Metadaten angezeigt und indiziert: `runId`, `requestId`, `schemaVersion`,
+`route`, `adapter`, `workflowType`, `status`, `success`, `riskLevel`,
+`approvalState`, `retryCount`, `startedAt`, `finishedAt`, `durationMs`,
+`safeErrorCode`, `warningsCount` und `resultAvailable` (Boolean).
+
+**Bewusst nicht sichtbar/gespeichert:** Aufgaben-Volltext, Rohprompts,
+vollstaendige Kontextdaten, Datei-Inhalte, stdout, stderr, lokale Pfade,
+Secrets, Tokens und vollstaendige Tool-Ausgaben. Die zentrale Projektion
+`orchestrator/run-summary.js` ist die einzige Run-Darstellung, die den Prozess
+fuer Historie, Detailansicht und Diagnose verlaesst.
+
+**Health (`GET /api/health`):** liefert `serviceStatus`, `version`,
+`schemaVersion`, `uptimeSeconds`, `serverTime`, `activeRuns`,
+`awaitingApprovalRuns`, `queuedRuns`, `lastSuccessfulRunAt`, `lastFailedRunAt`,
+`lastSafeErrorCode`, `adapterStatus`, `storageStatus` und `loggingStatus`. Der
+Service gilt als `degraded`, sobald Speicher oder Logging nicht `ok` sind.
+
+**Diagnose (`GET /api/diagnostics`):** liefert nur zusammengefasste
+Betriebsdaten – Version/Schema, Runs nach Status, Fehler nach sicherem
+Fehlercode, durchschnittliche Dauer, Retries, Timeouts, Abbrueche,
+Log-Vorhandensein, grobe Loggroessenklasse (`none`/`small`/`medium`/`large`,
+keine exakte Groesse, kein Pfad), Run-Store-Verfuegbarkeit und Adapterstatus.
+Keine Rohlogs, kein Log-Download, keine Pfade, keine Schreibfunktion.
+
+**Run-Historie (`GET /api/history`, `GET /api/history/:id`):** neueste zuerst,
+mit `limit`/`offset` und Filtern nach `status`, `adapter` sowie Zeitraum
+(`since`/`until`). Die Historie wird auf `MAX_HISTORY_RUNS` (200) im Index
+begrenzt; aeltere Eintraege fallen nur aus dem Index, es werden keine Run-Dateien
+geloescht. Ein Standardlimit von 25 und ein Maximallimit von 100 gelten pro
+Abfrage. Unbekannte Run-IDs werden mit einem kontrollierten `RUN_NOT_FOUND`
+beantwortet.
+
+**Adapter-Verfuegbarkeit:** Die Zustaende sind `unchecked`, `checking`,
+`available`, `unavailable` und `unsupported`. Die Codex-Pruefung wird nicht bei
+jedem Seitenaufruf teuer wiederholt, sondern hoechstens einmal je Cache-Fenster
+(`ADAPTER_STATUS_CACHE_MS` = 60 Sekunden); gleichzeitige Pruefungen teilen sich
+einen Lauf. Eine manuelle erneute Pruefung ist ueber `POST /api/adapters/check`
+moeglich. Es erfolgt keine Installation und keine Konfigurationsaenderung. Der
+Mock-Adapter gilt nur bei valider interner Konfiguration als `available`.
+
+**Cockpit-Vertrag (`GET /api/cockpit-status`):** stabil und rein lesend. Er
+liefert genau `reachable`, `serviceStatus`, `version`, `activeRuns`,
+`awaitingApprovalRuns`, `lastSuccessfulRunAt`, `lastSafeErrorCode`,
+`mockAvailable`, `codexReadOnlyStatus` und `checkedAt`. Er liefert keine
+Run-Listen, Aufgabeninhalte, Prompts, Ergebnisse, Logs, Approval- oder
+Abbruchsteuerung und keinen Schreibzugriff. Hinweis: Die Feldnamen dieses
+Vertrags wurden gegenueber v0.11 (`routerVersion`, `lastRunStatus`,
+`activeOrWaitingRuns`, `updatedAt`) auf die hier genannten Namen umgestellt.
+
+**Logging:** Zusaetzliche sichere Betriebs-Events (u. a. `server_started`,
+`health_checked`, `diagnostics_checked`, `adapter_check_*`, `run_listed`,
+`run_details_viewed`, `run_cancel_*`). Logs enthalten weiterhin keine
+Tasktexte, Prompts, Datei-Inhalte, stdout/stderr, Secrets, lokalen Pfade oder
+vollstaendigen Header; Werte werden maskiert. Die Logdatei rotiert bei etwa
+512 KB.
+
+**Datenhaltung und Fehlerfaelle:** Bei beschaedigtem Run-Store, nicht
+beschreibbarem Datenordner oder Logging-Ausfall stuerzt der Router nicht ab. Er
+liefert einen sicheren, ehrlichen Status (`degraded`/`unavailable`), erfindet
+keine Daten und laeuft, soweit moeglich, im eingeschraenkten Modus weiter. Es
+gibt keine automatische aggressive Bereinigung und kein Loeschen von Dateien.
+
+### Bekannte Grenzen v0.12
+
+- Health, Cockpit und Snapshot spiegeln die Live-Daten des aktuellen
+  Prozesses; die Diagnose-Aggregate stammen aus dem persistierten, begrenzten
+  History-Index und ueberdauern Neustarts.
+- Der Cockpit-`serviceStatus` ist ein minimaler Lebenszeichenwert; die
+  autoritative Degradationsbewertung liefert `GET /api/health`.
+- Ein echter Codex-End-to-End-Lauf bleibt standardmaessig deaktiviert und wurde
+  auch in v0.12 nicht ausgefuehrt.
 
 ## Vertrags- und Sicherheitsbasis v0.10
 
@@ -100,10 +179,11 @@ zuverlaessig; das ist in v0.11 behoben.
 
 ## Lokaler Read-only-Codex-MVP
 
-`npm start` startet den aktuellen MVP-Teststand `v0.10.0-test` als lokalen
-Node-Server auf `http://127.0.0.1:8787`. `npm test` fuehrt die automatisierten
-Tests aus. Es gibt keine npm-Abhaengigkeiten; Node und die npm-Skripte werden
-dennoch fuer Start und Tests verwendet.
+`npm start` startet den aktuellen MVP-Teststand `v0.12.0-test` als lokalen
+Node-Server auf `http://127.0.0.1:8787` und liefert die Betriebsoberflaeche
+`ai-router-v0_12-test.html`. `npm test` fuehrt die automatisierten Tests aus. Es
+gibt keine npm-Abhaengigkeiten; Node und die npm-Skripte werden dennoch fuer
+Start und Tests verwendet.
 Der MVP kann eine Analyseaufgabe entweder kontrolliert simulieren oder nach
 bewusster Auswahl an die lokale Codex-CLI senden. Die Codex-Ausfuehrung ist
 fest auf `read-only` begrenzt, verwendet keine Websuche und akzeptiert nur

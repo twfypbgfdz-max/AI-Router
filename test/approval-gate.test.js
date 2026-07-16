@@ -74,9 +74,11 @@ test("approval is bound to one run, consumed once and starts only safe mock simu
   assert.equal(completed.workflow.status, "succeeded");
   assert.deepEqual(completed.workflow.steps.map((step) => step.role), ["planner", "executor", "reviewer", "synthesizer"]);
   assert.ok(fixture.states.includes("queued") && fixture.states.includes("running") && fixture.states.includes("succeeded"));
-  const cockpit = projectCockpitStatus(completed);
-  assert.equal(cockpit.lastRunStatus, "succeeded");
+  const cockpit = projectCockpitStatus(fixture.service.cockpitContext());
+  assert.equal(cockpit.reachable, true);
+  assert.equal(cockpit.serviceStatus, "ok");
   assert.equal(JSON.stringify(cockpit).includes("approval"), false);
+  assert.equal(JSON.stringify(cockpit).includes("private"), false);
   await assert.rejects(fixture.service.decideApproval(waiting.runId, { decision: "approve" }), /not awaiting approval|already been consumed/);
   await assert.rejects(fixture.service.decideApproval(waiting.runId, { decision: "reject" }), /not awaiting approval|already been consumed/);
 });

@@ -11,8 +11,12 @@ import { createApprovalContext, createRoutePlan } from "./routing-engine.js";
 import { cancelWorkflow, completeWorkflow, createWorkflow, failStep, nextPendingStep, startStep, succeedStep } from "./workflow-engine.js";
 import { normalizeRunRequest, RouterError } from "./contracts.js";
 import { logger as defaultLogger } from "./logger.js";
+import { ERROR_CODES } from "./policy.js";
+import { createAdapterStatusMonitor } from "./adapter-status.js";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
+const ACTIVE = new Set(["validating", "queued", "running"]);
+const FAILED = new Set(["failed", "timed_out"]);
 const ADAPTER_NAMES = new Set(["mock", "codex-cli"]);
 const CODEX_START_RETRY_ERROR_CODE = "CODEX_PROCESS_START_FAILED";
 
@@ -39,12 +43,38 @@ function defaultAdapters() {
 }
 
 export class RunService {
-  constructor({ adapters, adapter, git = { captureGitState, compareGitState }, persist = saveRun, publish = saveCockpitStatus, logger = defaultLogger } = {}) {
+  constructor({ adapters, adapter, git = { captureGitState, compareGitState }, persist = saveRun, publish = saveCockpitStatus, logger = defaultLogger, adapterStatus } = {}) {
     this.adapters = adapters || (adapter ? { "codex-cli": { resolveExecutable: adapter.resolveCodexExecutable, run: ({ repository, task, executable }) => adapter.runCodex({ repository, prompt: task, executable }) } } : defaultAdapters());
     this.defaultAdapter = adapter ? "codex-cli" : "mock";
     this.git = git; this.persist = persist; this.publish = publish; this.logger = logger; this.runs = new Map(); this.operations = new Map(); this.activeRunId = null;
+    this.adapterStatus = adapterStatus || createAdapterStatusMonitor();
   }
   log(event, run, status, safeMetadata = {}) { return this.logger?.log?.({ event, requestId: run?.requestId || null, runId: run?.runId || null, workflowId: run?.workflow?.type || null, stepId: run?.workflow?.currentStep || null, status, safeMetadata }).catch(() => {}); }
+  // Live, in-memory operational snapshot for this process. Safe counters and
+  // timestamps only — no task content, prompts, paths or raw errors.
+  snapshot() {
+    const runs = [...this.runs.values()];
+    const byFinishedDesc = (a, b) => (Date.parse(b.finishedAt || "") || 0) - (Date.parse(a.finishedAt || "") || 0);
+    const lastFailed = runs.filter((run) => FAILED.has(run.status) && run.finishedAt).sort(byFinishedDesc)[0] || null;
+    const lastSuccess = runs.filter((run) => run.status === "succeeded" && run.finishedAt).sort(byFinishedDesc)[0] || null;
+    const lastCode = lastFailed ? (ERROR_CODES.includes(lastFailed.errorCode) ? lastFailed.errorCode : (lastFailed.status === "timed_out" ? "STEP_TIMEOUT" : "ADAPTER_FAILED")) : null;
+    return {
+      serviceStatus: "ok",
+      activeRuns: runs.filter((run) => ACTIVE.has(run.status)).length,
+      queuedRuns: runs.filter((run) => run.status === "queued").length,
+      awaitingApprovalRuns: runs.filter((run) => run.status === "awaiting_approval").length,
+      lastSuccessfulRunAt: lastSuccess?.finishedAt || null,
+      lastFailedRunAt: lastFailed?.finishedAt || null,
+      lastSafeErrorCode: lastCode
+    };
+  }
+  // Context for the read-only cockpit contract. Uses only the cached adapter
+  // status (never triggers a fresh probe from a normal run update).
+  cockpitContext() {
+    const snapshot = this.snapshot();
+    const adapterStatus = this.adapterStatus.current();
+    return { ...snapshot, adapterStatus, checkedAt: adapterStatus["codex-cli"]?.checkedAt || new Date().toISOString() };
+  }
   async update(run, status, fields = {}) {
     if (TERMINAL.has(run.status) && run.status !== status) throw new Error("Terminal run state cannot change.");
     run.status = status; Object.assign(run, fields, { updatedAt: new Date().toISOString() });
@@ -52,7 +82,7 @@ export class RunService {
       const output = buildAdapterOutput({ adapter: run.adapter, status, success: status === "succeeded", exitCode: Number.isFinite(run.exitCode) ? run.exitCode : null, startedAt: run.startedAt, finishedAt: run.finishedAt, retryable: false, warnings: run.warnings });
       run.durationMs = output.durationMs;
     }
-    await this.persist(run); await this.publish(run); this.log(status === "failed" ? "run_failed" : (TERMINAL.has(status) ? "run_completed" : "workflow_started"), run, status); return run;
+    await this.persist(run); await this.publish(this.cockpitContext()); this.log(status === "failed" ? "run_failed" : (TERMINAL.has(status) ? "run_completed" : "workflow_started"), run, status); return run;
   }
   async create(input = {}) {
     const request = normalizeRunRequest({ ...input, requestedAdapter: input.requestedAdapter ?? input.adapter ?? this.defaultAdapter });
@@ -79,7 +109,7 @@ export class RunService {
     const run = { runId: `run_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`, ...request, createdAt, updatedAt: createdAt, task: request.task, repository, branchBefore: null, branchAfter: null, gitStatusBefore: null, gitStatusAfter: null, adapter: adapterName, simulationMode: mode, executable: null, mode: "read-only", status: "created", startedAt: null, finishedAt: null, durationMs: null, timeoutMs, exitCode: null, resultSummary: null, errorCode: null, errorSummary: null, usage: null, events: [], retry: { count: 0, maxAttempts: 2, lastReason: null }, warnings: [...routePlan.warnings], routePlan, approvalContext, approval, approvalSimulation: false, workflow };
     this.activeRunId = run.runId;
     this.runs.set(run.runId, run);
-    try { await this.persist(run); await this.publish(run); }
+    try { await this.persist(run); await this.publish(this.cockpitContext()); }
     catch (error) {
       this.runs.delete(run.runId);
       if (this.activeRunId === run.runId) this.activeRunId = null;
@@ -260,14 +290,19 @@ export class RunService {
   }
   async cancel(runId) {
     const run = this.get(runId);
-    if (!run || !["validating", "queued", "running"].includes(run.status)) return null;
+    // Only running or waiting runs are cancellable; finished runs are immutable.
+    // Returning null here keeps repeated cancels idempotent.
+    if (!run || !ACTIVE.has(run.status)) return null;
+    this.log("run_cancel_requested", run, run.status);
     const operation = this.operations.get(runId);
     run.cancelRequested = true;
     const isMockRun = run.adapter === "mock";
     const kill = await operation?.cancel?.();
     if (!operation) {
-      if (isMockRun && run.workflow) { cancelWorkflow(run.workflow); return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), resultSummary: "Mock-Workflow abgebrochen. Es wurde keine reale Aktion ausgeführt.", errorSummary: null }); }
-      return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), errorSummary: "Cancelled by user before the adapter started." });
+      if (isMockRun && run.workflow) { cancelWorkflow(run.workflow); const done = await this.update(run, "cancelled", { finishedAt: new Date().toISOString(), resultSummary: "Mock-Workflow abgebrochen. Es wurde keine reale Aktion ausgeführt.", errorSummary: null }); this.log("run_cancel_completed", run, "cancelled"); return done; }
+      const done = await this.update(run, "cancelled", { finishedAt: new Date().toISOString(), errorSummary: "Cancelled by user before the adapter started." });
+      this.log("run_cancel_completed", run, "cancelled");
+      return done;
     }
     await Promise.race([
       operation.catch(() => null),
@@ -275,12 +310,17 @@ export class RunService {
     ]);
     if (isMockRun) {
       if (run.workflow) cancelWorkflow(run.workflow);
-      return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), resultSummary: run.approvalSimulation ? "Freigabe-Simulation abgebrochen. Es wurde keine Aktion ausgeführt." : "Mock-Workflow abgebrochen. Es wurde keine reale Aktion ausgeführt.", errorSummary: null });
+      const done = await this.update(run, "cancelled", { finishedAt: new Date().toISOString(), resultSummary: run.approvalSimulation ? "Freigabe-Simulation abgebrochen. Es wurde keine Aktion ausgeführt." : "Mock-Workflow abgebrochen. Es wurde keine reale Aktion ausgeführt.", errorSummary: null });
+      this.log("run_cancel_completed", run, "cancelled");
+      return done;
     }
+    // Read-only post-check is preserved even on cancellation of a real run.
     const after = await this.git.captureGitState(run.repository);
     run.branchAfter = after.branch; run.gitStatusAfter = after.status;
     const integrity = this.git.compareGitState(run.gitBefore, after);
-    if (!integrity.safe) return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorCode: "READ_ONLY_VIOLATION_DETECTED", errorSummary: `Read-only integrity check failed after cancellation: ${integrity.changed.join(", ")}` });
-    return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), errorSummary: sanitizeText(`Cancelled by user. ${kill?.outcome || "kill_not_needed"}`, 300) });
+    if (!integrity.safe) { const failed = await this.update(run, "failed", { finishedAt: new Date().toISOString(), errorCode: "READ_ONLY_VIOLATION_DETECTED", errorSummary: `Read-only integrity check failed after cancellation: ${integrity.changed.join(", ")}` }); this.log("run_cancel_failed", run, "failed"); return failed; }
+    const done = await this.update(run, "cancelled", { finishedAt: new Date().toISOString(), errorSummary: sanitizeText(`Cancelled by user. ${kill?.outcome || "kill_not_needed"}`, 300) });
+    this.log("run_cancel_completed", run, "cancelled");
+    return done;
   }
 }
