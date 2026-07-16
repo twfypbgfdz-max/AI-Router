@@ -1,7 +1,7 @@
 import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { REPOSITORY_ROOT } from "./config.js";
+import { REPOSITORY_ROOT, ROUTER_VERSION } from "./config.js";
 import { RunService } from "./run-service.js";
 import { loadLatestRun } from "./run-store.js";
 import { loadCockpitStatus } from "./cockpit-status.js";
@@ -20,7 +20,7 @@ const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url, "http://127.0.0.1");
     if (request.method === "GET" && url.pathname === "/") return sendText(response, 200, await fs.readFile(uiFile, "utf8"), "text/html; charset=utf-8");
-    if (request.method === "GET" && url.pathname === "/api/health") return sendJson(response, 200, { ok: true, version: "0.10.0-test" });
+    if (request.method === "GET" && url.pathname === "/api/health") return sendJson(response, 200, { ok: true, version: ROUTER_VERSION });
     if (request.method === "POST" && url.pathname === "/api/runs") {
       if (!isTrustedMutation(request)) return sendJson(response, 403, buildResponse(null, new RouterError("INVALID_REQUEST", "Untrusted local request.")));
       return sendJson(response, 202, buildResponse(await service.create(await readJsonBody(request))));

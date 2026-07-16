@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.11.0-test
+
+- Zentralen, wiederverwendbaren Adaptervertrag (`adapter-contract.js`) fuer Ein- und Ausgaben eingefuehrt; keine zweite parallele Adapterstruktur.
+- Codex-CLI-Erkennung um eine Versionspruefung erweitert; `CODEX_CLI_NOT_FOUND` und `CODEX_CLI_UNSUPPORTED` als eigene, sichere Fehlercodes ergaenzt.
+- Arbeitsverzeichnis-Pruefung auf `WORKING_DIRECTORY_NOT_ALLOWED` vereinheitlicht; nicht existierende Pfade, Traversal und Junctions/Symlinks ausserhalb der Allowlist werden ohne Pfadleck abgelehnt.
+- Kindprozess-Umgebung des Codex-Prozesses auf eine feste Allowlist begrenzt; beliebige Secrets aus der Server-Umgebung werden nicht mehr weitergegeben.
+- Feste, serverseitige Sicherheitsanweisung vor jede Nutzeraufgabe gestellt; Versuche, sie per Aufgabetext zu ueberschreiben, bleiben reiner Analysetext.
+- stdout/stderr-Begrenzung um eine explizite Kennzeichnung abgeschnittener Ausgabe (`stderr_truncated`) ergaenzt.
+- Genau einen technischen Retry bei fehlgeschlagenem Codex-Prozessstart (`CODEX_PROCESS_START_FAILED`) ergaenzt; kein Retry nach Timeout, Abbruch, Policy-Verstoss oder Validierungsfehler.
+- Nachkontrolle der Read-only-Garantie (`READ_ONLY_VIOLATION_DETECTED`) auch nach Abbruch eines echten Runs korrigiert; zuvor griff dafuer faelschlich der Mock-Abbruchpfad.
+- `durationMs` je Run ergaenzt und in der API-Antwort unter `timestamps.durationMs` verfuegbar gemacht.
+- Health-Endpunkt liest die Version jetzt aus der zentralen Konfiguration statt aus einer zweiten, fest kodierten Zeichenkette.
+- Kontrollierte Fake-CLI- und Prozesstests fuer Erfolg, fehlende CLI, Startfehler, Exit-Code, stderr, Timeout, Abbruch, uebergrosse Ausgabe, genau einen Retry, Pfad-Traversal, simulierte Dateiveraenderung und Prompt-Injection ergaenzt; bestehende Mock-Workflows bleiben unveraendert funktionsfaehig.
+- Ein echter Codex-End-to-End-Lauf bleibt standardmaessig deaktiviert und wurde in dieser Version nicht ausgefuehrt.
+
 ## v0.10.0-test
 
 - Zentralen Request-Vertrag, Allowlists, Groessenlimits und kontrollierte Fehlercodes eingefuehrt.

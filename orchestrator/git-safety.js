@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ALLOWED_REPOSITORIES } from "./config.js";
+import { RouterError } from "./contracts.js";
 
 function run(command, args, cwd) {
   return new Promise((resolve, reject) => {
@@ -22,16 +23,19 @@ async function git(repository, args) {
 }
 
 async function canonicalRepositoryWithAllowlist(inputPath, allowedRepositories) {
-  const resolved = await fs.realpath(inputPath);
+  if (typeof inputPath !== "string" || !inputPath) throw new RouterError("WORKING_DIRECTORY_NOT_ALLOWED", "Working directory is not allowed.");
+  let resolved;
+  try { resolved = await fs.realpath(inputPath); }
+  catch { throw new RouterError("WORKING_DIRECTORY_NOT_ALLOWED", "Working directory is not allowed."); }
   const allowed = await Promise.all(allowedRepositories.map((item) => fs.realpath(item)));
-  if (!allowed.includes(resolved)) throw new Error("Repository is not allowlisted.");
+  if (!allowed.includes(resolved)) throw new RouterError("WORKING_DIRECTORY_NOT_ALLOWED", "Working directory is not allowed.");
   return resolved;
 }
 
 async function captureGitStateWithAllowlist(inputPath, allowedRepositories) {
   const repository = await canonicalRepositoryWithAllowlist(inputPath, allowedRepositories);
   const topLevel = await git(repository, ["rev-parse", "--show-toplevel"]);
-  if (path.resolve(topLevel) !== repository) throw new Error("Git top-level does not match the allowlisted repository.");
+  if (path.resolve(topLevel) !== repository) throw new RouterError("WORKING_DIRECTORY_NOT_ALLOWED", "Working directory is not allowed.");
   const [branch, head, status, diffStat, stagedDiffStat] = await Promise.all([
     git(repository, ["branch", "--show-current"]),
     git(repository, ["rev-parse", "HEAD"]),

@@ -21,5 +21,5 @@ export const DATA_DIR = path.join(REPOSITORY_ROOT, ".ai-router-data");
 export const RUNS_DIR = path.join(DATA_DIR, "runs");
 export const LATEST_RUN_FILE = path.join(DATA_DIR, "latest-run.json");
 export const COCKPIT_STATUS_FILE = path.join(DATA_DIR, "cockpit-status.json");
-export const ROUTER_VERSION = "0.10.0-test";
+export const ROUTER_VERSION = "0.11.0-test";
 export const ROUTER_LOG_FILE = path.join(DATA_DIR, "router-events.jsonl");

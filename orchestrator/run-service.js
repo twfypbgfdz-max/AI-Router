@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
-import { DEFAULT_TIMEOUT_MS, MAX_EVENT_COUNT, MAX_RESULT_LENGTH, MOCK_TIMEOUT_MS, PROCESS_SETTLE_TIMEOUT_MS, REPOSITORY_ROOT } from "./config.js";
+import { DEFAULT_TIMEOUT_MS, MAX_EVENT_COUNT, MAX_JSONL_LINE_LENGTH, MAX_RESULT_LENGTH, MOCK_TIMEOUT_MS, PROCESS_SETTLE_TIMEOUT_MS, REPOSITORY_ROOT } from "./config.js";
 import { captureGitState, compareGitState } from "./git-safety.js";
-import { resolveCodexExecutable, runCodex } from "./codex-adapter.js";
+import { CODEX_SAFETY_INSTRUCTION, resolveCodexExecutable, runCodex } from "./codex-adapter.js";
+import { buildAdapterInput, buildAdapterOutput } from "./adapter-contract.js";
 import { saveRun } from "./run-store.js";
 import { saveCockpitStatus } from "./cockpit-status.js";
 import { reduceEvents, sanitizeText } from "./jsonl.js";
@@ -13,11 +14,27 @@ import { logger as defaultLogger } from "./logger.js";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
 const ADAPTER_NAMES = new Set(["mock", "codex-cli"]);
+const CODEX_START_RETRY_ERROR_CODE = "CODEX_PROCESS_START_FAILED";
+
+function runCodexContract({ repository, task, runId, executable, retryAttempt = 0 }) {
+  const input = buildAdapterInput({
+    adapter: "codex-cli",
+    requestId: runId,
+    runId,
+    taskType: "read_only_codex",
+    safeInstruction: CODEX_SAFETY_INSTRUCTION,
+    workingDirectory: repository,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+    maxOutputBytes: MAX_JSONL_LINE_LENGTH,
+    retryAttempt
+  });
+  return runCodex({ repository: input.workingDirectory, prompt: task, executable, maxOutputBytes: input.maxOutputBytes });
+}
 
 function defaultAdapters() {
   return {
     mock: { run: runMock, runRole: runMockRole },
-    "codex-cli": { resolveExecutable: resolveCodexExecutable, run: ({ repository, task, executable }) => runCodex({ repository, prompt: task, executable }) }
+    "codex-cli": { resolveExecutable: resolveCodexExecutable, run: runCodexContract }
   };
 }
 
@@ -31,6 +48,10 @@ export class RunService {
   async update(run, status, fields = {}) {
     if (TERMINAL.has(run.status) && run.status !== status) throw new Error("Terminal run state cannot change.");
     run.status = status; Object.assign(run, fields, { updatedAt: new Date().toISOString() });
+    if (TERMINAL.has(status)) {
+      const output = buildAdapterOutput({ adapter: run.adapter, status, success: status === "succeeded", exitCode: Number.isFinite(run.exitCode) ? run.exitCode : null, startedAt: run.startedAt, finishedAt: run.finishedAt, retryable: false, warnings: run.warnings });
+      run.durationMs = output.durationMs;
+    }
     await this.persist(run); await this.publish(run); this.log(status === "failed" ? "run_failed" : (TERMINAL.has(status) ? "run_completed" : "workflow_started"), run, status); return run;
   }
   async create(input = {}) {
@@ -55,7 +76,7 @@ export class RunService {
     const approval = routePlan.approvalRequired ? { required: true, status: "pending", requestedAt: createdAt, decidedAt: null, decision: null, decisionNote: "", approvedAction: "", consumed: false } : null;
     const workflow = createWorkflow(routePlan);
     if (mode === "failure_reviewer" && !workflow.steps.some((step) => step.role === "reviewer")) throw new Error("Reviewer failure simulation requires a reviewer workflow.");
-    const run = { runId: `run_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`, ...request, createdAt, updatedAt: createdAt, task: request.task, repository, branchBefore: null, branchAfter: null, gitStatusBefore: null, gitStatusAfter: null, adapter: adapterName, simulationMode: mode, executable: null, mode: "read-only", status: "created", startedAt: null, finishedAt: null, timeoutMs, exitCode: null, resultSummary: null, errorSummary: null, usage: null, events: [], retry: { count: 0, maxAttempts: 2, lastReason: null }, warnings: [...routePlan.warnings], routePlan, approvalContext, approval, approvalSimulation: false, workflow };
+    const run = { runId: `run_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`, ...request, createdAt, updatedAt: createdAt, task: request.task, repository, branchBefore: null, branchAfter: null, gitStatusBefore: null, gitStatusAfter: null, adapter: adapterName, simulationMode: mode, executable: null, mode: "read-only", status: "created", startedAt: null, finishedAt: null, durationMs: null, timeoutMs, exitCode: null, resultSummary: null, errorCode: null, errorSummary: null, usage: null, events: [], retry: { count: 0, maxAttempts: 2, lastReason: null }, warnings: [...routePlan.warnings], routePlan, approvalContext, approval, approvalSimulation: false, workflow };
     this.activeRunId = run.runId;
     this.runs.set(run.runId, run);
     try { await this.persist(run); await this.publish(run); }
@@ -94,45 +115,52 @@ export class RunService {
       if (adapter.resolveExecutable) run.executable = await adapter.resolveExecutable();
       await this.update(run, "queued");
       return this.start(run);
-    } catch (error) { return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorSummary: sanitizeText(error.message, 500) }); }
+    } catch (error) { return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorCode: error.code || null, errorSummary: sanitizeText(error.message, 500) }); }
   }
   async start(run) {
     await this.update(run, "running", { startedAt: new Date().toISOString() });
-    let timer;
-    try {
-      const adapter = this.adapters[run.adapter];
-      const abortController = new AbortController();
-      const operation = adapter.run({ repository: run.repository, task: run.task, runId: run.runId, executable: run.executable, signal: abortController.signal, simulationMode: run.simulationMode, routePlan: run.routePlan });
-      const adapterCancel = typeof operation.cancel === "function" ? operation.cancel.bind(operation) : null;
-      operation.cancel = async () => { abortController.abort(); return (await adapterCancel?.()) || { outcome: "abort_requested" }; };
-      this.operations.set(run.runId, operation);
-      const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve({ timeout: true }), run.timeoutMs); });
-      const result = await Promise.race([operation, timeout]);
-      if (result?.timeout) {
-        result.kill = await operation.cancel?.();
-        const stopped = await Promise.race([
-          operation.catch((error) => ({ exitCode: null, events: [], stderr: error.message })),
-          new Promise((resolve) => setTimeout(() => resolve({ exitCode: null, events: [], stderr: "Process did not settle after kill deadline." }), PROCESS_SETTLE_TIMEOUT_MS))
-        ]);
-        const afterTimeout = await this.git.captureGitState(run.repository);
-        run.branchAfter = afterTimeout.branch; run.gitStatusAfter = afterTimeout.status;
-        const integrity = this.git.compareGitState(run.gitBefore, afterTimeout);
-        if (!integrity.safe) return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: stopped.exitCode, errorSummary: `Read-only integrity check failed after timeout: ${integrity.changed.join(", ")}` });
-        return this.update(run, "timed_out", { finishedAt: new Date().toISOString(), exitCode: stopped.exitCode, errorSummary: sanitizeText(`Adapter exceeded timeout. ${result.kill?.outcome || "kill_unknown"}`, 300) });
+    const adapter = this.adapters[run.adapter];
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      let timer;
+      try {
+        const abortController = new AbortController();
+        const operation = adapter.run({ repository: run.repository, task: run.task, runId: run.runId, executable: run.executable, signal: abortController.signal, simulationMode: run.simulationMode, routePlan: run.routePlan, retryAttempt: attempt - 1 });
+        const adapterCancel = typeof operation.cancel === "function" ? operation.cancel.bind(operation) : null;
+        operation.cancel = async () => { abortController.abort(); return (await adapterCancel?.()) || { outcome: "abort_requested" }; };
+        this.operations.set(run.runId, operation);
+        const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve({ timeout: true }), run.timeoutMs); });
+        const result = await Promise.race([operation, timeout]);
+        if (result?.timeout) {
+          result.kill = await operation.cancel?.();
+          const stopped = await Promise.race([
+            operation.catch((error) => ({ exitCode: null, events: [], stderr: error.message })),
+            new Promise((resolve) => setTimeout(() => resolve({ exitCode: null, events: [], stderr: "Process did not settle after kill deadline." }), PROCESS_SETTLE_TIMEOUT_MS))
+          ]);
+          const afterTimeout = await this.git.captureGitState(run.repository);
+          run.branchAfter = afterTimeout.branch; run.gitStatusAfter = afterTimeout.status;
+          const integrity = this.git.compareGitState(run.gitBefore, afterTimeout);
+          if (!integrity.safe) return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: stopped.exitCode, errorCode: "READ_ONLY_VIOLATION_DETECTED", errorSummary: `Read-only integrity check failed after timeout: ${integrity.changed.join(", ")}` });
+          return this.update(run, "timed_out", { finishedAt: new Date().toISOString(), exitCode: stopped.exitCode, errorCode: "STEP_TIMEOUT", errorSummary: sanitizeText(`Adapter exceeded timeout. ${result.kill?.outcome || "kill_unknown"}`, 300) });
+        }
+        if (run.cancelRequested) return run;
+        const after = await this.git.captureGitState(run.repository);
+        run.branchAfter = after.branch; run.gitStatusAfter = after.status;
+        const integrity = this.git.compareGitState(run.gitBefore, after);
+        const safeEvents = reduceEvents(result.events);
+        if (!integrity.safe) return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorCode: "READ_ONLY_VIOLATION_DETECTED", errorSummary: `Read-only integrity check failed: ${integrity.changed.join(", ")}`, events: safeEvents });
+        if (result.exitCode !== 0 || result.issues?.length || !result.resultSummary) return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorCode: "ADAPTER_FAILED", errorSummary: sanitizeText(result.stderr || result.issues?.join(", ") || "No final adapter response.", 500), events: safeEvents });
+        return this.update(run, "succeeded", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, resultSummary: sanitizeText(result.resultSummary, MAX_RESULT_LENGTH), events: safeEvents });
+      } catch (error) {
+        if (run.cancelRequested) return run;
+        if (error.code === CODEX_START_RETRY_ERROR_CODE && attempt === 1) {
+          run.retry.count += 1; run.retry.lastReason = "process_start_failed";
+          this.log("step_failed", run, "retrying", { retry: "1" });
+          continue;
+        }
+        return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorCode: error.code || null, errorSummary: sanitizeText(error.message, 500) });
       }
-      if (run.cancelRequested) return run;
-      const after = await this.git.captureGitState(run.repository);
-      run.branchAfter = after.branch; run.gitStatusAfter = after.status;
-      const integrity = this.git.compareGitState(run.gitBefore, after);
-      const safeEvents = reduceEvents(result.events);
-      if (!integrity.safe) return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorSummary: `Read-only integrity check failed: ${integrity.changed.join(", ")}`, events: safeEvents });
-      if (result.exitCode !== 0 || result.issues?.length || !result.resultSummary) return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorSummary: sanitizeText(result.stderr || result.issues?.join(", ") || "No final adapter response.", 500), events: safeEvents });
-      return this.update(run, "succeeded", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, resultSummary: sanitizeText(result.resultSummary, MAX_RESULT_LENGTH), events: safeEvents });
-    } catch (error) {
-      if (run.cancelRequested) return run;
-      return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorSummary: sanitizeText(error.message, 500) });
+      finally { clearTimeout(timer); this.operations.delete(run.runId); }
     }
-    finally { clearTimeout(timer); this.operations.delete(run.runId); }
   }
   async startMockWorkflow(run, { approvalSimulation = false } = {}) {
     run.approvalSimulation = approvalSimulation;
@@ -170,14 +198,14 @@ export class RunService {
           await operation.cancel();
           failStep(run.workflow, step.id, "Workflow step exceeded timeout.");
           this.log("step_failed", run, "timed_out");
-          return this.update(run, "timed_out", { finishedAt: new Date().toISOString(), errorSummary: `Workflow step timed out: ${step.role}.` });
+          return this.update(run, "timed_out", { finishedAt: new Date().toISOString(), errorCode: "STEP_TIMEOUT", errorSummary: `Workflow step timed out: ${step.role}.` });
         }
         const safeEvents = [...run.events, ...reduceEvents(result.events)].slice(-MAX_EVENT_COUNT);
         if (result.exitCode !== 0 || result.issues?.length || !result.resultSummary) {
           const errorSummary = sanitizeText(result.stderr || result.issues?.join(", ") || "Workflow step produced no result.", 500);
           failStep(run.workflow, step.id, errorSummary);
           this.log("step_failed", run, "failed");
-          return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorSummary, events: safeEvents });
+          return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorCode: "STEP_FAILED", errorSummary, events: safeEvents });
         }
         succeedStep(run.workflow, step.id, result.resultSummary);
         this.log("step_completed", run, "succeeded");
@@ -191,7 +219,7 @@ export class RunService {
       if (run.cancelRequested) return run;
       const runningStep = run.workflow.steps.find((item) => item.status === "running");
       if (runningStep) failStep(run.workflow, runningStep.id, error.message);
-      return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorSummary: sanitizeText(error.message, 500) });
+      return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorCode: error.code || null, errorSummary: sanitizeText(error.message, 500) });
     } finally { this.operations.delete(run.runId); }
   }
   get(runId) { return this.runs.get(runId) || null; }
@@ -235,18 +263,24 @@ export class RunService {
     if (!run || !["validating", "queued", "running"].includes(run.status)) return null;
     const operation = this.operations.get(runId);
     run.cancelRequested = true;
+    const isMockRun = run.adapter === "mock";
     const kill = await operation?.cancel?.();
-    if (!operation && run.workflow) { cancelWorkflow(run.workflow); return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), resultSummary: "Mock-Workflow abgebrochen. Es wurde keine reale Aktion ausgeführt.", errorSummary: null }); }
-    if (!operation) return run;
+    if (!operation) {
+      if (isMockRun && run.workflow) { cancelWorkflow(run.workflow); return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), resultSummary: "Mock-Workflow abgebrochen. Es wurde keine reale Aktion ausgeführt.", errorSummary: null }); }
+      return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), errorSummary: "Cancelled by user before the adapter started." });
+    }
     await Promise.race([
       operation.catch(() => null),
       new Promise((resolve) => setTimeout(resolve, PROCESS_SETTLE_TIMEOUT_MS))
     ]);
-    if (run.workflow) { cancelWorkflow(run.workflow); return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), resultSummary: run.approvalSimulation ? "Freigabe-Simulation abgebrochen. Es wurde keine Aktion ausgeführt." : "Mock-Workflow abgebrochen. Es wurde keine reale Aktion ausgeführt.", errorSummary: null }); }
+    if (isMockRun) {
+      if (run.workflow) cancelWorkflow(run.workflow);
+      return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), resultSummary: run.approvalSimulation ? "Freigabe-Simulation abgebrochen. Es wurde keine Aktion ausgeführt." : "Mock-Workflow abgebrochen. Es wurde keine reale Aktion ausgeführt.", errorSummary: null });
+    }
     const after = await this.git.captureGitState(run.repository);
     run.branchAfter = after.branch; run.gitStatusAfter = after.status;
     const integrity = this.git.compareGitState(run.gitBefore, after);
-    if (!integrity.safe) return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorSummary: `Read-only integrity check failed after cancellation: ${integrity.changed.join(", ")}` });
+    if (!integrity.safe) return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorCode: "READ_ONLY_VIOLATION_DETECTED", errorSummary: `Read-only integrity check failed after cancellation: ${integrity.changed.join(", ")}` });
     return this.update(run, "cancelled", { finishedAt: new Date().toISOString(), errorSummary: sanitizeText(`Cancelled by user. ${kill?.outcome || "kill_not_needed"}`, 300) });
   }
 }

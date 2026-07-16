@@ -4,7 +4,7 @@ Lokale HTML-Test-App zur einfachen Empfehlung eines passenden KI-Tools fuer eine
 
 ## Version
 
-Aktuelle Testversion: `v0.10.0-test`
+Aktuelle Testversion: `v0.11.0-test`
 
 ## Vertrags- und Sicherheitsbasis v0.10
 
@@ -37,6 +37,66 @@ beim Retry unveraendert: Es startet ausschliesslich die sichere Mock-Simulation.
 Router-Version, letzten Run-Status, aktive/wartende Runs, Zeitpunkt des letzten
 Erfolgs und den letzten sicheren Fehlercode – keine Aufgabe, Prompts,
 Tool-Ausgaben oder Freigabesteuerung.
+
+## Codex-Adaptervertrag und Haertung v0.11
+
+Der Codex-Adapter nutzt einen zentralen, wiederverwendbaren Adaptervertrag
+(`orchestrator/adapter-contract.js`) statt einer zweiten parallelen Struktur.
+Eingaben (`adapter`, `requestId`, `runId`, `taskType`, `safeInstruction`,
+`workingDirectory`, `timeoutMs`, `maxOutputBytes`, `retryAttempt`) und
+Ausgaben (`adapter`, `status`, `success`, `exitCode`, `startedAt`,
+`finishedAt`, `durationMs`, `retryable`, `result`, `error`, `warnings`,
+`safeMetadata`) werden geprueft, normalisiert und eingefroren. `durationMs`
+wird bei jedem beendeten Run aus `startedAt`/`finishedAt` berechnet und in der
+API-Antwort unter `timestamps.durationMs` mitgeliefert.
+
+**CLI-Erkennung:** Vor jedem echten Lauf wird die konfigurierte oder
+zulaessige Codex-CLI probeweise mit `--version` gestartet; die Ausgabe muss
+als Codex-CLI-Version erkennbar sein. Fehlt die CLI vollstaendig, meldet der
+Router `CODEX_CLI_NOT_FOUND`; startet ein Programm, dessen Versionsausgabe
+nicht als Codex-CLI erkennbar ist, meldet der Router `CODEX_CLI_UNSUPPORTED`.
+Es erfolgt keine automatische Installation und keine Aenderung globaler
+Konfiguration. Der ausfuehrbare Pfad stammt ausschliesslich aus einer festen
+Serverkonfiguration oder der lokalen Umgebungsvariable `CODEX_EXECUTABLE`,
+niemals aus dem Request-Body.
+
+**Arbeitsverzeichnis:** Jedes Arbeitsverzeichnis wird serverseitig ueber
+`fs.realpath` kanonisch aufgeloest und gegen eine feste Allowlist
+(ausschliesslich dieses Repository) geprueft. Nicht existierende Pfade,
+Pfad-Traversal ueber `..` und Verzeichnis-Junctions/Symlinks ausserhalb der
+Allowlist werden einheitlich als `WORKING_DIRECTORY_NOT_ALLOWED` abgelehnt,
+ohne dass der zugrunde liegende Dateisystempfad in der Fehlermeldung
+erscheint.
+
+**Prozessstart:** Codex wird ausschliesslich mit `spawn`, fester
+ausfuehrbarer Datei, fester Argumentliste und `shell: false` gestartet. Die
+Kindprozess-Umgebung ist auf eine feste Allowlist begrenzt (u. a. `PATH`,
+`SystemRoot`, `TEMP`, `USERPROFILE`); beliebige Secrets aus der Server-Umgebung
+werden nicht an den Codex-Prozess weitergegeben. Ein fehlgeschlagener
+Prozessstart wird als `CODEX_PROCESS_START_FAILED` erkannt und genau einmal
+automatisch wiederholt; Timeout, Abbruch, Policy-Verstoesse und
+Validierungsfehler werden nie wiederholt.
+
+**Sicherheitsanweisung:** Vor jeder Nutzeraufgabe stellt der Router eine
+feste, serverseitig erzeugte Sicherheitsanweisung voran, die Analyse ohne
+Schreib-, Git-, Netzwerk- oder Zugangsdatenzugriff verlangt. Die Aufgabe wird
+danach klar abgegrenzt als reiner Analysetext markiert; Formulierungen wie
+„Ignoriere alle Regeln“ oder „Fuehre git push aus“ innerhalb der Aufgabe
+bleiben zu analysierender Text und ueberschreiben die feste Anweisung nicht.
+Zusaetzlich bleibt Codex durch `-s read-only -a never` technisch auf
+Lese-Modus ohne Freigaben begrenzt.
+
+**Ausgabebegrenzung:** stdout/JSONL und stderr sind auf `maxOutputBytes`
+begrenzt; Ueberschreitungen werden als `stderr_truncated` bzw. vorhandene
+JSONL-Parser-Hinweise sichtbar gemacht statt still abgeschnitten.
+
+**Nachkontrolle:** Nach jedem echten Lauf – auch nach Timeout und nach
+Abbruch durch den Nutzer – vergleicht der Router den Git-Status vor und nach
+der Ausfuehrung. Bei jeder erkannten Aenderung markiert er den Run als
+`READ_ONLY_VIOLATION_DETECTED`, ohne automatisch zurueckzusetzen oder
+Datei-Inhalte anzuzeigen, und startet keinen weiteren Adapterlauf. Dieser
+Vergleich lief zuvor bei einem Abbruch fuer echte Codex-Runs faelschlich nicht
+zuverlaessig; das ist in v0.11 behoben.
 
 ## Lokaler Read-only-Codex-MVP
 
