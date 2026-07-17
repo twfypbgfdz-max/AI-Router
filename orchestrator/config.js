@@ -22,7 +22,11 @@ export const RUNS_DIR = path.join(DATA_DIR, "runs");
 export const LATEST_RUN_FILE = path.join(DATA_DIR, "latest-run.json");
 export const COCKPIT_STATUS_FILE = path.join(DATA_DIR, "cockpit-status.json");
 export const HISTORY_INDEX_FILE = path.join(DATA_DIR, "run-history.json");
-export const ROUTER_VERSION = "0.12.1-test";
+export const ROUTER_VERSION = "0.13.0-test";
+// Provider layer bounds (v0.13). Simulation only — no real external APIs.
+export const MAX_PROVIDER_WORKFLOW_STEPS = 4;
+export const MAX_PROVIDER_ALTERNATIVES = 3;
+export const MAX_PROVIDER_SAFE_METADATA_KEYS = 8;
 export const ROUTER_LOG_FILE = path.join(DATA_DIR, "router-events.jsonl");
 export const MAX_LOG_BYTES = 512_000;
 export const MAX_HISTORY_RUNS = 200;

@@ -16,7 +16,7 @@ test("cockpit keeps the full v0.12 contract fields unchanged", () => {
   for (const key of ["reachable", "serviceStatus", "version", "activeRuns", "awaitingApprovalRuns", "lastSuccessfulRunAt", "lastSafeErrorCode", "mockAvailable", "codexReadOnlyStatus", "checkedAt"]) {
     assert.ok(key in status, `missing v0.12 field ${key}`);
   }
-  assert.equal(status.version, "0.12.1-test");
+  assert.equal(status.version, "0.13.0-test");
   assert.equal(status.activeRuns, 3);
   assert.equal(status.awaitingApprovalRuns, 2);
   assert.equal(status.mockAvailable, true);

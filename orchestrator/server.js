@@ -12,10 +12,12 @@ import { readJsonBody, sendJson, sendText } from "./http-utils.js";
 import { buildResponse, errorPayload } from "./response-builder.js";
 import { RouterError } from "./contracts.js";
 import { ALLOWED_ADAPTERS, ALLOWED_RUN_STATUSES, SCHEMA_VERSION } from "./policy.js";
+import { providerRegistry } from "./provider-registry.js";
+import { previewProviderSelection } from "./provider-selection.js";
 
 const service = new RunService();
 const SERVER_STARTED_AT = Date.now();
-const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_12-test.html");
+const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_13-test.html");
 
 // Fire-and-forget safe logging: operational events must never break a request.
 function safeLog(event, safeMetadata = {}) { logger.log({ event, safeMetadata }).catch(() => {}); }
@@ -39,7 +41,7 @@ function isoOrNull(value) { const parsed = Date.parse(value); return Number.isFi
 async function buildHealth() {
   service.adapterStatus.refresh().catch(() => {});
   const [storage, logging] = await Promise.all([storageHealth(), loggingHealth()]);
-  return buildHealthStatus({ snapshot: service.snapshot(), adapterStatus: service.adapterStatus.current(), storage, logging, startedAt: SERVER_STARTED_AT });
+  return buildHealthStatus({ snapshot: service.snapshot(), adapterStatus: service.adapterStatus.current(), storage, logging, providers: service.registry.status(), startedAt: SERVER_STARTED_AT });
 }
 
 async function buildDiagnosticsPayload() {
@@ -60,6 +62,29 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && pathname === "/api/diagnostics") { safeLog("diagnostics_checked"); return sendJson(response, 200, await buildDiagnosticsPayload()); }
 
     if (request.method === "GET" && pathname === "/api/cockpit-status") return sendJson(response, 200, projectCockpitStatus(service.cockpitContext()));
+
+    if (request.method === "GET" && pathname === "/api/providers") {
+      safeLog("providers_listed");
+      const registryStatus = service.registry.status();
+      return sendJson(response, 200, { schemaVersion: SCHEMA_VERSION, providerRegistryStatus: registryStatus.registryStatus, providers: service.registry.publicList() });
+    }
+
+    const providerDetail = pathname.match(/^\/api\/providers\/([^/]+)$/);
+    if (request.method === "GET" && providerDetail) {
+      const provider = service.registry.publicGet(decodeURIComponent(providerDetail[1]));
+      if (!provider) return sendJson(response, 404, errorPayload(new RouterError("PROVIDER_NOT_FOUND", "Provider not found.")));
+      safeLog("provider_details_viewed", { providerId: provider.providerId });
+      return sendJson(response, 200, { schemaVersion: SCHEMA_VERSION, provider });
+    }
+
+    if (request.method === "POST" && pathname === "/api/providers/select") {
+      if (!isTrustedMutation(request)) return sendJson(response, 403, { code: "INVALID_REQUEST", message: "Untrusted local request." });
+      try {
+        const preview = previewProviderSelection(await readJsonBody(request), service.registry);
+        safeLog("provider_selection_previewed", { providerId: preview.selectedProviderId });
+        return sendJson(response, 200, { schemaVersion: SCHEMA_VERSION, provider: preview });
+      } catch (error) { return sendJson(response, 400, errorPayload(error)); }
+    }
 
     if (request.method === "POST" && pathname === "/api/adapters/check") {
       if (!isTrustedMutation(request)) return sendJson(response, 403, { code: "INVALID_REQUEST", message: "Untrusted local request." });

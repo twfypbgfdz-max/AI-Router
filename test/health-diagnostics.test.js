@@ -17,7 +17,7 @@ test("health exposes the full operational contract fields", () => {
     assert.ok(key in health, `missing ${key}`);
   }
   assert.equal(health.serviceStatus, "ok");
-  assert.equal(health.version, "0.12.1-test");
+  assert.equal(health.version, "0.13.0-test");
   assert.ok(health.uptimeSeconds >= 4);
   assert.equal(health.adapterStatus["codex-cli"].state, "unavailable");
 });

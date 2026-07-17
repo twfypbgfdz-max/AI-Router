@@ -5,11 +5,14 @@ export const STEP_STATUSES = Object.freeze(["pending", "running", "succeeded", "
 const TYPE_SET = new Set(WORKFLOW_TYPES);
 const ROLE_SET = new Set(WORKFLOW_ROLES);
 const STATUS_SET = new Set(STEP_STATUSES);
-const ROLE_SEQUENCES = Object.freeze({
+export const ROLE_SEQUENCES = Object.freeze({
   direct: ["executor", "synthesizer"],
   plan_execute: ["planner", "executor", "synthesizer"],
   plan_execute_review: ["planner", "executor", "reviewer", "synthesizer"]
 });
+
+// The fixed role sequence for a workflow type (empty array for unknown types).
+export function rolesForWorkflowType(type) { return [...(ROLE_SEQUENCES[type] || [])]; }
 
 function safeText(value, maximum = 500) {
   if (typeof value !== "string") return "";

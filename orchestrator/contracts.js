@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { MAX_CONTEXT_LENGTH, MAX_PROJECT_LENGTH, MAX_SOURCE_LENGTH, MAX_TASK_LENGTH } from "./config.js";
-import { ALLOWED_ACTION_TYPES, ALLOWED_ADAPTERS, ALLOWED_REQUESTED_MODES, ALLOWED_SOURCES, SCHEMA_VERSION } from "./policy.js";
+import { ALLOWED_ACTION_TYPES, ALLOWED_ADAPTERS, ALLOWED_PROVIDER_IDS, ALLOWED_PROVIDER_WORKFLOW_PROFILES, ALLOWED_REQUESTED_MODES, ALLOWED_SOURCES, SCHEMA_VERSION } from "./policy.js";
 
 export class RouterError extends Error {
   constructor(code, message, { retryable = false, safeDetails = null } = {}) { super(message); this.code = code; this.retryable = retryable; this.safeDetails = safeDetails; }
@@ -28,5 +28,22 @@ export function normalizeRunRequest(input = {}) {
   if (!ALLOWED_SOURCES.includes(source)) throw new RouterError("INVALID_REQUEST", "Source is not allowed.");
   const actionType = input.options?.actionType ?? "simulation";
   if (!ALLOWED_ACTION_TYPES.includes(actionType)) throw new RouterError("ACTION_NOT_ALLOWED", "Action type is not allowed.");
-  return Object.freeze({ schemaVersion, requestId: text(input.requestId, 96, "INVALID_REQUEST", "requestId") || `req_${crypto.randomUUID()}`, task, project: text(input.project, MAX_PROJECT_LENGTH, "INVALID_REQUEST", "project"), requestedMode, requestedAdapter, source, context: text(input.context, MAX_CONTEXT_LENGTH, "INVALID_REQUEST", "context"), options: Object.freeze({ actionType, simulationMode: input.options?.simulationMode ?? input.simulationMode }), createdAt: new Date().toISOString() });
+  // v0.13: optional manual provider selection. Normalized, size-bounded and
+  // checked against the central registry allowlist — never a free-form name.
+  const rawProvider = input.requestedProvider ?? input.options?.requestedProvider;
+  let requestedProvider = null;
+  if (rawProvider !== undefined && rawProvider !== null && rawProvider !== "") {
+    if (typeof rawProvider !== "string") throw new RouterError("INVALID_REQUEST", "requestedProvider must be a string.");
+    const normalizedProvider = rawProvider.normalize("NFKC").trim().slice(0, 40);
+    if (!ALLOWED_PROVIDER_IDS.includes(normalizedProvider)) throw new RouterError("PROVIDER_NOT_ALLOWED", "requestedProvider is not in the central allowlist.");
+    requestedProvider = normalizedProvider;
+  }
+  // v0.13: optional provider workflow profile. Fixed allowlist only.
+  const rawProfile = input.providerProfile ?? input.options?.providerProfile;
+  let providerProfile = null;
+  if (rawProfile !== undefined && rawProfile !== null && rawProfile !== "") {
+    if (typeof rawProfile !== "string" || !ALLOWED_PROVIDER_WORKFLOW_PROFILES.includes(rawProfile)) throw new RouterError("INVALID_REQUEST", "providerProfile is not allowed.");
+    providerProfile = rawProfile;
+  }
+  return Object.freeze({ schemaVersion, requestId: text(input.requestId, 96, "INVALID_REQUEST", "requestId") || `req_${crypto.randomUUID()}`, task, project: text(input.project, MAX_PROJECT_LENGTH, "INVALID_REQUEST", "project"), requestedMode, requestedAdapter, requestedProvider, source, context: text(input.context, MAX_CONTEXT_LENGTH, "INVALID_REQUEST", "context"), options: Object.freeze({ actionType, simulationMode: input.options?.simulationMode ?? input.simulationMode, providerProfile }), createdAt: new Date().toISOString() });
 }

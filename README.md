@@ -4,7 +4,111 @@ Lokale HTML-Test-App zur einfachen Empfehlung eines passenden KI-Tools fuer eine
 
 ## Version
 
-Aktuelle Testversion: `v0.12.1-test`
+Aktuelle Testversion: `v0.13.0-test`
+
+## Simulierte Multi-Provider-Schicht v0.13
+
+v0.13 fuehrt eine zentrale, rein lokale Provider-Schicht ein. Der Router kann
+mehrere KI-Anbieter beziehungsweise Anbieterklassen einheitlich beschreiben,
+auswaehlen, simulieren und orchestrieren. **Es wird keine echte Claude-,
+OpenAI-, Gemini- oder andere externe API angebunden oder aufgerufen.** Es gibt
+keine API-Schluessel, kein SDK, keinen Netzwerkzugriff und keine neuen
+npm-Abhaengigkeiten. Codex bleibt ausschliesslich lokal read-only gemaess v0.11.
+
+### Begriffe
+
+- **Provider**: ein Anbieter oder eine Anbieterklasse (`mock`, `codex`, `claude`,
+  `openai`, `gemini`).
+- **Adapter**: die konkrete Ausfuehrungsschicht (`mock`, `codex-cli-readonly`).
+- **Model**: eine Modellkennung/-klasse — in v0.13 nur Metadaten und Simulation.
+- **Role**: die Aufgabe im Workflow (`planner`, `executor`, `reviewer`,
+  `synthesizer`).
+- **Route**: welcher Provider/Adapter fuer welche Rolle vorgesehen ist.
+
+### Providerprofile
+
+Zentral begrenzte, erlaubte Provider-IDs:
+
+- `mock-local` — neutraler, deterministischer Baseline-Provider (Simulation,
+  ausfuehrbar).
+- `codex-local-readonly` — realer, lokaler Read-only-Codex-Provider (kein
+  Modelllauf ausser dem bestehenden v0.11-Pfad).
+- `claude-simulated`, `openai-simulated`, `gemini-simulated` — **reine lokale
+  Simulationen** eines Anbieterprofils. Sie rufen nichts Externes auf.
+
+Nur `mock-local` und `codex-local-readonly` sind technisch ausfuehrbar. Die
+Simulationsprofile sind nie ausfuehrbar und binden nie den realen Codex-Adapter.
+
+### Auswahl
+
+- **Automatisch**: der Router waehlt deterministisch. Standardausfuehrung ist die
+  sichere Mock-Simulation; das am besten passende Spezialprofil wird als
+  Empfehlung (Alternativen/Begruendung) angezeigt, aber nicht still ausgefuehrt.
+- **Manuell**: `requestedProvider` (optional, normalisiert, groessenbegrenzt,
+  gegen die Registry-Allowlist geprueft) waehlt ein erlaubtes, aktiviertes
+  Profil. Passt es nicht (Faehigkeit/Rolle/Aufgabe), gibt es einen kontrollierten
+  Fehler (`PROVIDER_CAPABILITY_MISMATCH`, `PROVIDER_ROLE_NOT_SUPPORTED`,
+  `PROVIDER_TASK_NOT_SUPPORTED`) — nie eine stille Ausfuehrung.
+
+### Provider-Fallback
+
+Bei einer inkonsistenten Registry oder einer Rolle, die der gewaehlte Provider
+nicht bedienen kann, faellt der Router **sichtbar** auf die Mock-Simulation
+zurueck (`providerFallbackUsed`, Warnung). Es gibt **keinen** stillen Fallback von
+einem nicht erlaubten Provider auf einen echten ausfuehrbaren Adapter. Das
+Freigabe-Gate wird durch Provider-Auswahl oder Fallback niemals umgangen.
+
+### Workflow-Profile
+
+- `single_provider` — alle Rollen derselbe Provider.
+- `specialist_chain` — Planner/Executor/Reviewer koennen verschiedene simulierte
+  Provider haben; Synthese lokal.
+- `safe_review_chain` — Ausfuehrung durch die sichere Mock-Simulation, Pruefung
+  durch einen simulierten Reviewer, finale Synthese lokal.
+
+In v0.13 bleibt die Standardausfuehrung fuer Multi-Provider-Workflows die
+vollstaendige Simulation. Eine als `codex-local-readonly` bezeichnete Rolle
+innerhalb einer simulierten Kette ist ebenfalls simuliert; ein realer
+Codex-Read-only-Lauf erfolgt ausschliesslich ueber den bestehenden
+Einzel-Adapter-Codex-Pfad. Keine Parallelisierung, keine rekursiven Workflows,
+keine dynamischen Rollen; die Schrittzahl ist zentral begrenzt.
+
+### Gespeicherte und nicht gespeicherte Daten
+
+Gespeichert werden nur begrenzte Provider-Metadaten (z. B. `selectedProviderId`,
+`selectedModelId`, `providerWorkflowProfile`, `providersUsed`, `providerCount`,
+`simulatedProviderCount`, `realLocalAdapterUsed`, `providerSelectionMode`,
+`providerFallbackUsed`, `providerWarningsCount`). **Nicht** gespeichert werden
+Provider-Rohantworten, vollstaendige Zwischenergebnisse, Nutzer- oder
+Rollenprompts, Tokens, Preise, Zugangsdaten, externe Request-IDs oder
+stdout/stderr. Historie und Detailansicht bleiben datensparsam; alte Run-Dateien
+ohne Provider-Felder bleiben lesbar und werden sicher als `null`/`false`/leer
+behandelt.
+
+### Provider-Endpunkte (read-only)
+
+- `GET /api/providers` — sichere Providerliste.
+- `GET /api/providers/:providerId` — sichere Provider-Metadaten
+  (unbekannt → `404 PROVIDER_NOT_FOUND`).
+- `POST /api/providers/select` — reine lokale Vorschau der Provider-Auswahl,
+  keine Ausfuehrung.
+- `POST /api/runs` akzeptiert zusaetzlich das optionale Feld `requestedProvider`
+  (und `providerProfile`).
+
+Health, Diagnose und Cockpit zeigen nur sichere Provider-Aggregate
+(Registry-Status, Provider-/Aktiv-/Simuliert-/Ausfuehrbar-Zaehler, kleine
+Statusliste) — keine Modelle, Pfade, Secrets oder Konfiguration.
+
+### Bekannte Grenzen v0.13
+
+- Es wurden **keine** echten externen Anbieter getestet oder angebunden.
+- Die automatische Auswahl fuehrt bewusst die sichere Mock-Simulation aus und
+  benennt Spezialprofile nur als Empfehlung; Spezialisten-/Review-Ketten werden
+  ausdruecklich ueber `providerProfile` gewaehlt.
+- Ein visueller Browser-Test war in der Umgebung nicht moeglich (kein
+  Browser-Automations-Tool); die UI wurde statisch geprueft und ueber die
+  identischen API-Aufrufe der UI verifiziert.
+- Der echte Codex-End-to-End-Test bleibt standardmaessig deaktiviert.
 
 ## Betrieb, Diagnose und Transparenz v0.12
 
@@ -194,7 +298,7 @@ zuverlaessig; das ist in v0.11 behoben.
 
 ## Lokaler Read-only-Codex-MVP
 
-`npm start` startet den aktuellen MVP-Teststand `v0.12.1-test` als lokalen
+`npm start` startet den aktuellen MVP-Teststand `v0.13.0-test` als lokalen
 Node-Server auf `http://127.0.0.1:8787` und liefert die Betriebsoberflaeche
 `ai-router-v0_12-test.html`. `npm test` fuehrt die automatisierten Tests aus. Es
 gibt keine npm-Abhaengigkeiten; Node und die npm-Skripte werden dennoch fuer

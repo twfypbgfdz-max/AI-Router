@@ -1,6 +1,48 @@
-import { ALLOWED_RUN_STATUSES, ERROR_CODES, SCHEMA_VERSION } from "./policy.js";
+import { ALLOWED_PROVIDER_IDS, ALLOWED_PROVIDER_WORKFLOW_PROFILES, ALLOWED_RUN_STATUSES, ALLOWED_SELECTION_MODES, ERROR_CODES, SCHEMA_VERSION } from "./policy.js";
 
 const RISK_LEVELS = new Set(["R0", "R1", "R2", "R3", "R4"]);
+
+// Bounded, allowlist-only provider metadata for a run summary. Old runs without
+// a provider layer resolve to safe defaults (null / false / empty list / 0).
+function providerFields(run) {
+  const plan = run.providerPlan && typeof run.providerPlan === "object" ? run.providerPlan : {};
+  const runtime = run.providerRuntime && typeof run.providerRuntime === "object" ? run.providerRuntime : {};
+  const usedRaw = Array.isArray(runtime.providersUsed) ? runtime.providersUsed : [];
+  const providersUsed = [...new Set(usedRaw.filter((id) => ALLOWED_PROVIDER_IDS.includes(id)))];
+  const simulatedCount = providersUsed.filter((id) => id !== "codex-local-readonly").length;
+  return {
+    selectedProviderId: ALLOWED_PROVIDER_IDS.includes(plan.selectedProviderId) ? plan.selectedProviderId : null,
+    selectedModelId: typeof plan.selectedModelId === "string" ? plan.selectedModelId.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40) || null : null,
+    providerWorkflowProfile: ALLOWED_PROVIDER_WORKFLOW_PROFILES.includes(run.providerWorkflowProfile) ? run.providerWorkflowProfile : null,
+    providersUsed,
+    providerCount: providersUsed.length,
+    simulatedProviderCount: simulatedCount,
+    realLocalAdapterUsed: runtime.realLocalAdapterUsed === true,
+    providerSelectionMode: ALLOWED_SELECTION_MODES.includes(plan.selectionMode) ? plan.selectionMode : null,
+    providerFallbackUsed: Boolean(plan.fallbackReason),
+    providerWarningsCount: Array.isArray(plan.warnings) ? plan.warnings.length : 0
+  };
+}
+
+const PROVIDER_SUMMARY_KEYS = Object.freeze(["selectedProviderId", "selectedModelId", "providerWorkflowProfile", "providersUsed", "providerCount", "simulatedProviderCount", "realLocalAdapterUsed", "providerSelectionMode", "providerFallbackUsed", "providerWarningsCount"]);
+
+// Re-derives the bounded provider fields from an already-projected stored entry.
+function providerFieldsFromEntry(entry) {
+  const usedRaw = Array.isArray(entry.providersUsed) ? entry.providersUsed : [];
+  const providersUsed = [...new Set(usedRaw.filter((id) => ALLOWED_PROVIDER_IDS.includes(id)))];
+  return {
+    selectedProviderId: ALLOWED_PROVIDER_IDS.includes(entry.selectedProviderId) ? entry.selectedProviderId : null,
+    selectedModelId: typeof entry.selectedModelId === "string" ? entry.selectedModelId.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40) || null : null,
+    providerWorkflowProfile: ALLOWED_PROVIDER_WORKFLOW_PROFILES.includes(entry.providerWorkflowProfile) ? entry.providerWorkflowProfile : null,
+    providersUsed,
+    providerCount: providersUsed.length,
+    simulatedProviderCount: providersUsed.filter((id) => id !== "codex-local-readonly").length,
+    realLocalAdapterUsed: entry.realLocalAdapterUsed === true,
+    providerSelectionMode: ALLOWED_SELECTION_MODES.includes(entry.providerSelectionMode) ? entry.providerSelectionMode : null,
+    providerFallbackUsed: entry.providerFallbackUsed === true,
+    providerWarningsCount: Number.isFinite(entry.providerWarningsCount) ? entry.providerWarningsCount : 0
+  };
+}
 
 // A bounded, allowlist-only token. Adapters, routes, statuses and workflow types
 // are already fixed enums; this defends against anything unexpected in a stored file.
@@ -49,7 +91,8 @@ export function projectRunSummary(run) {
     durationMs: Number.isFinite(run.durationMs) ? run.durationMs : null,
     safeErrorCode: ERROR_CODES.includes(run.errorCode) ? run.errorCode : null,
     warningsCount: Array.isArray(run.warnings) ? run.warnings.length : 0,
-    resultAvailable: Boolean(run.resultSummary)
+    resultAvailable: Boolean(run.resultSummary),
+    ...providerFields(run)
   };
 }
 
@@ -77,9 +120,12 @@ export function sanitizeStoredSummary(entry) {
     durationMs: Number.isFinite(entry.durationMs) ? entry.durationMs : null,
     safeErrorCode: ERROR_CODES.includes(entry.safeErrorCode) ? entry.safeErrorCode : null,
     warningsCount: Number.isFinite(entry.warningsCount) ? entry.warningsCount : 0,
-    resultAvailable: entry.resultAvailable === true
+    resultAvailable: entry.resultAvailable === true,
+    ...providerFieldsFromEntry(entry)
   };
 }
+
+export { PROVIDER_SUMMARY_KEYS };
 
 // Newest first: prefer finishedAt, fall back to startedAt.
 export function compareRunSummaryNewestFirst(a, b) {

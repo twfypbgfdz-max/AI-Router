@@ -1,5 +1,60 @@
 # Changelog
 
+## v0.13.0-test
+
+- Zentrale, rein lokale **Provider-Schicht** eingefuehrt: Provider-Vertrag
+  (`provider-contract.js`, validiert und eingefroren, streng begrenztes
+  `safeMetadata`, keine unbekannten Felder), autoritative **Provider-Registry**
+  (`provider-registry.js`) mit fuenf erlaubten Provider-IDs und simulierten
+  Modellprofilen, deterministische **Provider-Auswahl** (`provider-selection.js`,
+  automatisch und manuell), profilbasierte **Provider-Simulation**
+  (`provider-simulator.js`, baut auf dem bestehenden Mock-Rollenlauf auf — keine
+  zweite Ausfuehrungsarchitektur) und sichere **Synthese**
+  (`provider-synthesis.js`, agreements/disagreements, Review-Empfehlung).
+- **Keine echte externe KI**: keine Claude-, OpenAI- oder Gemini-API, kein SDK,
+  kein Netzwerkzugriff, keine API-Schluessel, keine neuen npm-Abhaengigkeiten.
+  `mock-local` und `codex-local-readonly` sind die einzigen ausfuehrbaren
+  Provider; `claude/openai/gemini-simulated` sind reine lokale Simulationen.
+  Codex bleibt ausschliesslich lokal read-only gemaess v0.11.
+- Deterministische, erklaerbare Auswahl mit `selectedProviderId`,
+  `selectedAdapterId`, `selectedModelId`, `selectionMode`, `simulated`,
+  `reasoning` (kurz, sicher), `alternatives`, `confidence`, `capabilityMatch`,
+  `roleMatch`, `fallbackReason`, `warnings`; gleiche Eingabe -> gleiche Auswahl.
+- Optionales Request-Feld `requestedProvider` (normalisiert, groessenbegrenzt,
+  gegen die Registry-Allowlist geprueft) und `providerProfile`
+  (`single_provider`, `specialist_chain`, `safe_review_chain`). Manuelle
+  Fehlpassung -> kontrollierter Fehler statt stiller Ausfuehrung. Das
+  Freigabe-Gate wird durch Auswahl oder Fallback nie umgangen; ein Retry bleibt
+  auf genau einen technischen Versuch begrenzt.
+- Neue sichere Fehlercodes (`PROVIDER_NOT_FOUND`, `PROVIDER_NOT_ALLOWED`,
+  `PROVIDER_DISABLED`, `PROVIDER_UNAVAILABLE`, `PROVIDER_CAPABILITY_MISMATCH`,
+  `PROVIDER_ROLE_NOT_SUPPORTED`, `PROVIDER_TASK_NOT_SUPPORTED`,
+  `PROVIDER_CONFIGURATION_INVALID`, `PROVIDER_SELECTION_FAILED`,
+  `PROVIDER_EXECUTION_NOT_IMPLEMENTED`, `MODEL_NOT_ALLOWED`,
+  `MODEL_NOT_AVAILABLE`) im bestehenden Fehlervertrag.
+- Run-Zusammenfassung um begrenzte Provider-Metadaten erweitert
+  (`selectedProviderId`, `selectedModelId`, `providerWorkflowProfile`,
+  `providersUsed`, `providerCount`, `simulatedProviderCount`,
+  `realLocalAdapterUsed`, `providerSelectionMode`, `providerFallbackUsed`,
+  `providerWarningsCount`); alte Runs ohne diese Felder bleiben sicher lesbar.
+  Keine Provider-Rohantworten, Zwischenergebnisse, Prompts, Tokens oder Pfade im
+  Store.
+- Read-only Endpunkte `GET /api/providers`, `GET /api/providers/:providerId`
+  (unbekannt -> `404 PROVIDER_NOT_FOUND`) und die reine Vorschau
+  `POST /api/providers/select` ergaenzt. Health/Diagnose/Cockpit zeigen nur
+  sichere Provider-Aggregate; die alten und neuen Cockpit-Kompatibilitaetsfelder
+  bleiben erhalten.
+- Strukturiertes Logging um Provider-Events und die Felder `providerId`,
+  `modelId`, `role` erweitert (weiterhin ohne Tasktexte, Prompts, Rohantworten,
+  Tokens oder Pfade).
+- Neue Betriebsoberflaeche `ai-router-v0_13-test.html`: Provider-Auswahl,
+  Provider-Empfehlung, Provider je Rolle, Multi-Provider-Ansicht und klare
+  Simulationskennzeichnung; kein Token- oder API-Konfigurationsfeld.
+- Umfangreiche Tests fuer Vertrag, Registry, Auswahl, Simulation, Synthese,
+  Multi-Provider-Workflow, Provider-Endpunktvorschau, Historie/Datensparsamkeit,
+  Health/Diagnose/Cockpit, Logging und Resilienz ergaenzt. Der echte
+  Codex-End-to-End-Test bleibt deaktiviert; keine echten externen Provider-Tests.
+
 ## v0.12.1-test
 
 - Read-only Cockpit-Statusvertrag voruebergehend rueckwaertskompatibel gemacht, damit das noch nicht angepasste Felix-Cockpit weiter funktioniert.

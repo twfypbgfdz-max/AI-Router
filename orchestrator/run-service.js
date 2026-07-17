@@ -13,6 +13,10 @@ import { normalizeRunRequest, RouterError } from "./contracts.js";
 import { logger as defaultLogger } from "./logger.js";
 import { ERROR_CODES } from "./policy.js";
 import { createAdapterStatusMonitor } from "./adapter-status.js";
+import { selectProvider } from "./provider-selection.js";
+import { flavorRoleResult } from "./provider-simulator.js";
+import { synthesizeProviderResults } from "./provider-synthesis.js";
+import { providerRegistry } from "./provider-registry.js";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
 const ACTIVE = new Set(["validating", "queued", "running"]);
@@ -43,13 +47,30 @@ function defaultAdapters() {
 }
 
 export class RunService {
-  constructor({ adapters, adapter, git = { captureGitState, compareGitState }, persist = saveRun, publish = saveCockpitStatus, logger = defaultLogger, adapterStatus } = {}) {
+  constructor({ adapters, adapter, git = { captureGitState, compareGitState }, persist = saveRun, publish = saveCockpitStatus, logger = defaultLogger, adapterStatus, registry } = {}) {
     this.adapters = adapters || (adapter ? { "codex-cli": { resolveExecutable: adapter.resolveCodexExecutable, run: ({ repository, task, executable }) => adapter.runCodex({ repository, prompt: task, executable }) } } : defaultAdapters());
     this.defaultAdapter = adapter ? "codex-cli" : "mock";
     this.git = git; this.persist = persist; this.publish = publish; this.logger = logger; this.runs = new Map(); this.operations = new Map(); this.activeRunId = null;
     this.adapterStatus = adapterStatus || createAdapterStatusMonitor();
+    this.registry = registry || providerRegistry;
   }
-  log(event, run, status, safeMetadata = {}) { return this.logger?.log?.({ event, requestId: run?.requestId || null, runId: run?.runId || null, workflowId: run?.workflow?.type || null, stepId: run?.workflow?.currentStep || null, status, safeMetadata }).catch(() => {}); }
+  // Deterministic provider selection wrapper: normalizes any failure into the
+  // safe provider error contract and logs the outcome. Never bypasses approval.
+  selectProviderPlan(routePlan, request) {
+    this.log("provider_selection_started", { requestId: request.requestId, runId: null }, "created", { taskType: routePlan.taskType });
+    try {
+      const plan = selectProvider({ routePlan, request, registry: this.registry });
+      this.log("provider_selected", { requestId: request.requestId, runId: null }, "created", { providerId: plan.selectedProviderId, profile: plan.providerWorkflowProfile, mode: plan.selectionMode });
+      return plan;
+    } catch (error) {
+      this.log("provider_selection_failed", { requestId: request.requestId, runId: null }, "failed", { code: error.code || "PROVIDER_SELECTION_FAILED" });
+      throw error instanceof RouterError ? error : new RouterError("PROVIDER_SELECTION_FAILED", "Provider selection failed.");
+    }
+  }
+  log(event, run, status, safeMetadata = {}) {
+    const { providerId = null, modelId = null, role = null, ...rest } = safeMetadata || {};
+    return this.logger?.log?.({ event, requestId: run?.requestId || null, runId: run?.runId || null, workflowId: run?.workflow?.type || null, stepId: run?.workflow?.currentStep || null, providerId, modelId, role, status, safeMetadata: rest }).catch(() => {});
+  }
   // Live, in-memory operational snapshot for this process. Safe counters and
   // timestamps only — no task content, prompts, paths or raw errors.
   snapshot() {
@@ -76,7 +97,7 @@ export class RunService {
   cockpitContext() {
     const snapshot = this.snapshot();
     const adapterStatus = this.adapterStatus.current();
-    return { ...snapshot, adapterStatus, checkedAt: adapterStatus["codex-cli"]?.checkedAt || new Date().toISOString() };
+    return { ...snapshot, adapterStatus, checkedAt: adapterStatus["codex-cli"]?.checkedAt || new Date().toISOString(), providerLayer: this.registry.status() };
   }
   async update(run, status, fields = {}) {
     if (TERMINAL.has(run.status) && run.status !== status) throw new Error("Terminal run state cannot change.");
@@ -91,7 +112,13 @@ export class RunService {
     const request = normalizeRunRequest({ ...input, requestedAdapter: input.requestedAdapter ?? input.adapter ?? this.defaultAdapter });
     const { task, repository = REPOSITORY_ROOT } = input;
     const routePlan = createRoutePlan(request.task);
+    // v0.13: deterministic provider selection (metadata + optional manual choice).
+    const providerPlan = this.selectProviderPlan(routePlan, request);
     let adapterName = request.requestedAdapter || this.defaultAdapter;
+    // A manual codex-local-readonly selection maps to the existing real read-only
+    // codex adapter path (all v0.11 safety intact). Simulated providers stay on mock.
+    if (providerPlan.selectedProviderId === "codex-local-readonly" && providerPlan.selectedAdapterId === "codex-cli-readonly") adapterName = "codex-cli";
+    else if (request.requestedProvider && providerPlan.selectedAdapterId === "mock") adapterName = "mock";
     if (!ADAPTER_NAMES.has(adapterName) || !this.adapters[adapterName]) throw new Error("Unsupported adapter.");
     const simulationMode = request.options.simulationMode;
     if (adapterName === "mock" && simulationMode !== undefined && !isMockSimulationMode(simulationMode)) throw new RouterError("INVALID_REQUEST", "Unsupported simulation mode.");
@@ -109,7 +136,7 @@ export class RunService {
     const approval = routePlan.approvalRequired ? { required: true, status: "pending", requestedAt: createdAt, decidedAt: null, decision: null, decisionNote: "", approvedAction: "", consumed: false } : null;
     const workflow = createWorkflow(routePlan);
     if (mode === "failure_reviewer" && !workflow.steps.some((step) => step.role === "reviewer")) throw new Error("Reviewer failure simulation requires a reviewer workflow.");
-    const run = { runId: `run_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`, ...request, createdAt, updatedAt: createdAt, task: request.task, repository, branchBefore: null, branchAfter: null, gitStatusBefore: null, gitStatusAfter: null, adapter: adapterName, simulationMode: mode, executable: null, mode: "read-only", status: "created", startedAt: null, finishedAt: null, durationMs: null, timeoutMs, exitCode: null, resultSummary: null, errorCode: null, errorSummary: null, usage: null, events: [], retry: { count: 0, maxAttempts: 2, lastReason: null }, warnings: [...routePlan.warnings], routePlan, approvalContext, approval, approvalSimulation: false, workflow };
+    const run = { runId: `run_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`, ...request, createdAt, updatedAt: createdAt, task: request.task, repository, branchBefore: null, branchAfter: null, gitStatusBefore: null, gitStatusAfter: null, adapter: adapterName, simulationMode: mode, executable: null, mode: "read-only", status: "created", startedAt: null, finishedAt: null, durationMs: null, timeoutMs, exitCode: null, resultSummary: null, errorCode: null, errorSummary: null, usage: null, events: [], retry: { count: 0, maxAttempts: 2, lastReason: null }, warnings: [...routePlan.warnings], routePlan, approvalContext, approval, approvalSimulation: false, workflow, providerPlan, providerWorkflowProfile: providerPlan.providerWorkflowProfile, providerRuntime: { providersUsed: [providerPlan.selectedProviderId], realLocalAdapterUsed: false }, providerSynthesis: null };
     this.activeRunId = run.runId;
     this.runs.set(run.runId, run);
     try { await this.persist(run); await this.publish(this.cockpitContext()); }
@@ -152,6 +179,8 @@ export class RunService {
   }
   async start(run) {
     await this.update(run, "running", { startedAt: new Date().toISOString() });
+    // This is the only real (local, read-only) adapter path.
+    if (run.providerRuntime) { run.providerRuntime.realLocalAdapterUsed = true; run.providerRuntime.providersUsed = ["codex-local-readonly"]; }
     const adapter = this.adapters[run.adapter];
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       let timer;
@@ -201,12 +230,14 @@ export class RunService {
     const adapter = this.adapters.mock;
     if (!adapter) return this.update(run, "failed", { finishedAt: new Date().toISOString(), errorSummary: "Safe mock adapter is unavailable." });
     let finalSummary = "";
+    const providerRoleResults = [];
     try {
       let step = nextPendingStep(run.workflow);
       while (step) {
         if (run.cancelRequested) return run;
         startStep(run.workflow, step.id);
         await this.update(run, "running");
+        const assignment = run.providerPlan?.roleAssignments?.find((a) => a.role === step.role) || null;
         const runRole = adapter.runRole || ((options) => adapter.run({ ...options, workflowRole: options.role }));
         let result; let operation;
         for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -227,6 +258,10 @@ export class RunService {
           }
         }
 
+        // v0.13: reflavor a successful role result with its assigned simulated
+        // provider profile. Timeouts and the baseline mock provider pass through.
+        if (assignment && result && !result.timeout) result = flavorRoleResult(result, { providerId: assignment.providerId, modelId: assignment.modelId, role: step.role, simulationProfile: assignment.providerId });
+
         if (result?.timeout) {
           await operation.cancel();
           failStep(run.workflow, step.id, "Workflow step exceeded timeout.");
@@ -243,10 +278,18 @@ export class RunService {
         succeedStep(run.workflow, step.id, result.resultSummary);
         this.log("step_completed", run, "succeeded");
         finalSummary = result.resultSummary;
+        providerRoleResults.push({ role: step.role, providerId: assignment?.providerId || "mock-local", simulated: assignment?.simulated ?? true, summary: result.resultSummary, status: "succeeded" });
         await this.update(run, "running", { events: safeEvents });
         step = nextPendingStep(run.workflow);
       }
       completeWorkflow(run.workflow);
+      // v0.13: record which providers actually ran and, for multi-provider
+      // chains, a safe synthesis with agreements/disagreements.
+      if (run.providerRuntime) run.providerRuntime.providersUsed = [...new Set(providerRoleResults.map((r) => r.providerId))];
+      if (run.providerWorkflowProfile && run.providerWorkflowProfile !== "single_provider") {
+        run.providerSynthesis = synthesizeProviderResults({ workflowProfile: run.providerWorkflowProfile, roleResults: providerRoleResults, uncertainty: run.routePlan?.uncertainty });
+        this.log("provider_result_synthesized", run, "succeeded", { profile: run.providerWorkflowProfile, providers: String(run.providerRuntime.providersUsed.length) });
+      }
       return this.update(run, "succeeded", { finishedAt: new Date().toISOString(), exitCode: 0, resultSummary: sanitizeText(finalSummary, MAX_RESULT_LENGTH), errorSummary: null });
     } catch (error) {
       if (run.cancelRequested) return run;

@@ -18,7 +18,9 @@ test("projectRunSummary exposes only the allowlisted safe metadata fields", () =
   assert.deepEqual(Object.keys(summary).sort(), [
     "adapter", "approvalState", "durationMs", "finishedAt", "requestId", "resultAvailable",
     "retryCount", "riskLevel", "route", "runId", "safeErrorCode", "schemaVersion", "startedAt",
-    "status", "success", "warningsCount", "workflowType"
+    "status", "success", "warningsCount", "workflowType",
+    "selectedProviderId", "selectedModelId", "providerWorkflowProfile", "providersUsed", "providerCount",
+    "simulatedProviderCount", "realLocalAdapterUsed", "providerSelectionMode", "providerFallbackUsed", "providerWarningsCount"
   ].sort());
   assert.equal(summary.adapter, "codex-cli");
   assert.equal(summary.riskLevel, "R2");

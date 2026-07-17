@@ -14,6 +14,7 @@ test("cockpit contract exposes the v0.12 fields plus the deprecated compat alias
   assert.deepEqual(Object.keys(status).sort(), [
     "activeRuns", "awaitingApprovalRuns", "checkedAt", "codexReadOnlyStatus",
     "lastSafeErrorCode", "lastSuccessfulRunAt", "mockAvailable", "reachable", "serviceStatus", "version",
+    "providerLayerStatus", "enabledProviderCount", "simulatedProviderCount",
     "routerVersion", "activeOrWaitingRuns", "updatedAt", "lastRunStatus"
   ].sort());
 });
@@ -23,7 +24,7 @@ test("cockpit maps adapter availability into its stable booleans and enums", () 
   assert.equal(status.reachable, true);
   assert.equal(status.mockAvailable, true);
   assert.equal(status.codexReadOnlyStatus, "unsupported");
-  assert.equal(status.version, "0.12.1-test");
+  assert.equal(status.version, "0.13.0-test");
   assert.equal(status.activeRuns, 2);
   assert.equal(status.awaitingApprovalRuns, 1);
   assert.equal(status.lastSafeErrorCode, "ADAPTER_FAILED");

@@ -79,5 +79,5 @@ test("R4 task stops awaiting approval without starting any adapter", async () =>
   const cockpit = projectCockpitStatus(service.cockpitContext());
   assert.equal(cockpit.reachable, true);
   assert.equal(cockpit.awaitingApprovalRuns, 1);
-  assert.equal(cockpit.version, "0.12.1-test");
+  assert.equal(cockpit.version, "0.13.0-test");
 });

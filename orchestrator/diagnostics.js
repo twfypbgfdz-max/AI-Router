@@ -27,6 +27,11 @@ export function buildDiagnostics({ history = { runs: [], total: 0 }, adapterStat
   const averageDurationMs = durations.length ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length) : null;
   const errorsBySafeCode = countBy(runs.filter((run) => ERROR_CODES.includes(run.safeErrorCode)), (run) => run.safeErrorCode);
   const runsByStatus = countBy(runs, (run) => run.status);
+  // v0.13 provider aggregates — derived only from the safe run summaries.
+  const runsByProvider = countBy(runs, (run) => run.selectedProviderId || null);
+  const runsByWorkflowProfile = countBy(runs, (run) => run.providerWorkflowProfile || null);
+  const mostCommonWorkflowProfile = Object.entries(runsByWorkflowProfile).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  const providerSelectionCodes = ["PROVIDER_SELECTION_FAILED", "PROVIDER_NOT_ALLOWED", "PROVIDER_DISABLED", "PROVIDER_UNAVAILABLE", "PROVIDER_CAPABILITY_MISMATCH", "PROVIDER_ROLE_NOT_SUPPORTED", "PROVIDER_TASK_NOT_SUPPORTED"];
   return {
     version: ROUTER_VERSION,
     schemaVersion: SCHEMA_VERSION,
@@ -47,6 +52,14 @@ export function buildDiagnostics({ history = { runs: [], total: 0 }, adapterStat
     loggingStatus: typeof logging.status === "string" ? logging.status : "unknown",
     runStoreAvailable: storage.runStoreAvailable === true,
     storageStatus: typeof storage.status === "string" ? storage.status : "unknown",
-    adapterStatus: projectAdapterStatus(adapterStatus)
+    adapterStatus: projectAdapterStatus(adapterStatus),
+    // --- v0.13 provider-layer diagnostics (aggregates only, no raw data) ---
+    runsByProvider,
+    simulatedProviderRunCount: runs.filter((run) => run.providerCount > 0 && run.realLocalAdapterUsed !== true).length,
+    localCodexReadOnlyRunCount: runs.filter((run) => run.realLocalAdapterUsed === true).length,
+    providerSelectionFailureCount: runs.filter((run) => providerSelectionCodes.includes(run.safeErrorCode)).length,
+    providerFallbackCount: runs.filter((run) => run.providerFallbackUsed === true).length,
+    multiProviderWorkflowCount: runs.filter((run) => run.providerWorkflowProfile && run.providerWorkflowProfile !== "single_provider").length,
+    mostCommonWorkflowProfile
   };
 }

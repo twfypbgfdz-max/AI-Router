@@ -26,6 +26,8 @@ export function projectCockpitStatus(context = {}) {
   const version = ROUTER_VERSION;
   const checkedAt = iso(context.checkedAt) || new Date().toISOString();
   const lastRunStatus = ALLOWED_RUN_STATUSES.includes(context.lastRunStatus) ? context.lastRunStatus : null;
+  const providerLayer = context.providerLayer && typeof context.providerLayer === "object" ? context.providerLayer : {};
+  const providerLayerStatus = providerLayer.registryStatus === "ok" || providerLayer.registryStatus === "degraded" ? providerLayer.registryStatus : "unknown";
   return {
     reachable: true,
     serviceStatus: SERVICE_STATUSES.has(context.serviceStatus) ? context.serviceStatus : "ok",
@@ -37,6 +39,10 @@ export function projectCockpitStatus(context = {}) {
     mockAvailable: adapters.mock?.state === "available",
     codexReadOnlyStatus: ADAPTER_STATES.includes(codexState) ? codexState : "unchecked",
     checkedAt,
+    // --- v0.13 provider-layer overview (additive; safe counts only) ---
+    providerLayerStatus,
+    enabledProviderCount: count(providerLayer.enabledProviderCount),
+    simulatedProviderCount: count(providerLayer.simulatedProviderCount),
     // --- deprecated backward-compatible aliases (v0.11 cockpit) ---
     routerVersion: version,
     activeOrWaitingRuns: activeRuns + awaitingApprovalRuns,
