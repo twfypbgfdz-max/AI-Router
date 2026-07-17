@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.12.1-test
+
+- Read-only Cockpit-Statusvertrag voruebergehend rueckwaertskompatibel gemacht, damit das noch nicht angepasste Felix-Cockpit weiter funktioniert.
+- Alle kanonischen v0.12-Felder bleiben unveraendert erhalten.
+- Vier **veraltete, nur voruebergehend gepflegte Aliasfelder** ergaenzt, ausschliesslich aus den kanonischen Feldern abgeleitet: `routerVersion` = `version`, `activeOrWaitingRuns` = `activeRuns` + `awaitingApprovalRuns`, `updatedAt` = `checkedAt`, `lastRunStatus` = letzter sicher bekannter Run-Status (Enum) oder `null`.
+- `lastRunStatus` wird aus dem zuletzt aktualisierten Run des laufenden Prozesses abgeleitet und gegen die feste Status-Allowlist geprueft.
+- Die Aliasfelder enthalten keine Tasktexte, Prompts, Ergebnisse, Logs oder Pfade und bringen keine neue Approval-, Abbruch- oder Schreibfunktion; das Cockpit bleibt rein lesend.
+- Tests fuer den vollstaendigen v0.12-Vertrag, die Aliasfelder, die Berechnung von `activeOrWaitingRuns`, `routerVersion`=`version`, `updatedAt`=`checkedAt`, sicheren `lastRunStatus` und Datensparsamkeit ergaenzt.
+- Aliasfelder in README und CHANGELOG ausdruecklich als voruebergehend und veraltet dokumentiert; keine Aenderungen am Felix-Cockpit oder an anderen Repositories.
+
 ## v0.12.0-test
 
 - Sichere, begrenzte Run-Historie ergaenzt: zentrale Metadaten-Projektion (`run-summary.js`), bounded Index (`run-history.json`, max. 200), `GET /api/history` mit neueste-zuerst-Sortierung, Limit/Offset und Filtern nach Status, Adapter und Zeitraum sowie sichere Detailansicht `GET /api/history/:id`.

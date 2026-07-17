@@ -55,9 +55,11 @@ export class RunService {
   snapshot() {
     const runs = [...this.runs.values()];
     const byFinishedDesc = (a, b) => (Date.parse(b.finishedAt || "") || 0) - (Date.parse(a.finishedAt || "") || 0);
+    const byUpdatedDesc = (a, b) => (Date.parse(b.updatedAt || "") || 0) - (Date.parse(a.updatedAt || "") || 0);
     const lastFailed = runs.filter((run) => FAILED.has(run.status) && run.finishedAt).sort(byFinishedDesc)[0] || null;
     const lastSuccess = runs.filter((run) => run.status === "succeeded" && run.finishedAt).sort(byFinishedDesc)[0] || null;
     const lastCode = lastFailed ? (ERROR_CODES.includes(lastFailed.errorCode) ? lastFailed.errorCode : (lastFailed.status === "timed_out" ? "STEP_TIMEOUT" : "ADAPTER_FAILED")) : null;
+    const mostRecent = runs.slice().sort(byUpdatedDesc)[0] || null;
     return {
       serviceStatus: "ok",
       activeRuns: runs.filter((run) => ACTIVE.has(run.status)).length,
@@ -65,7 +67,8 @@ export class RunService {
       awaitingApprovalRuns: runs.filter((run) => run.status === "awaiting_approval").length,
       lastSuccessfulRunAt: lastSuccess?.finishedAt || null,
       lastFailedRunAt: lastFailed?.finishedAt || null,
-      lastSafeErrorCode: lastCode
+      lastSafeErrorCode: lastCode,
+      lastRunStatus: mostRecent?.status || null
     };
   }
   // Context for the read-only cockpit contract. Uses only the cached adapter

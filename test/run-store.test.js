@@ -5,13 +5,13 @@ import { createRunStore } from "../orchestrator/run-store.js";
 
 test("cockpit status is a stable read-only contract without task or approval content", () => {
   const status = projectCockpitStatus({ serviceStatus: "ok", activeRuns: 2, awaitingApprovalRuns: 1, lastSuccessfulRunAt: "2026-01-01T00:00:00.000Z", lastSafeErrorCode: "ADAPTER_FAILED", adapterStatus: { mock: { state: "available" }, "codex-cli": { state: "unavailable" } }, checkedAt: "2026-01-01T00:00:00.000Z", task: "private task", approvalContext: { plannedAction: "private action" } });
-  assert.deepEqual(Object.keys(status).sort(), ["activeRuns", "awaitingApprovalRuns", "checkedAt", "codexReadOnlyStatus", "lastSafeErrorCode", "lastSuccessfulRunAt", "mockAvailable", "reachable", "serviceStatus", "version"].sort());
+  assert.deepEqual(Object.keys(status).sort(), ["activeRuns", "awaitingApprovalRuns", "checkedAt", "codexReadOnlyStatus", "lastSafeErrorCode", "lastSuccessfulRunAt", "mockAvailable", "reachable", "serviceStatus", "version", "routerVersion", "activeOrWaitingRuns", "updatedAt", "lastRunStatus"].sort());
   assert.equal(JSON.stringify(status).includes("private"), false);
   assert.equal(status.activeRuns, 2);
   assert.equal(status.awaitingApprovalRuns, 1);
   assert.equal(status.mockAvailable, true);
   assert.equal(status.codexReadOnlyStatus, "unavailable");
-  assert.equal(status.version, "0.12.0-test");
+  assert.equal(status.version, "0.12.1-test");
 });
 
 test("persistent run store omits prompts, context and internal paths", async () => {

@@ -59,7 +59,7 @@ test("health enters a safe restricted mode when storage is unavailable", () => {
   assert.equal(health.storageStatus, "unavailable");
   assert.equal(health.loggingStatus, "unavailable");
   // The router keeps answering with a valid, honest contract instead of crashing.
-  assert.equal(health.version, "0.12.0-test");
+  assert.equal(health.version, "0.12.1-test");
 });
 
 test("diagnostics stays valid and empty when there is no history", () => {

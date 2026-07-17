@@ -4,7 +4,7 @@ Lokale HTML-Test-App zur einfachen Empfehlung eines passenden KI-Tools fuer eine
 
 ## Version
 
-Aktuelle Testversion: `v0.12.0-test`
+Aktuelle Testversion: `v0.12.1-test`
 
 ## Betrieb, Diagnose und Transparenz v0.12
 
@@ -54,13 +54,28 @@ moeglich. Es erfolgt keine Installation und keine Konfigurationsaenderung. Der
 Mock-Adapter gilt nur bei valider interner Konfiguration als `available`.
 
 **Cockpit-Vertrag (`GET /api/cockpit-status`):** stabil und rein lesend. Er
-liefert genau `reachable`, `serviceStatus`, `version`, `activeRuns`,
-`awaitingApprovalRuns`, `lastSuccessfulRunAt`, `lastSafeErrorCode`,
+liefert die kanonischen v0.12-Felder `reachable`, `serviceStatus`, `version`,
+`activeRuns`, `awaitingApprovalRuns`, `lastSuccessfulRunAt`, `lastSafeErrorCode`,
 `mockAvailable`, `codexReadOnlyStatus` und `checkedAt`. Er liefert keine
 Run-Listen, Aufgabeninhalte, Prompts, Ergebnisse, Logs, Approval- oder
-Abbruchsteuerung und keinen Schreibzugriff. Hinweis: Die Feldnamen dieses
-Vertrags wurden gegenueber v0.11 (`routerVersion`, `lastRunStatus`,
-`activeOrWaitingRuns`, `updatedAt`) auf die hier genannten Namen umgestellt.
+Abbruchsteuerung und keinen Schreibzugriff.
+
+**Voruebergehende Rueckwaertskompatibilitaet (v0.12.1, veraltet):** Da das
+Felix-Cockpit noch nicht auf die neuen Feldnamen umgestellt ist, liefert der
+Vertrag zusaetzlich vier **veraltete, nur voruebergehend gepflegte Aliasfelder**,
+die ausschliesslich aus den kanonischen Feldern abgeleitet werden und keine
+weiteren oder sensiblen Daten enthalten:
+
+- `routerVersion` = `version`
+- `activeOrWaitingRuns` = `activeRuns` + `awaitingApprovalRuns`
+- `updatedAt` = `checkedAt`
+- `lastRunStatus` = letzter sicher bekannter Run-Status (fester Enumwert) oder
+  `null`
+
+Diese Aliasfelder sind ausdruecklich als Uebergangsloesung gedacht und sollen
+entfallen, sobald das Cockpit die v0.12-Feldnamen (`version`, `activeRuns`/
+`awaitingApprovalRuns`, `checkedAt`) liest. Neue Konsumenten sollen die
+kanonischen v0.12-Felder verwenden.
 
 **Logging:** Zusaetzliche sichere Betriebs-Events (u. a. `server_started`,
 `health_checked`, `diagnostics_checked`, `adapter_check_*`, `run_listed`,
@@ -179,7 +194,7 @@ zuverlaessig; das ist in v0.11 behoben.
 
 ## Lokaler Read-only-Codex-MVP
 
-`npm start` startet den aktuellen MVP-Teststand `v0.12.0-test` als lokalen
+`npm start` startet den aktuellen MVP-Teststand `v0.12.1-test` als lokalen
 Node-Server auf `http://127.0.0.1:8787` und liefert die Betriebsoberflaeche
 `ai-router-v0_12-test.html`. `npm test` fuehrt die automatisierten Tests aus. Es
 gibt keine npm-Abhaengigkeiten; Node und die npm-Skripte werden dennoch fuer
