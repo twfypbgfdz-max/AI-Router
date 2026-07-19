@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "recommendation-output-v1.json",
+  "title": "AI Router Recommendation Output v1",
+  "type": "object",
+  "required": ["schemaVersion", "mode", "generatedAt", "recommendation", "alternatives", "blockedReasons", "missingEvidence", "execution"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "mode": { "const": "observe" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "recommendation": { "anyOf": [{ "$ref": "#/$defs/recommendation" }, { "type": "null" }] },
+    "alternatives": { "type": "array", "maxItems": 2, "items": { "$ref": "#/$defs/recommendation" } },
+    "blockedReasons": { "type": "array", "items": { "type": "string" } },
+    "missingEvidence": { "type": "array", "items": { "type": "string" } },
+    "execution": {
+      "type": "object",
+      "required": ["allowed", "performed"],
+      "properties": { "allowed": { "const": false }, "performed": { "const": false } },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": { "code": { "type": "string" }, "message": { "type": "string", "maxLength": 160 } },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "recommendation": {
+      "type": "object",
+      "required": ["recommendationId", "projectId", "workflowId", "title", "summary", "reasonCodes", "evidence", "confidence", "safetyLevel", "mode", "blockedReasons", "missingEvidence", "generatedAt"],
+      "properties": {
+        "recommendationId": { "type": "string", "pattern": "^rec_[a-f0-9]{16}$" },
+        "projectId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,95}$" },
+        "workflowId": { "anyOf": [{ "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,95}$" }, { "type": "null" }] },
+        "title": { "type": "string", "maxLength": 160 },
+        "summary": { "type": "string", "maxLength": 300 },
+        "reasonCodes": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "type": "string", "maxLength": 64 } },
+        "evidence": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["field", "status", "evidenceStatus", "evidenceTimestamp"],
+            "properties": {
+              "field": { "type": "string", "maxLength": 160 },
+              "status": { "type": "string", "maxLength": 32 },
+              "evidenceStatus": { "enum": ["available", "unknown", "unavailable"] },
+              "evidenceTimestamp": { "type": ["string", "null"], "format": "date-time" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "confidence": { "enum": ["high", "medium", "low"] },
+        "safetyLevel": { "enum": ["read-only", "prepare-only"] },
+        "mode": { "const": "observe" },
+        "blockedReasons": { "type": "array", "items": { "type": "string" } },
+        "missingEvidence": { "type": "array", "items": { "type": "string" } },
+        "generatedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

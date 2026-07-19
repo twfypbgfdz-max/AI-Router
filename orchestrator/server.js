@@ -2,7 +2,7 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT, REPOSITORY_ROOT, ROUTER_ALLOWED_ORIGINS, ROUTER_API_DEFAULT_MODE, ROUTER_API_MAX_BODY_BYTES, ROUTER_API_TIMEOUT_MS, ROUTER_VERSION } from "./config.js";
+import { DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT, RECOMMENDATION_MAX_BODY_BYTES, REPOSITORY_ROOT, ROUTER_ALLOWED_ORIGINS, ROUTER_API_DEFAULT_MODE, ROUTER_API_MAX_BODY_BYTES, ROUTER_API_TIMEOUT_MS, ROUTER_VERSION } from "./config.js";
 import { RunService } from "./run-service.js";
 import { getRunSummary, historySnapshot, listRuns, loadLatestRun, storageHealth } from "./run-store.js";
 import { projectCockpitStatus } from "./cockpit-status.js";
@@ -18,6 +18,8 @@ import { previewProviderSelection } from "./provider-selection.js";
 import { processRouterRequest, routerActions, routerStatus } from "./router-service.js";
 import { safeRequestIdentity } from "./router-contract.js";
 import { buildRouterFailure, routerHttpStatus } from "./router-response.js";
+import { createRecommendations } from "./recommendation-engine.js";
+import { buildRecommendationFailure, recommendationHttpStatus } from "./recommendation-response.js";
 
 const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_13-test.html");
 
@@ -86,8 +88,9 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
 
     if (isRouterPath) {
       if (!isTrustedRouterRequest(request, allowedRouterOrigins)) {
-        const payload = buildRouterFailure(new RouterError("ORIGIN_NOT_ALLOWED", "Origin is not allowed."));
-        return sendJson(response, routerHttpStatus(payload.error.code), payload);
+        const error = new RouterError("ORIGIN_NOT_ALLOWED", "Origin is not allowed.");
+        const payload = pathname === "/api/router/recommendations" ? buildRecommendationFailure(error) : buildRouterFailure(error);
+        return sendJson(response, pathname === "/api/router/recommendations" ? recommendationHttpStatus(payload) : routerHttpStatus(payload.error.code), payload);
       }
       applyRouterCors(request, response, allowedRouterOrigins);
       if (request.method === "OPTIONS") { response.writeHead(204); return response.end(); }
@@ -104,6 +107,28 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
     if (request.method === "GET" && pathname === "/api/router/status") return sendJson(response, 200, routerStatus());
 
     if (request.method === "GET" && pathname === "/api/router/actions") return sendJson(response, 200, routerActions());
+
+    if (request.method === "POST" && pathname === "/api/router/recommendations") {
+      if (!isTrustedRouterMutation(request, allowedRouterOrigins)) {
+        const payload = buildRecommendationFailure(new RouterError("INVALID_REQUEST", "Content-Type must be application/json."));
+        return sendJson(response, recommendationHttpStatus(payload), payload);
+      }
+      try {
+        const input = await readJsonBody(request, RECOMMENDATION_MAX_BODY_BYTES);
+        const payload = createRecommendations(input);
+        safeLog("recommendation_generated", {
+          projectId: payload.recommendation?.projectId || null,
+          recommendationPresent: payload.recommendation !== null,
+          reasonCode: payload.recommendation?.reasonCodes?.[0] || payload.blockedReasons[0] || null,
+          mode: payload.mode
+        });
+        return sendJson(response, 200, payload);
+      } catch (error) {
+        const payload = buildRecommendationFailure(error);
+        safeLog("recommendation_rejected", { errorCode: payload.error.code, mode: payload.mode });
+        return sendJson(response, recommendationHttpStatus(payload), payload);
+      }
+    }
 
     if (request.method === "POST" && pathname === "/api/router/route") {
       if (!isTrustedRouterMutation(request, allowedRouterOrigins)) {

@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "recommendation-input-v1.json",
+  "title": "AI Router Recommendation Input v1",
+  "type": "object",
+  "required": ["schemaVersion", "mode", "project", "quality", "aiJobs", "alerts", "workflows", "evidence"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "mode": { "const": "observe" },
+    "project": {
+      "type": "object",
+      "required": ["id", "name", "status", "evidence"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,95}$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "status": { "$ref": "#/$defs/state" },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      },
+      "additionalProperties": false
+    },
+    "quality": {
+      "type": "object",
+      "required": ["status", "tests", "build", "versions", "releaseReadiness", "documentation", "deployment"],
+      "properties": {
+        "status": { "$ref": "#/$defs/evidencedState" },
+        "tests": { "$ref": "#/$defs/evidencedState" },
+        "build": { "$ref": "#/$defs/evidencedState" },
+        "releaseReadiness": { "$ref": "#/$defs/evidencedState" },
+        "documentation": { "$ref": "#/$defs/evidencedState" },
+        "deployment": { "$ref": "#/$defs/evidencedState" },
+        "versions": {
+          "type": "object",
+          "required": ["evidence"],
+          "properties": {
+            "development": { "type": ["string", "null"], "maxLength": 100 },
+            "stable": { "type": ["string", "null"], "maxLength": 100 },
+            "release": { "type": ["string", "null"], "maxLength": 100 },
+            "evidence": { "$ref": "#/$defs/evidence" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "aiJobs": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "required": ["id", "status", "freshness", "evidence"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,95}$" },
+          "status": { "$ref": "#/$defs/state" },
+          "freshness": { "$ref": "#/$defs/state" },
+          "evidence": { "$ref": "#/$defs/evidence" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "alerts": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "evidence"],
+        "properties": {
+          "code": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "severity": { "enum": ["notice", "warning", "critical", "unknown", "unavailable"] },
+          "evidence": { "$ref": "#/$defs/evidence" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "workflows": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "required": ["id", "safetyLevel"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,95}$" },
+          "safetyLevel": { "enum": ["read-only", "prepare-only"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "evidence": { "$ref": "#/$defs/evidence" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "state": { "enum": ["ok", "warning", "active", "paused", "review", "archived", "blocked", "failed", "passed", "partial", "success", "fresh", "stale", "current", "ready", "not-ready", "review-required", "unreleased", "preparing", "released", "deployed", "not-deployed", "complete", "completed", "incomplete", "conflict", "planned", "running", "cancelled", "unknown", "unavailable"] },
+    "evidence": {
+      "type": "object",
+      "required": ["status", "timestamp"],
+      "properties": {
+        "status": { "enum": ["available", "unknown", "unavailable"] },
+        "timestamp": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "evidencedState": {
+      "type": "object",
+      "required": ["status", "evidence"],
+      "properties": { "status": { "$ref": "#/$defs/state" }, "evidence": { "$ref": "#/$defs/evidence" } },
+      "additionalProperties": false
+    }
+  }
+}

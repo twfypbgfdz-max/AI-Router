@@ -38,6 +38,12 @@ export const ROUTER_API_DEFAULT_MODE = "simulate";
 export const ROUTER_API_MAX_BODY_BYTES = 16_384;
 export const ROUTER_API_TIMEOUT_MS = 5_000;
 export const ROUTER_REQUEST_ID_MAX_LENGTH = 120;
+export const RECOMMENDATION_SCHEMA_VERSION = "1.0";
+export const RECOMMENDATION_MAX_BODY_BYTES = 32_768;
+export const RECOMMENDATION_MAX_WORKFLOWS = 30;
+export const RECOMMENDATION_MAX_ALERTS = 30;
+export const RECOMMENDATION_MAX_AI_JOBS = 20;
+export const RECOMMENDATION_MAX_ALTERNATIVES = 2;
 export const ROUTER_ALLOWED_ORIGINS = Object.freeze([
   "http://127.0.0.1:8787",
   "http://127.0.0.1:3000",

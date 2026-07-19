@@ -22,6 +22,19 @@ bleiben reine Simulationen.
 Architektur, Datenfluss, Vertraege, Routen, Beispiele und Testbefehle sind in
 [`docs/router-api-v1.md`](docs/router-api-v1.md) dokumentiert.
 
+## Evidence-basierte Workflow-Empfehlungen
+
+`POST /api/router/recommendations` wertet normalisierte, belegte Statusdaten
+deterministisch aus. Die Schnittstelle bleibt immer im Modus `observe`, nutzt
+ausschliesslich die im Input enthaltene Dashboard-Workflow-Allowlist und kann
+nur `read-only` oder `prepare-only` empfehlen. Sie startet keinen Workflow,
+keinen Provider und keinen Prozess, schreibt keine Datei und erzeugt kein
+Aktionsobjekt. Ungueltige oder zukuenftige Evidence wird als `unavailable`
+behandelt; `unknown` wird nicht als Fehler interpretiert.
+
+Vertraege, Prioritaeten, Sicherheitsgrenzen und Beispiele stehen in
+[`docs/recommendation-engine-v1.md`](docs/recommendation-engine-v1.md).
+
 ## Simulierte Multi-Provider-Schicht v0.13
 
 v0.13 fuehrt eine zentrale, rein lokale Provider-Schicht ein. Der Router kann
