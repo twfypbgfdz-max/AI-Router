@@ -1,5 +1,11 @@
 # Cockpit-Router-API v1
 
+> Historischer Vertrag: Der aktive kanonische Routing-Core verwendet Schema
+> `2.0` und ist in [`router-core-v2.md`](router-core-v2.md) dokumentiert. v1 ist
+> nicht mehr der direkte Core-Vertrag; ausschließlich der begrenzte
+> Felix-Cockpit-Kompatibilitätsadapter akzeptiert dessen bestehendes
+> Simulationsformat.
+
 ## Zweck und Sicherheitsgrenze
 
 Die Cockpit-Router-API validiert und klassifiziert lokale Anfragen. Sie fuehrt

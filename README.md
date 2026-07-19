@@ -6,21 +6,26 @@ Lokale HTML-Test-App zur einfachen Empfehlung eines passenden KI-Tools fuer eine
 
 Aktuelle Testversion: `v0.13.0-test`
 
-## Cockpit-Router-API v1
+## Cockpit-Routing-Core v2
 
-Die neue, rein simulierende Cockpit-Schnittstelle nimmt versionierte Anfragen
-ueber `POST /api/router/route` an. Sie validiert Eingaben, bestimmt eine
-fachliche Route, prueft eine geschlossene Aktions-Allowlist und liefert Erfolge
-wie Fehler im selben Grundformat zurueck. `GET /api/router/status` und
-`GET /api/router/actions` stellen sichere Betriebs- und Allowlist-Metadaten
-bereit. Die bestehenden Run-, Provider-, Diagnose- und Cockpit-Status-APIs
-bleiben unveraendert. Router-CORS gilt nur fuer eine feste Cockpit-Origin-
-Allowlist; die engere Origin-Regel bestehender Mutationsendpunkte wird dadurch
-nicht erweitert. `execute` bleibt vollstaendig deaktiviert und alle Aktionen
-bleiben reine Simulationen.
+`POST /api/router/route` ist der kanonische, zustandslose Routing-Kern. Schema
+`2.0` unterstuetzt aktiv nur `recommendation` und `simulation`. Die Antwort
+trennt Empfehlung, Providerprofil, Evidence, Risiken, Constraints und einen
+rein lokalen Mock-Simulationsplan. `approval_required` und `execution` sind nur
+als spaetere Zustandsnamen dokumentiert und werden als Request-Modus abgelehnt.
 
-Architektur, Datenfluss, Vertraege, Routen, Beispiele und Testbefehle sind in
-[`docs/router-api-v1.md`](docs/router-api-v1.md) dokumentiert.
+Die bestehende Felix-Cockpit-Simulation (`schemaVersion: 1`, `mode: simulate`)
+wird durch einen schmalen Kompatibilitaetsadapter in denselben Core uebersetzt.
+Der Adapter besitzt keine eigene Routinglogik. Damit bleibt genau eine
+Provider- und Routingentscheidung autoritativ. Es gibt keine echte
+Provider-Anbindung, keine Action-Ausfuehrung und keine persistente Job-Queue.
+
+`GET /api/router/status` und `GET /api/router/actions` stellen sichere Betriebs-
+und Allowlist-Metadaten bereit. Router-CORS bleibt auf die feste lokale
+Cockpit-Origin-Allowlist begrenzt. Architektur, Statusmodell, Vertraege,
+Cockpit-Mapping, Beispiele und Fehlercodes stehen in
+[`docs/router-core-v2.md`](docs/router-core-v2.md). Die fruehere v1-Dokumentation
+bleibt nur als historische Vertragsbeschreibung erhalten.
 
 ## Evidence-basierte Workflow-Empfehlungen
 

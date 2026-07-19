@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "router-request-v2.json",
+  "title": "AI Router Core Request v2",
+  "type": "object",
+  "required": ["schemaVersion", "source", "mode", "intent", "input"],
+  "properties": {
+    "schemaVersion": { "const": "2.0" },
+    "requestId": { "$ref": "#/$defs/id" },
+    "correlationId": { "$ref": "#/$defs/id" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "source": { "enum": ["cockpit", "api", "internal_test", "ui", "local"] },
+    "mode": { "enum": ["recommendation", "simulation"] },
+    "intent": { "enum": ["auto", "project_status_summary", "general_recommendation", "code_analysis", "research", "planning", "content_generation", "status_check"] },
+    "input": {
+      "type": "object",
+      "required": ["type", "content"],
+      "properties": {
+        "type": { "const": "text" },
+        "content": { "type": "string", "minLength": 1, "maxLength": 8000 }
+      },
+      "additionalProperties": false
+    },
+    "context": {
+      "type": "object",
+      "properties": {
+        "project": { "type": "string", "maxLength": 120 },
+        "contentType": { "enum": ["text", "code", "file", "image", "mixed"] },
+        "contextSize": { "enum": ["small", "medium", "large"] },
+        "requiresFreshData": { "type": "boolean" },
+        "containsPrivateData": { "type": "boolean" },
+        "requiredTools": { "type": "array", "maxItems": 8, "uniqueItems": true, "items": { "enum": ["repository-read", "file-read", "image-input", "web-research"] } },
+        "client": { "type": "string", "maxLength": 80 }
+      },
+      "additionalProperties": false
+    },
+    "constraints": {
+      "type": "object",
+      "properties": {
+        "allowedCapabilities": { "type": "array", "maxItems": 24, "uniqueItems": true, "items": { "$ref": "#/$defs/allowedCapability" } },
+        "forbiddenCapabilities": { "type": "array", "maxItems": 24, "uniqueItems": true, "items": { "$ref": "#/$defs/forbiddenCapability" } },
+        "riskLevel": { "enum": ["low", "medium", "high"] },
+        "privacyLevel": { "enum": ["local-only", "sensitive", "standard"] },
+        "costClass": { "enum": ["low", "medium", "high"] },
+        "latencyClass": { "enum": ["low", "medium", "high"] },
+        "allowFileProcessing": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "options": {
+      "type": "object",
+      "properties": {
+        "preferredProvider": { "enum": ["mock-local", "codex-local-readonly", "claude-simulated", "openai-simulated", "gemini-simulated"] },
+        "providerProfile": { "enum": ["single_provider", "specialist_chain", "safe_review_chain"] },
+        "allowActions": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "clientVersion": { "type": "string", "maxLength": 40 },
+        "tags": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 40 } }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,120}$" },
+    "allowedCapability": {
+      "enum": ["status.read", "capabilities.read", "routes.read", "recommendation.read", "simulate", "analysis", "planning", "coding", "debugging", "architecture", "review", "writing", "summarization", "research-planning", "synthesis", "classification", "file-analysis", "image-analysis"]
+    },
+    "forbiddenCapability": {
+      "enum": ["status.read", "capabilities.read", "routes.read", "recommendation.read", "simulate", "analysis", "planning", "coding", "debugging", "architecture", "review", "writing", "summarization", "research-planning", "synthesis", "classification", "file-analysis", "image-analysis", "execute", "file.write", "file.delete", "git.commit", "git.push", "email.send", "calendar.write", "pc.action", "shell.run", "deployment.trigger", "secret.read", "external-provider.call"]
+    }
+  }
+}

@@ -153,7 +153,7 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
           }, routerTimeoutMs);
         });
         const payload = await Promise.race([operation, timeout]);
-        return sendJson(response, payload.status === "error" ? routerHttpStatus(payload.error?.code) : 200, payload);
+        return sendJson(response, payload.error ? routerHttpStatus(payload.error.code) : 200, payload);
       } finally {
         clearTimeout(timer);
         abortController.abort();

@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "router-response-v2.json",
+  "title": "AI Router Core Response v2",
+  "type": "object",
+  "required": ["schemaVersion", "requestId", "routerVersion", "status", "mode", "recommendation", "simulation", "risks", "constraints", "allowedNextSteps", "blockedActions", "error", "meta"],
+  "properties": {
+    "schemaVersion": { "const": "2.0" },
+    "requestId": { "type": ["string", "null"] },
+    "routerVersion": { "type": "string", "maxLength": 80 },
+    "status": { "enum": ["recommended", "simulated", "rejected", "failed"] },
+    "mode": { "enum": ["recommendation", "simulation"] },
+    "recommendation": { "anyOf": [{ "$ref": "#/$defs/recommendation" }, { "type": "null" }] },
+    "simulation": { "anyOf": [{ "$ref": "#/$defs/simulation" }, { "type": "null" }] },
+    "risks": {
+      "type": "object",
+      "required": ["level", "reasonCodes"],
+      "properties": {
+        "level": { "enum": ["low", "medium", "high", "unknown"] },
+        "reasonCodes": { "$ref": "#/$defs/stringList" }
+      },
+      "additionalProperties": false
+    },
+    "constraints": { "anyOf": [{ "$ref": "#/$defs/constraints" }, { "type": "null" }] },
+    "allowedNextSteps": { "$ref": "#/$defs/stringList" },
+    "blockedActions": { "$ref": "#/$defs/stringList" },
+    "error": { "anyOf": [{ "$ref": "#/$defs/error" }, { "type": "null" }] },
+    "meta": {
+      "type": "object",
+      "required": ["durationMs", "timestamp", "stateModelVersion", "executionEnabled"],
+      "properties": {
+        "durationMs": { "type": "number", "minimum": 0 },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "stateModelVersion": { "const": "1.0" },
+        "executionEnabled": { "const": false }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "stringList": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 100 } },
+    "recommendation": {
+      "type": "object",
+      "required": ["intent", "detectedIntent", "taskType", "complexity", "route", "title", "summary", "reasonCodes", "evidence", "confidence", "recommendedProvider", "mockFallback"],
+      "properties": {
+        "intent": { "type": "string" },
+        "detectedIntent": { "type": "string" },
+        "taskType": { "type": "string" },
+        "complexity": { "enum": ["low", "medium", "high"] },
+        "route": { "type": "string" },
+        "title": { "type": "string", "maxLength": 160 },
+        "summary": { "type": "string", "maxLength": 300 },
+        "reasonCodes": { "$ref": "#/$defs/stringList" },
+        "evidence": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["field", "value"],
+            "properties": {
+              "field": { "type": "string", "maxLength": 100 },
+              "value": { "anyOf": [{ "type": "string", "maxLength": 100 }, { "type": "boolean" }, { "type": "array", "maxItems": 16, "items": { "type": "string", "maxLength": 64 } }] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "recommendedProvider": { "$ref": "#/$defs/provider" },
+        "mockFallback": {
+          "type": "object",
+          "required": ["providerId", "adapterId", "available", "executed"],
+          "properties": { "providerId": { "const": "mock-local" }, "adapterId": { "const": "mock" }, "available": { "const": true }, "executed": { "const": false } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "provider": {
+      "type": "object",
+      "required": ["providerId", "displayName", "simulatedProfile", "externalCallAllowed"],
+      "properties": {
+        "providerId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "simulatedProfile": { "type": "boolean" },
+        "externalCallAllowed": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "simulation": {
+      "type": "object",
+      "required": ["providerId", "adapterId", "providerWorkflowProfile", "plannedSteps", "requiredCapabilities", "requiredTools", "allowedActions", "blockedActions", "approvalWouldBeRequired", "futureMode", "expectedResultFormat", "executionStatus", "executed"],
+      "properties": {
+        "providerId": { "const": "mock-local" },
+        "adapterId": { "const": "mock" },
+        "providerWorkflowProfile": { "type": "string" },
+        "plannedSteps": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["index", "role", "providerId", "simulated"],
+            "properties": {
+              "index": { "type": "integer", "minimum": 1, "maximum": 4 },
+              "role": { "enum": ["planner", "executor", "reviewer", "synthesizer"] },
+              "providerId": { "type": "string", "maxLength": 80 },
+              "simulated": { "const": true }
+            },
+            "additionalProperties": false
+          }
+        },
+        "requiredCapabilities": { "$ref": "#/$defs/stringList" },
+        "requiredTools": { "$ref": "#/$defs/stringList" },
+        "allowedActions": { "$ref": "#/$defs/stringList" },
+        "blockedActions": { "$ref": "#/$defs/stringList" },
+        "approvalWouldBeRequired": { "type": "boolean" },
+        "futureMode": { "enum": ["approval_required", null] },
+        "expectedResultFormat": { "const": "structured-router-response-v2" },
+        "executionStatus": { "const": "never_executed" },
+        "executed": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message", "retryable", "details"],
+      "properties": {
+        "code": { "type": "string", "maxLength": 80 },
+        "message": { "type": "string", "maxLength": 300 },
+        "retryable": { "type": "boolean" },
+        "details": { "type": ["object", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "constraints": {
+      "type": "object",
+      "required": ["requiredCapabilities", "requiredTools", "allowedCapabilities", "forbiddenCapabilities", "privacyLevel", "costClass", "latencyClass", "fileProcessingAllowed"],
+      "properties": {
+        "requiredCapabilities": { "$ref": "#/$defs/stringList" },
+        "requiredTools": { "$ref": "#/$defs/stringList" },
+        "allowedCapabilities": { "$ref": "#/$defs/stringList" },
+        "forbiddenCapabilities": { "$ref": "#/$defs/stringList" },
+        "privacyLevel": { "enum": ["local-only", "sensitive", "standard"] },
+        "costClass": { "enum": ["low", "medium", "high"] },
+        "latencyClass": { "enum": ["low", "medium", "high"] },
+        "fileProcessingAllowed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
