@@ -6,6 +6,22 @@ Lokale HTML-Test-App zur einfachen Empfehlung eines passenden KI-Tools fuer eine
 
 Aktuelle Testversion: `v0.13.0-test`
 
+## Cockpit-Router-API v1
+
+Die neue, rein simulierende Cockpit-Schnittstelle nimmt versionierte Anfragen
+ueber `POST /api/router/route` an. Sie validiert Eingaben, bestimmt eine
+fachliche Route, prueft eine geschlossene Aktions-Allowlist und liefert Erfolge
+wie Fehler im selben Grundformat zurueck. `GET /api/router/status` und
+`GET /api/router/actions` stellen sichere Betriebs- und Allowlist-Metadaten
+bereit. Die bestehenden Run-, Provider-, Diagnose- und Cockpit-Status-APIs
+bleiben unveraendert. Router-CORS gilt nur fuer eine feste Cockpit-Origin-
+Allowlist; die engere Origin-Regel bestehender Mutationsendpunkte wird dadurch
+nicht erweitert. `execute` bleibt vollstaendig deaktiviert und alle Aktionen
+bleiben reine Simulationen.
+
+Architektur, Datenfluss, Vertraege, Routen, Beispiele und Testbefehle sind in
+[`docs/router-api-v1.md`](docs/router-api-v1.md) dokumentiert.
+
 ## Simulierte Multi-Provider-Schicht v0.13
 
 v0.13 fuehrt eine zentrale, rein lokale Provider-Schicht ein. Der Router kann

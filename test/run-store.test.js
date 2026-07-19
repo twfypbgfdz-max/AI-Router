@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { projectCockpitStatus } from "../orchestrator/cockpit-status.js";
 import { createRunStore } from "../orchestrator/run-store.js";
 
@@ -15,15 +18,15 @@ test("cockpit status is a stable read-only contract without task or approval con
 });
 
 test("persistent run store omits prompts, context and internal paths", async () => {
-  const writes = new Map();
-  const fs = await import("node:fs/promises");
-  const path = await import("node:path");
-  const directory = path.join(process.cwd(), ".ai-router-data", "test-store");
-  await fs.rm(directory, { recursive: true, force: true });
-  const store = createRunStore({ runsDir: directory, latestRunFile: path.join(directory, "latest.json") });
-  await store.saveRun({ runId: "r", task: "secret prompt", context: "secret context", repository: "C:\\private", executable: "C:\\private", approvalContext: { plannedAction: "secret" }, status: "succeeded" });
-  const saved = JSON.stringify(await store.loadRun("r"));
-  assert.equal(saved.includes("secret"), false);
-  assert.equal(saved.includes("private"), false);
-  await fs.rm(directory, { recursive: true, force: true });
+  const temporaryRoot = process.env.AI_ROUTER_DATA_DIR || os.tmpdir();
+  const directory = await fs.mkdtemp(path.join(temporaryRoot, "run-store-"));
+  try {
+    const store = createRunStore({ runsDir: directory, latestRunFile: path.join(directory, "latest.json") });
+    await store.saveRun({ runId: "r", task: "secret prompt", context: "secret context", repository: "C:\\private", executable: "C:\\private", approvalContext: { plannedAction: "secret" }, status: "succeeded" });
+    const saved = JSON.stringify(await store.loadRun("r"));
+    assert.equal(saved.includes("secret"), false);
+    assert.equal(saved.includes("private"), false);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 });

@@ -1,5 +1,10 @@
 import { selectWorkflowType } from "./workflow-engine.js";
 
+export const ROUTER_ROUTES = Object.freeze([
+  "general_chat", "task_management", "project_management", "knowledge_query",
+  "content_generation", "system_status", "cockpit_command", "unsupported", "blocked"
+]);
+
 export const TASK_TYPES = Object.freeze(["code", "research", "planning", "writing", "obsidian", "social_media", "learning", "career", "finance", "everyday", "unknown"]);
 const TASK_TYPE_SET = new Set(TASK_TYPES);
 const LEVELS = new Set(["low", "medium", "high"]);
@@ -14,6 +19,46 @@ function normalized(value) {
 }
 
 function matches(text, patterns) { return patterns.some((pattern) => pattern.test(text)); }
+
+const BLOCKED_PATTERNS = [
+  /\b(?:l(?:o|oe)sch\w*|entfern\w*|delete\w*|remove\w*)\b.{0,40}\b(?:datei\w*|ordner\w*|files?|folders?|director(?:y|ies))\b/,
+  /\b(?:datei\w*|ordner\w*|files?|folders?|director(?:y|ies))\b.{0,40}\b(?:l(?:o|oe)sch\w*|entfern\w*|delete\w*|remove\w*)\b/,
+  /\b(?:(?:u|ue)berschreib\w*|overwrite\w*)\b.{0,40}\b(?:datei\w*|files?)\b/,
+  /\b(?:datei\w*|files?)\b.{0,40}\b(?:(?:u|ue)berschreib\w*|overwrite\w*)\b/,
+  /\b(?:send\w*|verschick\w*)\b.{0,32}\b(?:e-?mail|email|nachricht)\b/,
+  /\b(?:e-?mail|email|nachricht)\b.{0,32}\b(?:send\w*|verschick\w*)\b/,
+  /\b(?:ander\w*|change\w*|edit\w*|delete\w*)\b.{0,32}\b(?:kalender|calendar)\b/,
+  /\b(?:kalender|calendar)\b.{0,32}\b(?:ander\w*|change\w*|edit\w*|delete\w*)\b/,
+  /\b(?:fuhr\w*|start\w*|run\w*|execut\w*)\b.{0,48}\b(?:shell|powershell|terminal|cmd)(?:[- ]?(?:befehl|command))?\b/,
+  /\b(?:shell|powershell|terminal|cmd)(?:[- ]?(?:befehl|command))?\b.{0,48}\b(?:fuhr\w*|start\w*|run\w*|execut\w*)\b/,
+  /\b(?:gib\w*|zeig\w*|ausgib\w*|offenleg\w*|show\w*|reveal\w*|print\w*)\b.{0,40}\b(?:secret|token|passwort|password|credential\w*|zugangsdaten)\b/,
+  /\b(?:secret|token|passwort|password|credential\w*|zugangsdaten)\b.{0,40}\b(?:gib\w*|zeig\w*|ausgib\w*|offenleg\w*|show\w*|reveal\w*|print\w*)\b/,
+  /\b(?:push\w*|commit\w*|merge\w*|reset\w*)\b.{0,40}\b(?:git|github|repository|repo)\b/,
+  /\b(?:git|github|repository|repo)(?:[- ]?commit)?\b.{0,40}\b(?:push\w*|commit\w*|merge\w*|reset\w*|erstell\w*|creat\w*)\b/,
+  /\b(?:erstell\w*|creat\w*)\b.{0,40}\bgit[- ]?commit\b/,
+  /(?:benutzer|user).{0,24}(?:anleg|l(?:o|oe)sch|rechte)/,
+  /(?:pc|computer).{0,24}(?:steuer|herunterfahr|neustart)/
+];
+
+const ROUTE_RULES = Object.freeze([
+  { name: "system_status", patterns: [/\bstatus\b/, /gesundheit/, /health\b/, /erreichbar/, /router.{0,16}(?:version|status)/], confidence: 0.96, reason: "Die Anfrage betrifft den Betriebsstatus des Routers.", capabilities: ["read_system_status"], action: "router.status", riskLevel: "low" },
+  { name: "cockpit_command", patterns: [/\bcockpit\b/, /tagessteuerung/, /dashboard/], confidence: 0.9, reason: "Die Anfrage bezieht sich auf eine sichere Cockpit-Vorschau.", capabilities: ["preview_cockpit"], action: "cockpit.preview", riskLevel: "low" },
+  { name: "task_management", patterns: [/\baufgab/, /\btasks?\b/, /\bto-?do/, /heutig.{0,16}(?:punkt|arbeit)/, /priorisier/], confidence: 0.92, reason: "Die Anfrage bezieht sich auf Aufgaben oder Prioritaeten.", capabilities: ["read_tasks"], action: "tasks.list", riskLevel: "low" },
+  { name: "project_management", patterns: [/\bprojekt/, /\broadmap\b/, /meilenstein/, /projektstand/], confidence: 0.9, reason: "Die Anfrage bezieht sich auf Projekte oder Projektstaende.", capabilities: ["read_projects"], action: "projects.status", riskLevel: "low" },
+  { name: "content_generation", patterns: [/\bschreib/, /\bformulier/, /\berstell.{0,16}(?:text|entwurf|inhalt|post)/, /\bentwurf\b/, /zusammenfass/], confidence: 0.88, reason: "Die Anfrage verlangt einen Inhalt oder eine Zusammenfassung.", capabilities: ["generate_content"], action: "router.explain", riskLevel: "low" },
+  { name: "knowledge_query", patterns: [/\bwas\b/, /\bwie\b/, /\bwarum\b/, /\berkl(?:a|ae)r/, /\bwissen/, /\binformation/, /\bfrage\b/], confidence: 0.84, reason: "Die Anfrage ist eine Wissens- oder Erklaerfrage.", capabilities: ["answer_from_available_context"], action: "router.explain", riskLevel: "low" },
+  { name: "general_chat", patterns: [/\bhallo\b/, /\bhi\b/, /\bguten\s+(?:morgen|tag|abend)/, /\bhilfe\b/, /\bunterstutz/, /\bmeinung\b/, /\bideen?\b/], confidence: 0.78, reason: "Die Anfrage ist eine allgemeine, nicht-operative Unterhaltung.", capabilities: ["general_response"], action: "router.explain", riskLevel: "low" }
+]);
+
+export function createRouterDecision(content) {
+  const text = normalized(content);
+  if (matches(text, BLOCKED_PATTERNS)) {
+    return Object.freeze({ route: "blocked", confidence: 0.99, reason: "Die Anfrage beschreibt eine aktuell nicht freigegebene oder riskante Aktion.", requiredCapabilities: [], proposedAction: null, riskLevel: "critical", simulated: true });
+  }
+  const rule = ROUTE_RULES.find(({ patterns }) => matches(text, patterns));
+  if (!rule) return Object.freeze({ route: "unsupported", confidence: 0.35, reason: "Die Anfrage laesst sich keiner freigeschalteten Route sicher zuordnen.", requiredCapabilities: [], proposedAction: null, riskLevel: "unknown", simulated: true });
+  return Object.freeze({ route: rule.name, confidence: rule.confidence, reason: rule.reason, requiredCapabilities: [...rule.capabilities], proposedAction: rule.action, riskLevel: rule.riskLevel, simulated: true });
+}
 
 function safeSummary(value, maximum = 300) {
   return String(value || "")

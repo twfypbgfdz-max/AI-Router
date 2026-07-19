@@ -1,11 +1,46 @@
-export async function readJsonBody(request, maxBytes = 16_384) {
-  let body = "";
-  for await (const chunk of request) {
-    body += chunk;
-    if (Buffer.byteLength(body) > maxBytes) throw new Error("Request body is too large.");
-  }
-  if (!body) return {};
-  try { return JSON.parse(body); } catch { throw new Error("Request body must be valid JSON."); }
+import { RouterError } from "./contracts.js";
+
+export async function readJsonBody(request, maxBytes = 16_384, { signal } = {}) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    let settled = false;
+    const cleanup = () => {
+      request.off("data", onData);
+      request.off("end", onEnd);
+      request.off("error", onError);
+      request.off("aborted", onAborted);
+      signal?.removeEventListener("abort", onSignalAbort);
+    };
+    const fail = (error, drain = false) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (drain) request.resume();
+      reject(error);
+    };
+    const onData = (chunk) => {
+      body += chunk;
+      if (Buffer.byteLength(body) > maxBytes) fail(new RouterError("PAYLOAD_TOO_LARGE", "Request body is too large."), true);
+    };
+    const onEnd = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (!body) return resolve({});
+      try { return resolve(JSON.parse(body)); }
+      catch { return reject(new RouterError("INVALID_REQUEST", "Request body must be valid JSON.")); }
+    };
+    const onError = () => fail(new RouterError("INVALID_REQUEST", "Request body could not be read."));
+    const onAborted = () => fail(new RouterError("INVALID_REQUEST", "Request body was aborted."));
+    const onSignalAbort = () => fail(new RouterError("TIMEOUT", "Router request timed out."), true);
+
+    request.on("data", onData);
+    request.once("end", onEnd);
+    request.once("error", onError);
+    request.once("aborted", onAborted);
+    signal?.addEventListener("abort", onSignalAbort, { once: true });
+    if (signal?.aborted) onSignalAbort();
+  });
 }
 
 export function sendJson(response, statusCode, payload) {

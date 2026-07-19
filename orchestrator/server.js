@@ -1,7 +1,8 @@
 import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT, REPOSITORY_ROOT, ROUTER_VERSION } from "./config.js";
+import { fileURLToPath } from "node:url";
+import { DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT, REPOSITORY_ROOT, ROUTER_ALLOWED_ORIGINS, ROUTER_API_DEFAULT_MODE, ROUTER_API_MAX_BODY_BYTES, ROUTER_API_TIMEOUT_MS, ROUTER_VERSION } from "./config.js";
 import { RunService } from "./run-service.js";
 import { getRunSummary, historySnapshot, listRuns, loadLatestRun, storageHealth } from "./run-store.js";
 import { projectCockpitStatus } from "./cockpit-status.js";
@@ -14,18 +15,41 @@ import { RouterError } from "./contracts.js";
 import { ALLOWED_ADAPTERS, ALLOWED_RUN_STATUSES, SCHEMA_VERSION } from "./policy.js";
 import { providerRegistry } from "./provider-registry.js";
 import { previewProviderSelection } from "./provider-selection.js";
+import { processRouterRequest, routerActions, routerStatus } from "./router-service.js";
+import { safeRequestIdentity } from "./router-contract.js";
+import { buildRouterFailure, routerHttpStatus } from "./router-response.js";
 
-const service = new RunService();
-const SERVER_STARTED_AT = Date.now();
 const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_13-test.html");
 
-// Fire-and-forget safe logging: operational events must never break a request.
-function safeLog(event, safeMetadata = {}) { logger.log({ event, safeMetadata }).catch(() => {}); }
+function isAllowedRouterOrigin(origin, allowedOrigins) {
+  return typeof origin === "string" && allowedOrigins.includes(origin);
+}
+
+function applyRouterCors(request, response, allowedOrigins) {
+  const origin = request.headers.origin;
+  if (isAllowedRouterOrigin(origin, allowedOrigins)) {
+    response.setHeader("access-control-allow-origin", origin);
+    response.setHeader("vary", "Origin");
+    response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+    response.setHeader("access-control-allow-headers", "Content-Type");
+    response.setHeader("access-control-max-age", "600");
+  }
+}
 
 function isTrustedMutation(request) {
   const origin = request.headers.origin;
   const contentType = request.headers["content-type"] || "";
   return (!origin || origin === "http://127.0.0.1:8787") && contentType.toLowerCase().startsWith("application/json");
+}
+
+function isTrustedRouterRequest(request, allowedOrigins) {
+  const origin = request.headers.origin;
+  return !origin || isAllowedRouterOrigin(origin, allowedOrigins);
+}
+
+function isTrustedRouterMutation(request, allowedOrigins) {
+  const contentType = request.headers["content-type"] || "";
+  return isTrustedRouterRequest(request, allowedOrigins) && contentType.toLowerCase().startsWith("application/json");
 }
 
 function safeFilterValue(value, allowed, maximum = 40) {
@@ -38,22 +62,36 @@ function safeFilterValue(value, allowed, maximum = 40) {
 
 function isoOrNull(value) { const parsed = Date.parse(value); return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null; }
 
-async function buildHealth() {
-  service.adapterStatus.refresh().catch(() => {});
-  const [storage, logging] = await Promise.all([storageHealth(), loggingHealth()]);
-  return buildHealthStatus({ snapshot: service.snapshot(), adapterStatus: service.adapterStatus.current(), storage, logging, providers: service.registry.status(), startedAt: SERVER_STARTED_AT });
-}
+export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, now = Date.now } = {}) {
+  const serverStartedAt = Date.now();
+  const safeLog = (event, safeMetadata = {}) => {
+    try { Promise.resolve(eventLogger?.log?.({ event, safeMetadata })).catch(() => {}); } catch { /* logging is non-critical */ }
+  };
+  const buildHealth = async () => {
+    service.adapterStatus.refresh().catch(() => {});
+    const [storage, logging] = await Promise.all([storageHealth(), loggingHealth()]);
+    return buildHealthStatus({ snapshot: service.snapshot(), adapterStatus: service.adapterStatus.current(), storage, logging, providers: service.registry.status(), startedAt: serverStartedAt });
+  };
+  const buildDiagnosticsPayload = async () => {
+    service.adapterStatus.refresh().catch(() => {});
+    const [history, storage, logging] = await Promise.all([historySnapshot(), storageHealth(), loggingHealth()]);
+    return buildDiagnostics({ history, adapterStatus: service.adapterStatus.current(), storage, logging });
+  };
 
-async function buildDiagnosticsPayload() {
-  service.adapterStatus.refresh().catch(() => {});
-  const [history, storage, logging] = await Promise.all([historySnapshot(), storageHealth(), loggingHealth()]);
-  return buildDiagnostics({ history, adapterStatus: service.adapterStatus.current(), storage, logging });
-}
-
-const server = http.createServer(async (request, response) => {
+  const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url, "http://127.0.0.1");
     const { pathname } = url;
+    const isRouterPath = pathname.startsWith("/api/router/");
+
+    if (isRouterPath) {
+      if (!isTrustedRouterRequest(request, allowedRouterOrigins)) {
+        const payload = buildRouterFailure(new RouterError("ORIGIN_NOT_ALLOWED", "Origin is not allowed."));
+        return sendJson(response, routerHttpStatus(payload.error.code), payload);
+      }
+      applyRouterCors(request, response, allowedRouterOrigins);
+      if (request.method === "OPTIONS") { response.writeHead(204); return response.end(); }
+    }
 
     if (request.method === "GET" && pathname === "/") return sendText(response, 200, await fs.readFile(uiFile, "utf8"), "text/html; charset=utf-8");
 
@@ -62,6 +100,40 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && pathname === "/api/diagnostics") { safeLog("diagnostics_checked"); return sendJson(response, 200, await buildDiagnosticsPayload()); }
 
     if (request.method === "GET" && pathname === "/api/cockpit-status") return sendJson(response, 200, projectCockpitStatus(service.cockpitContext()));
+
+    if (request.method === "GET" && pathname === "/api/router/status") return sendJson(response, 200, routerStatus());
+
+    if (request.method === "GET" && pathname === "/api/router/actions") return sendJson(response, 200, routerActions());
+
+    if (request.method === "POST" && pathname === "/api/router/route") {
+      if (!isTrustedRouterMutation(request, allowedRouterOrigins)) {
+        const payload = buildRouterFailure(new RouterError("INVALID_REQUEST", "Content-Type must be application/json."));
+        return sendJson(response, routerHttpStatus(payload.error.code), payload);
+      }
+      const startedAt = now();
+      const abortController = new AbortController();
+      let identity = { requestId: null, mode: ROUTER_API_DEFAULT_MODE };
+      let timer;
+      try {
+        const operation = (async () => {
+          const input = await readJsonBody(request, ROUTER_API_MAX_BODY_BYTES, { signal: abortController.signal });
+          identity = safeRequestIdentity(input);
+          return routerProcessor(input, { eventLogger });
+        })().catch((error) => buildRouterFailure(error, { ...identity, durationMs: Math.max(0, now() - startedAt) }));
+        const timeout = new Promise((resolve) => {
+          timer = setTimeout(() => {
+            response.setHeader("connection", "close");
+            abortController.abort();
+            resolve(buildRouterFailure(new RouterError("TIMEOUT", "Router request timed out."), { ...identity, durationMs: Math.max(1, now() - startedAt) }));
+          }, routerTimeoutMs);
+        });
+        const payload = await Promise.race([operation, timeout]);
+        return sendJson(response, payload.status === "error" ? routerHttpStatus(payload.error?.code) : 200, payload);
+      } finally {
+        clearTimeout(timer);
+        abortController.abort();
+      }
+    }
 
     if (request.method === "GET" && pathname === "/api/providers") {
       safeLog("providers_listed");
@@ -144,7 +216,16 @@ const server = http.createServer(async (request, response) => {
 
     return sendJson(response, 404, buildResponse(null, new RouterError("INVALID_REQUEST", "Not found.")));
   } catch (error) { return sendJson(response, 400, buildResponse(null, error)); }
-});
+  });
+  server.requestTimeout = 130_000;
+  server.headersTimeout = 10_000;
+  server.keepAliveTimeout = 5_000;
+  return server;
+}
 
-server.listen(8787, "127.0.0.1", () => { safeLog("server_started", { version: ROUTER_VERSION }); console.log("AI Router local server: http://127.0.0.1:8787"); });
-process.once("SIGINT", () => { safeLog("server_stopped"); server.close(() => process.exit(0)); });
+const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirectRun) {
+  const server = createRouterServer();
+  server.listen(8787, "127.0.0.1", () => { logger.log({ event: "server_started", safeMetadata: { version: ROUTER_VERSION } }).catch(() => {}); console.log("AI Router local server: http://127.0.0.1:8787"); });
+  process.once("SIGINT", () => { logger.log({ event: "server_stopped" }).catch(() => {}); server.close(() => process.exit(0)); });
+}

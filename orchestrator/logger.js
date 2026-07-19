@@ -11,6 +11,7 @@ export const KNOWN_LOG_EVENTS = Object.freeze([
   "adapter_check_started", "adapter_check_completed", "adapter_check_failed",
   "run_listed", "run_details_viewed", "run_cancel_requested", "run_cancel_completed", "run_cancel_failed",
   "request_received", "workflow_started", "step_completed", "step_failed", "run_completed", "run_failed", "retrying",
+  "router_request_completed",
   // v0.13 provider-layer events (metadata only).
   "provider_registry_loaded", "provider_registry_invalid", "provider_selection_started", "provider_selected",
   "provider_selection_failed", "provider_fallback_used", "provider_simulation_started", "provider_simulation_completed",

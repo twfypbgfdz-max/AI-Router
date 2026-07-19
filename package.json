@@ -5,6 +5,6 @@
   "type": "module",
   "scripts": {
     "start": "node orchestrator/server.js",
-    "test": "node --test"
+    "test": "node scripts/run-tests.js"
   }
 }
