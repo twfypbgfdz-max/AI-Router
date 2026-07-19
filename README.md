@@ -14,6 +14,15 @@ trennt Empfehlung, Providerprofil, Evidence, Risiken, Constraints und einen
 rein lokalen Mock-Simulationsplan. `approval_required` und `execution` sind nur
 als spaetere Zustandsnamen dokumentiert und werden als Request-Modus abgelehnt.
 
+### Vercel-Preview
+
+Die Handler `api/router/route.js` und `api/router/status.js` stellen ausschließlich
+den zustandslosen Routing-Core und seinen read-only Status als Vercel Functions
+bereit. Sie starten keinen dauerhaften Listener, verwenden keinen Run-Store und
+loggen keine Requesttexte. Browser-Origin bleiben auf der bestehenden lokalen
+Allowlist; der vorgesehene externe Zugriff erfolgt serverseitig über den
+geschützten Felix-Cockpit-BFF. Provider-APIs und Ausführung bleiben deaktiviert.
+
 Die bestehende Felix-Cockpit-Simulation (`schemaVersion: 1`, `mode: simulate`)
 wird durch einen schmalen Kompatibilitaetsadapter in denselben Core uebersetzt.
 Der Adapter besitzt keine eigene Routinglogik. Damit bleibt genau eine
