@@ -16,3 +16,25 @@ auf das tatsächliche Deployment-Target.
 - Freigaben wie "deploy das als Preview" gelten NUR für einen Befehl mit
   `--target=preview` im exakten Wortlaut. Ein Befehl ohne dieses Flag gilt
   NICHT als abgedeckt, auch wenn der Kontext "Preview" war.
+
+## Parallele-Sessions-Sperre
+
+Vor jeder schreibenden Aktion (Commit, Push, Deploy, Datei-Änderung mit
+Absicht zu committen) in diesem Repo:
+
+1. Prüfen, ob `.agent-lock.json` im Repo-Root existiert und noch nicht
+   abgelaufen ist (`expiresAt` in der Zukunft) mit einer anderen
+   `sessionId`.
+2. Falls ja: Felix explizit fragen, ob parallel gearbeitet werden darf,
+   bevor irgendetwas Schreibendes ausgeführt wird.
+3. Falls nein: eigene `.agent-lock.json` anlegen
+   (`{ sessionId, tool, startedAt, expiresAt = jetzt + 30 Minuten,
+   workingDir }`) und bei Sessionende wieder entfernen.
+
+`.agent-lock.json` ist in `.gitignore` und wird niemals committed.
+
+Für Claude Code übernimmt bereits ein PreToolUse-/SessionEnd-Hook diese
+Prüfung automatisch (siehe `.claude\settings.json` sowie
+`.claude\hooks\scripts\agent-lock-guard.mjs` und `agent-lock-cleanup.mjs`
+im zentralen KI-Workspace `C:\Users\felil\Documents\KI`). Für Tools ohne
+eigenes Hook-System (z. B. Codex) gilt die obige Konvention manuell.
