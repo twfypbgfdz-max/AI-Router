@@ -49,6 +49,34 @@ behandelt; `unknown` wird nicht als Fehler interpretiert.
 Vertraege, Prioritaeten, Sicherheitsgrenzen und Beispiele stehen in
 [`docs/recommendation-engine-v1.md`](docs/recommendation-engine-v1.md).
 
+### Lokaler post-commit-Hook: Contract-Test-Erinnerung
+
+Der Contract-Test `test/recommendation-contract.test.js` im Repo
+`felix-command-center` prueft, dass dessen kontrollierte Kopie des
+Recommendation-Contracts weiterhin zum AI-Router passt. Er laeuft nicht
+automatisch (kein CI in diesem Setup), deshalb gibt es einen lokalen
+`post-commit`-Hook, der nach jedem Commit, der
+`orchestrator/recommendation-engine.js`, `orchestrator/server.js` oder
+`docs/recommendation-engine-v1.md` aendert, eine Erinnerung ausgibt.
+
+`.git/hooks/` wird von Git nicht versioniert, deshalb liegt die Vorlage
+zusaetzlich unter [`scripts/git-hooks/post-commit`](scripts/git-hooks/post-commit).
+Nach einem frischen Klonen einmalig aktivieren:
+
+```bash
+cp scripts/git-hooks/post-commit .git/hooks/post-commit
+chmod +x .git/hooks/post-commit
+```
+
+(Auf Windows/Git Bash funktioniert derselbe Befehl.) Der Hook blockiert nie
+etwas — er gibt nur eine Meldung auf stderr aus, sinngemaess:
+
+```
+Recommendation-Engine geaendert — Contract-Test im Command-Center-Repo sollte erneut laufen:
+    node --test test/recommendation-contract.test.js
+    (im Repo felix-command-center ausfuehren)
+```
+
 ## Simulierte Multi-Provider-Schicht v0.13
 
 v0.13 fuehrt eine zentrale, rein lokale Provider-Schicht ein. Der Router kann

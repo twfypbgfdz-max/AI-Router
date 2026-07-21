@@ -38,3 +38,18 @@ Prüfung automatisch (siehe `.claude\settings.json` sowie
 `.claude\hooks\scripts\agent-lock-guard.mjs` und `agent-lock-cleanup.mjs`
 im zentralen KI-Workspace `C:\Users\felil\Documents\KI`). Für Tools ohne
 eigenes Hook-System (z. B. Codex) gilt die obige Konvention manuell.
+
+## Contract-Test bei Recommendation-Engine-Änderungen
+
+Nach jeder Änderung an der Recommendation-Engine (`orchestrator/recommendation-engine.js`,
+`orchestrator/server.js` oder `docs/recommendation-engine-v1.md`): Command-Center-
+Contract-Test manuell laufen lassen und Ergebnis im Chat mitteilen, bevor der
+Commit als abgeschlossen gilt:
+
+```
+node --test test/recommendation-contract.test.js
+```
+
+(im Repo `felix-command-center` ausführen). Ein lokaler `post-commit`-Hook
+(siehe `scripts/git-hooks/post-commit`, Installation in `README.md`) erinnert
+zusätzlich automatisch daran.
