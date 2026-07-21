@@ -39,6 +39,30 @@ Prüfung automatisch (siehe `.claude\settings.json` sowie
 im zentralen KI-Workspace `C:\Users\felil\Documents\KI`). Für Tools ohne
 eigenes Hook-System (z. B. Codex) gilt die obige Konvention manuell.
 
+Zusätzlich blockieren lokale `pre-commit`/`pre-push`-Git-Hooks (Vorlage in
+`scripts/git-hooks/pre-commit`/`pre-push`, Installation in `README.md`)
+Commits/Pushes bei einem gültigen fremden Lock hart (Exit-Code ≠ 0, keine
+Rückfrage) — das gilt für ALLE Aufrufer (Claude Code, Codex, manuelle
+Git-Befehle), nicht nur für Claude Code. Bekannte Einschränkung: die
+verlässliche automatische Selbsterkennung (über einen Session-Marker,
+den der PreToolUse-Hook hinterlegt) funktioniert bisher nur für Claude
+Code. Andere Tools müssen sich optional selbst über die Umgebungsvariable
+`AGENT_LOCK_SESSION_ID` identifizieren, sonst blockiert der Git-Hook sie
+auch bei ihrem eigenen aktiven Lock.
+
+## Hinweis: Verwaistes Lock nach Absturz
+
+Wenn eine Session hart abstürzt (Terminal-Kill, Systemabsturz), greift
+der SessionEnd-Cleanup-Hook nicht mehr. Das Lock bleibt dann bis zu
+30 Minuten bestehen, auch wenn die haltende Session nicht mehr existiert.
+In dieser Zeit blockieren die Git-Hooks (pre-commit/pre-push) neue
+Commits/Pushes von anderen Sessions in diesem Repo — das ist erwartetes
+"fail closed"-Verhalten, kein Fehler.
+
+Falls das auftritt und sicher ist, dass keine andere Session mehr aktiv
+läuft: `.agent-lock.json` im Repo-Root manuell löschen. Danach funktionieren
+Commits wieder normal.
+
 ## Contract-Test bei Recommendation-Engine-Änderungen
 
 Nach jeder Änderung an der Recommendation-Engine (`orchestrator/recommendation-engine.js`,

@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# pre-commit — hartes Blockieren bei fremdem gueltigem Agent-Lock (.agent-lock.json)
+#
+# Ergaenzt den Claude-Code-PreToolUse-Hook (der nur Claude-Code-eigene
+# Bash-Aufrufe abdeckt) um eine Absicherung auf Git-Ebene fuer ALLE Aufrufer
+# (Claude Code, Codex, manuelle Git-Befehle). Legt selbst NIE ein Lock an
+# und loescht nie eines — das bleibt Aufgabe des bestehenden Claude-Code-
+# Hooks bzw. der Konvention in CLAUDE.md/AGENTS.md.
+#
+# Identitaet des aktuellen Aufrufs:
+#   - Fuer Claude Code hinterlegt der PreToolUse-Hook (agent-lock-guard.mjs)
+#     bei jedem erlaubten schreibenden Git-Befehl die aktuelle sessionId in
+#     ".git/agent-lock-session-marker" — geschoepft aus dem dokumentierten
+#     Hook-Feld "session_id" (JSON auf stdin), NICHT aus einer Env-Var.
+#     (CLAUDE_CODE_SESSION_ID wurde bewusst NICHT verwendet: die Variable
+#     ist laut Claude-Code-Doku nicht als mit der Hook-sessionId identisch
+#     dokumentiert/garantiert.) Stimmt der Marker mit der Lock-sessionId
+#     ueberein, blockiert Claude Code sich also nie selbst.
+#   - Fuer andere Werkzeuge (z. B. Codex) gibt es KEIN verifiziertes
+#     automatisches Signal. Optionale Konvention: das Tool kann vor
+#     git-Befehlen selbst AGENT_LOCK_SESSION_ID=<eigene sessionId aus
+#     .agent-lock.json> setzen, um sich als Halter des eigenen Locks zu
+#     identifizieren. Das ist nicht automatisiert und muss vom jeweiligen
+#     Tool aktiv umgesetzt werden.
+#   - Ohne passenden Marker und ohne passende Env-Var (z. B. bei einem
+#     manuellen Commit von Felix) gilt der Aufruf als "nicht der
+#     Lock-Halter" und wird bei gueltigem fremden Lock blockiert (fail
+#     closed). Ein Tool, das sein eigenes Lock haelt, aber weder Marker
+#     noch Env-Var hat, blockiert sich dadurch bei einem weiteren Commit
+#     selbst — sicher, aber unbequem (aktuell nur fuer Codex relevant).
+#
+# OHNE Lock-Datei oder bei abgelaufenem Lock: immer Exit 0, ohne jede
+# Identitaetspruefung — ein Bug in der Identitaetslogik kann dadurch nie
+# einen normalen Commit ohne aktives Lock blockieren.
+
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+LOCK_FILE="$REPO_ROOT/.agent-lock.json"
+[ -f "$LOCK_FILE" ] || exit 0
+command -v node >/dev/null 2>&1 || exit 0
+
+MARKER_FILE="$REPO_ROOT/.git/agent-lock-session-marker"
+
+LOCK_FILE_PATH="$LOCK_FILE" MARKER_FILE_PATH="$MARKER_FILE" AGENT_LOCK_SESSION_ID="${AGENT_LOCK_SESSION_ID:-}" node <<'NODE_EOF'
+const fs = require("fs");
+const lockPath = process.env.LOCK_FILE_PATH;
+const markerPath = process.env.MARKER_FILE_PATH;
+const envSessionId = process.env.AGENT_LOCK_SESSION_ID || "";
+
+let lock;
+try {
+  lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+} catch {
+  process.exit(0); // keine oder unlesbare Lock-Datei -> nichts zu pruefen
+}
+
+const expiry = lock.expiresAt ? Date.parse(lock.expiresAt) : NaN;
+const isValid = Number.isFinite(expiry) && expiry > Date.now();
+if (!isValid) process.exit(0);
+
+let markerSessionId = "";
+try {
+  markerSessionId = fs.readFileSync(markerPath, "utf8").trim();
+} catch {
+  markerSessionId = "";
+}
+
+const currentIds = [markerSessionId, envSessionId].filter(Boolean);
+if (lock.sessionId && currentIds.includes(lock.sessionId)) process.exit(0);
+
+const sessionId = lock.sessionId || "unbekannt";
+const tool = lock.tool || "unbekannt";
+const expiresAt = lock.expiresAt || "unbekannt";
+
+process.stderr.write(
+  "Blockiert: aktives Lock von Session " + sessionId + " (" + tool + "), laeuft ab um " + expiresAt + ".\n" +
+  "Commit/Push abgebrochen. Falls das eine verwaiste Lock-Datei ist, mit Felix klaeren, nicht selbst loeschen.\n"
+);
+process.exit(1);
+NODE_EOF
+
+exit $?

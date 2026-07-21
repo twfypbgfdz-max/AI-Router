@@ -77,6 +77,33 @@ Recommendation-Engine geaendert — Contract-Test im Command-Center-Repo sollte 
     (im Repo felix-command-center ausfuehren)
 ```
 
+## Git-Hooks: Agent-Lock-Absicherung
+
+Ergaenzend zum Claude-Code-eigenen PreToolUse-Hook (der nur Claude-Code-Bash-
+Aufrufe abdeckt) gibt es lokale `pre-commit`/`pre-push`-Hooks, die JEDEN
+Commit/Push (Claude Code, Codex, manuelle Git-Befehle) hart verweigern, wenn
+im Repo-Root eine `.agent-lock.json` mit einem noch gueltigen Lock einer
+anderen Session existiert. Ohne Lock-Datei oder bei abgelaufenem Lock laeuft
+alles normal durch — die Hooks legen selbst nie ein Lock an und loeschen nie
+eines.
+
+`.git/hooks/` wird von Git nicht versioniert, deshalb liegen die Vorlagen
+zusaetzlich unter [`scripts/git-hooks/pre-commit`](scripts/git-hooks/pre-commit)
+und [`scripts/git-hooks/pre-push`](scripts/git-hooks/pre-push). Nach einem
+frischen Klonen einmalig aktivieren:
+
+```bash
+cp scripts/git-hooks/pre-commit .git/hooks/pre-commit
+cp scripts/git-hooks/pre-push .git/hooks/pre-push
+chmod +x .git/hooks/pre-commit .git/hooks/pre-push
+```
+
+Bei Blockade erscheint eine Fehlermeldung mit sessionId, Tool und Ablaufzeit
+des aktiven Locks auf stderr; der Commit/Push wird nicht ausgefuehrt. Details
+zur Identitaetserkennung (Claude Code automatisch, andere Tools optional ueber
+`AGENT_LOCK_SESSION_ID`) stehen als Kommentar in den Hook-Skripten selbst und
+in CLAUDE.md/AGENTS.md unter "Parallele-Sessions-Sperre".
+
 ## Simulierte Multi-Provider-Schicht v0.13
 
 v0.13 fuehrt eine zentrale, rein lokale Provider-Schicht ein. Der Router kann
