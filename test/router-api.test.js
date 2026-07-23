@@ -8,6 +8,7 @@ import path from "node:path";
 const ownsTemporaryDataDir = !process.env.AI_ROUTER_DATA_DIR;
 if (ownsTemporaryDataDir) process.env.AI_ROUTER_DATA_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "ai-router-api-tests-"));
 const { createRouterServer } = await import("../orchestrator/server.js");
+const { ROUTER_API_TIMEOUT_MS } = await import("../orchestrator/config.js");
 test.after(async () => { if (ownsTemporaryDataDir) await fs.rm(process.env.AI_ROUTER_DATA_DIR, { recursive: true, force: true }); });
 
 async function withServer(run, options = {}) {
@@ -21,6 +22,10 @@ async function withServer(run, options = {}) {
 function requestBody(overrides = {}) {
   return { schemaVersion: "2.0", requestId: "req_api", source: "cockpit", mode: "recommendation", intent: "auto", input: { type: "text", content: "Zeige den Router-Status." }, ...overrides };
 }
+
+test("the default HTTP router timeout leaves room for the Cockpit BFF response", () => {
+  assert.equal(ROUTER_API_TIMEOUT_MS, 3_500);
+});
 
 function slowJsonPost(url, firstChunk, finalChunk, delayMs) {
   return new Promise((resolve, reject) => {
