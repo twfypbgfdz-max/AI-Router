@@ -36,6 +36,29 @@ Cockpit-Mapping, Beispiele und Fehlercodes stehen in
 [`docs/router-core-v2.md`](docs/router-core-v2.md). Die fruehere v1-Dokumentation
 bleibt nur als historische Vertragsbeschreibung erhalten.
 
+## Sichere Read-only-Textantworten
+
+`POST /api/router/respond` ist ein separater, intern authentifizierter
+Textantwort-Endpunkt. Er verwendet genau einen serverseitig konfigurierten
+OpenAI-Textadapter und genau einen nicht-streamenden Providerrequest. Es gibt
+keine Tools, Functions, Agents, Workflows, Aktionen, Retries, Fallbacks oder
+automatische Kontextbeschaffung.
+
+Allgemeine Fragen benötigen keinen Kontext. Fragen zum aktuellen Stand von
+Felix' internem System dürfen nur den ausdrücklich im Request übermittelten,
+als `external-provider-allowed` klassifizierten Textkontext verwenden. Ohne
+ausreichenden Kontext muss fehlende Aktualität transparent benannt werden.
+Private, lokale, unklassifizierte, Secret-artige oder eindeutig operative
+Requests werden vor jedem Provideraufruf blockiert.
+
+Der vorgesehene Zugriff ist `Cockpit-BFF -> AI-Router` mit
+`Authorization: Bearer <AI_ROUTER_INTERNAL_TOKEN>`. Der Browser greift nicht
+direkt auf `/respond` zu. Limits, Umgebungsvariablen, Request-/Responsebeispiele,
+Timeout-/Abort-Kette, Loggingregeln und bekannte Production-Grenzen stehen in
+[`docs/text-response-pipeline-v1.md`](docs/text-response-pipeline-v1.md).
+`POST /api/router/route` und die bestehende Cockpit-Simulation bleiben davon
+getrennt und rufen weiterhin keinen externen Provider auf.
+
 ## Evidence-basierte Workflow-Empfehlungen
 
 `POST /api/router/recommendations` wertet normalisierte, belegte Statusdaten

@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-router.local/schemas/text-response-response-v1.json",
+  "title": "AI Router text response response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "status",
+    "route",
+    "answer",
+    "provider",
+    "error",
+    "meta"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "requestId": {
+      "type": ["string", "null"],
+      "maxLength": 120
+    },
+    "status": {
+      "enum": ["answered", "failed"]
+    },
+    "route": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "taskType"],
+          "properties": {
+            "name": {
+              "enum": ["analysis", "content_generation", "general_chat", "knowledge_query", "planning"]
+            },
+            "taskType": {
+              "enum": ["code", "research", "planning", "writing", "obsidian", "social_media", "learning", "career", "finance", "everyday", "unknown"]
+            }
+          }
+        }
+      ]
+    },
+    "answer": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "text", "trust", "truncated"],
+          "properties": {
+            "type": {
+              "const": "text"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000
+            },
+            "trust": {
+              "const": "untrusted_provider_text"
+            },
+            "truncated": {
+              "const": false
+            }
+          }
+        }
+      ]
+    },
+    "provider": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["providerId", "model"],
+          "properties": {
+            "providerId": {
+              "const": "openai-text-v1"
+            },
+            "model": {
+              "const": "server-configured"
+            }
+          }
+        }
+      ]
+    },
+    "error": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "reasonCode", "retryable"],
+          "properties": {
+            "code": {
+              "enum": [
+                "AUTH_REQUIRED",
+                "AUTH_INVALID",
+                "AUTH_NOT_CONFIGURED",
+                "RATE_LIMITED",
+                "CONCURRENCY_LIMITED",
+                "VALIDATION_FAILED",
+                "SECURITY_BLOCKED",
+                "INPUT_TOO_LARGE",
+                "TOKEN_LIMIT_EXCEEDED",
+                "COST_LIMIT_EXCEEDED",
+                "NO_SAFE_ROUTE",
+                "PROVIDER_NOT_CONFIGURED",
+                "PROVIDER_TIMEOUT",
+                "PROVIDER_UNAVAILABLE",
+                "PROVIDER_RESPONSE_INVALID",
+                "INTERNAL_ERROR"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "reasonCode": {
+              "type": ["string", "null"]
+            },
+            "retryable": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "durationMs",
+        "toolCallingAllowed",
+        "actionsExecuted",
+        "inputTokenEstimate",
+        "providerInputTokens",
+        "providerOutputTokens",
+        "providerTotalTokens",
+        "worstCaseCostUsd",
+        "calculatedCostUsd"
+      ],
+      "properties": {
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "toolCallingAllowed": {
+          "const": false
+        },
+        "actionsExecuted": {
+          "const": false
+        },
+        "inputTokenEstimate": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "providerInputTokens": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "providerOutputTokens": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "providerTotalTokens": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "worstCaseCostUsd": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 0.02
+        },
+        "calculatedCostUsd": {
+          "type": ["number", "null"],
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

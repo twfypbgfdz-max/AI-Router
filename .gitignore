@@ -1,5 +1,8 @@
 .ai-router-data/
 .vercel/
+.env
+.env.*
+!.env.example
 
 # Agent-Session-Sperre (siehe "Parallele-Sessions-Sperre" in CLAUDE.md/AGENTS.md)
 .agent-lock.json

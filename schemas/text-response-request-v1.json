@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-router.local/schemas/text-response-request-v1.json",
+  "title": "AI Router text response request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "requestId", "source", "intent", "input"],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "source": {
+      "enum": ["cockpit", "internal_test"]
+    },
+    "intent": {
+      "enum": [
+        "auto",
+        "general_question",
+        "explanation",
+        "analysis",
+        "writing",
+        "planning",
+        "content_generation",
+        "code_analysis",
+        "project_status_summary"
+      ]
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "content"],
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "content",
+        "containsPrivateData",
+        "privacyLevel",
+        "sourceLabel",
+        "capturedAt"
+      ],
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "containsPrivateData": {
+          "type": "boolean"
+        },
+        "privacyLevel": {
+          "enum": ["external-provider-allowed", "local-only"]
+        },
+        "sourceLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "capturedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

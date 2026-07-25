@@ -20,6 +20,7 @@ import { safeRequestIdentity } from "./router-contract.js";
 import { buildRouterFailure, routerHttpStatus } from "./router-response.js";
 import { createRecommendations } from "./recommendation-engine.js";
 import { buildRecommendationFailure, recommendationHttpStatus } from "./recommendation-response.js";
+import { handleTextResponseRequest } from "./text-response-handler.js";
 
 const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_13-test.html");
 
@@ -64,7 +65,7 @@ function safeFilterValue(value, allowed, maximum = 40) {
 
 function isoOrNull(value) { const parsed = Date.parse(value); return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null; }
 
-export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, now = Date.now } = {}) {
+export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, now = Date.now } = {}) {
   const serverStartedAt = Date.now();
   const safeLog = (event, safeMetadata = {}) => {
     try { Promise.resolve(eventLogger?.log?.({ event, safeMetadata })).catch(() => {}); } catch { /* logging is non-critical */ }
@@ -85,6 +86,8 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
     const url = new URL(request.url, "http://127.0.0.1");
     const { pathname } = url;
     const isRouterPath = pathname.startsWith("/api/router/");
+
+    if (pathname === "/api/router/respond") return textResponseHandler(request, response);
 
     if (isRouterPath) {
       if (!isTrustedRouterRequest(request, allowedRouterOrigins)) {
