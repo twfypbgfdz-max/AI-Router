@@ -5,6 +5,12 @@ const MAX_PROVIDER_BODY_BYTES = 1_048_576;
 const ADAPTER_INPUT_FIELDS = new Set(["instructions", "question", "context", "maxOutputTokens", "signal"]);
 const ADAPTER_RESULT_FIELDS = new Set(["text", "usage"]);
 const USAGE_FIELDS = new Set(["inputTokens", "outputTokens", "totalTokens"]);
+const PASSIVE_OUTPUT_ITEM_TYPES = new Set(["reasoning"]);
+const ACTION_FIELDS = new Set([
+  "actions", "arguments", "call_id", "computer_call", "function_call",
+  "required_action", "shell_call", "tool_calls"
+]);
+const ACTION_TYPE_PART = /(?:^|_)(?:action|browser|call|code|command|computer|delete|exec|file|mcp|patch|search|shell|tool|url|web|write)(?:_|$)/;
 
 function exactFields(value, allowed, code, message) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TextResponseError(code, message);
@@ -52,43 +58,79 @@ function extractUsage(payload) {
   });
 }
 
+function containsActionFields(value) {
+  return Object.keys(value).some((key) => ACTION_FIELDS.has(key));
+}
+
+function invalidProviderOutput(reason, message = "Provider response did not contain one plain-text message.") {
+  throw new TextResponseError("PROVIDER_RESPONSE_INVALID", message, {
+    safeDetails: { reason }
+  });
+}
+
 function extractText(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Array.isArray(payload.output) || payload.output.length !== 1) {
-    throw new TextResponseError("PROVIDER_RESPONSE_INVALID", "Provider response did not contain one plain-text message.", {
-      safeDetails: { reason: "non_text_provider_output" }
-    });
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)
+    || !Array.isArray(payload.output) || payload.output.length === 0) {
+    invalidProviderOutput("non_text_provider_output");
+  }
+  if (payload.status !== undefined && payload.status !== "completed") {
+    invalidProviderOutput("provider_response_incomplete", "Provider response was not complete.");
   }
   for (const key of ["tool_calls", "function_call", "required_action", "actions"]) {
     const value = payload[key];
     const emptyArray = Array.isArray(value) && value.length === 0;
     if (value !== undefined && value !== null && !emptyArray) {
-      throw new TextResponseError("PROVIDER_RESPONSE_INVALID", "Provider response contained unsupported action structures.", {
-        safeDetails: { reason: "action_structure_detected" }
-      });
+      invalidProviderOutput("action_structure_detected", "Provider response contained unsupported action structures.");
     }
   }
-  const message = payload.output[0];
-  if (!message || typeof message !== "object" || Array.isArray(message)
-    || message.type !== "message" || message.role !== "assistant"
+
+  const messages = [];
+  for (const item of payload.output) {
+    if (!item || typeof item !== "object" || Array.isArray(item) || typeof item.type !== "string") {
+      invalidProviderOutput("unknown_output_item", "Provider response contained an unknown output item.");
+    }
+    if (PASSIVE_OUTPUT_ITEM_TYPES.has(item.type)) {
+      if (containsActionFields(item)) {
+        invalidProviderOutput("action_structure_detected", "Provider response contained unsupported action structures.");
+      }
+      continue;
+    }
+    if (item.type === "message") {
+      messages.push(item);
+      continue;
+    }
+    const reason = ACTION_TYPE_PART.test(item.type) ? "action_structure_detected" : "unknown_output_item";
+    invalidProviderOutput(reason, "Provider response contained an unsupported output item.");
+  }
+  if (messages.length > 1) {
+    invalidProviderOutput("multiple_text_outputs", "Provider response contained multiple text messages.");
+  }
+  if (messages.length !== 1) {
+    invalidProviderOutput("non_text_provider_output");
+  }
+
+  const message = messages[0];
+  if (message.role !== "assistant"
     || !Array.isArray(message.content) || message.content.length !== 1) {
-    throw new TextResponseError("PROVIDER_RESPONSE_INVALID", "Provider response did not contain one plain-text message.", {
-      safeDetails: { reason: "non_text_provider_output" }
-    });
+    invalidProviderOutput("non_text_provider_output");
+  }
+  if (message.status !== undefined && message.status !== "completed") {
+    invalidProviderOutput("provider_response_incomplete", "Provider response message was not complete.");
   }
   const content = message.content[0];
   if (!content || typeof content !== "object" || Array.isArray(content)
     || content.type !== "output_text" || typeof content.text !== "string") {
-    throw new TextResponseError("PROVIDER_RESPONSE_INVALID", "Provider response did not contain plain text.", {
-      safeDetails: { reason: "non_text_provider_output" }
-    });
+    invalidProviderOutput("non_text_provider_output", "Provider response did not contain plain text.");
+  }
+  if (!content.text.trim()) {
+    invalidProviderOutput("empty_provider_output", "Provider response text was empty.");
   }
   const allowedContentFields = new Set(["type", "text", "annotations", "logprobs"]);
   if (Object.keys(content).some((key) => !allowedContentFields.has(key))
     || (content.annotations !== undefined && (!Array.isArray(content.annotations) || content.annotations.length))
-    || (content.logprobs !== undefined && content.logprobs !== null)) {
-    throw new TextResponseError("PROVIDER_RESPONSE_INVALID", "Provider response contained unsupported output structures.", {
-      safeDetails: { reason: "action_structure_detected" }
-    });
+    || (content.logprobs !== undefined && content.logprobs !== null
+      && (!Array.isArray(content.logprobs) || content.logprobs.length))) {
+    invalidProviderOutput("action_structure_detected", "Provider response contained unsupported output structures.");
   }
   return content.text;
 }

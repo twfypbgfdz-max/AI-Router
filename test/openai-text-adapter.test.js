@@ -21,6 +21,21 @@ function adapterInput(overrides = {}) {
   };
 }
 
+function adapterForPayload(payload) {
+  return createOpenAITextAdapter({
+    apiKey: TEST_API_KEY,
+    model: "test-model",
+    fetchImpl: async () => providerJsonResponse(payload)
+  });
+}
+
+async function assertInvalidPayload(payload, reason) {
+  await assert.rejects(
+    adapterForPayload(payload).generateText(adapterInput()),
+    (error) => error.code === "PROVIDER_RESPONSE_INVALID" && error.safeDetails?.reason === reason
+  );
+}
+
 test("OpenAI adapter uses one fixed Responses API request with no tools, streaming, retry or client URL", async () => {
   const calls = [];
   const fetchImpl = async (url, options) => {
@@ -57,9 +72,66 @@ test("OpenAI adapter uses one fixed Responses API request with no tools, streami
   });
 });
 
-test("tool, function and non-text provider output structures are rejected", async () => {
+test("reasoning output before one assistant text message is accepted", async () => {
+  const payload = providerTextPayload("Answer after passive reasoning.");
+  payload.output.unshift({
+    type: "reasoning",
+    status: null,
+    summary: [],
+    encrypted_content: "opaque-fake-test-metadata"
+  });
+  const result = await adapterForPayload(payload).generateText(adapterInput());
+  assert.equal(result.text, "Answer after passive reasoning.");
+});
+
+test("safe response metadata and empty text metadata arrays are accepted without trusting convenience text", async () => {
+  const payload = providerTextPayload("Validated message text.");
+  payload.status = "completed";
+  payload.metadata = { category: "fake-test" };
+  payload.output_text = "Unvalidated convenience text.";
+  payload.output[0].status = "completed";
+  payload.output[0].content[0].logprobs = [];
+  const result = await adapterForPayload(payload).generateText(adapterInput());
+  assert.equal(result.text, "Validated message text.");
+});
+
+test("tool call plus text is rejected fail-closed", async () => {
+  const payload = providerTextPayload("Text must not override a tool call.");
+  payload.output.unshift({ type: "web_search_call", status: "completed" });
+  await assertInvalidPayload(payload, "action_structure_detected");
+});
+
+test("function call output is rejected fail-closed", async () => {
+  await assertInvalidPayload(
+    { output: [{ type: "function_call", name: "unsafe", arguments: "{}" }] },
+    "action_structure_detected"
+  );
+});
+
+test("two assistant text messages are rejected as competing outputs", async () => {
+  const first = providerTextPayload("First answer.").output[0];
+  const second = providerTextPayload("Second answer.").output[0];
+  await assertInvalidPayload({ output: [first, second] }, "multiple_text_outputs");
+});
+
+test("empty assistant text is rejected", async () => {
+  await assertInvalidPayload(providerTextPayload("   "), "empty_provider_output");
+});
+
+test("unknown action-like output types are rejected fail-closed", async () => {
+  const payload = providerTextPayload("Text must not override an unknown action.");
+  payload.output.unshift({ type: "browser_navigation_action", status: "completed" });
+  await assertInvalidPayload(payload, "action_structure_detected");
+});
+
+test("unknown non-message output types remain rejected", async () => {
+  const payload = providerTextPayload("Text must not override an unknown item.");
+  payload.output.unshift({ type: "future_metadata_item", status: "completed" });
+  await assertInvalidPayload(payload, "unknown_output_item");
+});
+
+test("non-text content and actionable annotations remain rejected", async () => {
   const structures = [
-    { output: [{ type: "function_call", name: "shell", arguments: "{}" }] },
     { output: [{ type: "computer_call", action: { type: "click" } }] },
     { output: [{ type: "message", role: "assistant", content: [{ type: "output_image", image_url: "x" }] }] },
     { output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "Answer", annotations: [{ type: "url_citation" }] }] }] },

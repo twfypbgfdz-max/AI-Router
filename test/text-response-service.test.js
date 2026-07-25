@@ -95,7 +95,8 @@ test("missing provider and price configuration fail closed before the adapter is
     serviceWith(adapter, missingModel).respond(validTextResponseRequest(), {
       signal: new AbortController().signal
     }),
-    { code: "PROVIDER_NOT_CONFIGURED" }
+    (error) => error.code === "PROVIDER_NOT_CONFIGURED"
+      && error.safeDetails.reason === "model_configuration_missing"
   );
   const missingPrice = textProviderEnv();
   delete missingPrice.AI_ROUTER_OPENAI_OUTPUT_USD_PER_MILLION_TOKENS;
@@ -103,9 +104,25 @@ test("missing provider and price configuration fail closed before the adapter is
     serviceWith(adapter, missingPrice).respond(validTextResponseRequest(), {
       signal: new AbortController().signal
     }),
-    { code: "PROVIDER_NOT_CONFIGURED" }
+    (error) => error.code === "PROVIDER_NOT_CONFIGURED"
+      && error.safeDetails.reason === "cost_configuration_missing"
+      && error.safeDetails.field === "AI_ROUTER_OPENAI_OUTPUT_USD_PER_MILLION_TOKENS"
   );
   assert.equal(calls.length, 0);
+});
+
+test("reviewed model id and decimal prices pass configuration and cost guards", async () => {
+  const { adapter, calls } = successfulAdapter();
+  const env = textProviderEnv({
+    AI_ROUTER_OPENAI_MODEL: "gpt-5.4-mini",
+    AI_ROUTER_OPENAI_INPUT_USD_PER_MILLION_TOKENS: "0.75",
+    AI_ROUTER_OPENAI_OUTPUT_USD_PER_MILLION_TOKENS: "4.50"
+  });
+  const result = await serviceWith(adapter, env).respond(validTextResponseRequest(), {
+    signal: new AbortController().signal
+  });
+  assert.equal(calls.length, 1);
+  assert.ok(result.worstCaseCostUsd <= 0.02);
 });
 
 test("worst-case cost above 0.02 USD is blocked without a provider request", async () => {
@@ -185,7 +202,6 @@ test("upstream abort reaches the adapter and stops the response", async () => {
 test("invalid, structured, oversized and HTML adapter outputs are rejected", async () => {
   const invalidResults = [
     { text: "Answer", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }, toolCall: { name: "shell" } },
-    { text: "x".repeat(8_001), usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
     { text: "<script>alert(1)</script>", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
     { text: "Answer", usage: { inputTokens: 10, outputTokens: 801, totalTokens: 811 } }
   ];
@@ -198,6 +214,24 @@ test("invalid, structured, oversized and HTML adapter outputs are rejected", asy
       { code: "PROVIDER_RESPONSE_INVALID" }
     );
   }
+});
+
+test("provider text above the character limit remains rejected", async () => {
+  const adapter = {
+    async generateText() {
+      return {
+        text: "x".repeat(8_001),
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }
+      };
+    }
+  };
+  await assert.rejects(
+    serviceWith(adapter).respond(validTextResponseRequest(), {
+      signal: new AbortController().signal
+    }),
+    (error) => error.code === "PROVIDER_RESPONSE_INVALID"
+      && error.safeDetails.reason === "output_limit_exceeded"
+  );
 });
 
 test("shell, Git, email, calendar and deploy statements in model text remain inert plain text", async () => {

@@ -11,13 +11,11 @@ function bearerToken(header) {
   return match?.[1] || null;
 }
 
-export function authenticateInternalRequest(
-  authorizationHeader,
-  {
-    expectedToken = process.env.AI_ROUTER_INTERNAL_TOKEN,
-    timingSafeEqualFn = crypto.timingSafeEqual
-  } = {}
-) {
+export function authenticateInternalRequest(authorizationHeader, options = {}) {
+  const expectedToken = Object.hasOwn(options, "expectedToken")
+    ? options.expectedToken
+    : process.env.AI_ROUTER_INTERNAL_TOKEN;
+  const timingSafeEqualFn = options.timingSafeEqualFn ?? crypto.timingSafeEqual;
   if (typeof expectedToken !== "string" || expectedToken.length < 32) {
     throw new TextResponseError("AUTH_NOT_CONFIGURED", "Internal authentication is unavailable.");
   }

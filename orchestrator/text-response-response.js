@@ -21,12 +21,13 @@ const SAFE_REASONS = new Set([
   "provider_timeout", "total_timeout", "client_disconnected", "server_aborted",
   "provider_aborted", "provider_network_error", "provider_http_error", "provider_error",
   "provider_json_invalid", "provider_body_too_large", "non_text_provider_output",
-  "action_structure_detected", "adapter_result_shape", "usage_metadata_invalid",
+  "action_structure_detected", "multiple_text_outputs", "unknown_output_item",
+  "provider_response_incomplete", "adapter_result_shape", "usage_metadata_invalid",
   "empty_provider_output", "output_limit_exceeded", "provider_usage_limit_exceeded",
   "html_output_blocked", "control_characters_blocked", "protection_configuration_invalid"
 ]);
 const HTTP_STATUS = Object.freeze({
-  AUTH_REQUIRED: 401,
+  AUTH_REQUIRED: 403,
   AUTH_INVALID: 403,
   AUTH_NOT_CONFIGURED: 503,
   RATE_LIMITED: 429,
@@ -126,6 +127,10 @@ export function buildTextResponseFailure(error, { requestId = null, durationMs =
 
 export function textResponseHttpStatus(payload) {
   return HTTP_STATUS[payload?.error?.code] || 500;
+}
+
+export function isSafeTextResponseReasonCode(value) {
+  return SAFE_REASONS.has(value);
 }
 
 export const textResponseErrorCodes = Object.freeze([...ERROR_CODES]);

@@ -38,16 +38,24 @@ function handlerWith({
 }
 
 test("authentication fails closed for missing server configuration, missing headers and wrong tokens", async () => {
-  const missingConfig = textProviderEnv();
-  delete missingConfig.AI_ROUTER_INTERNAL_TOKEN;
+  const validAuthEnvironment = textProviderEnv();
+  const missingAuthEnvironment = textProviderEnv();
+  delete missingAuthEnvironment.AI_ROUTER_INTERNAL_TOKEN;
+
   const missingConfigExchange = fakeHttpExchange();
-  await handlerWith({ env: missingConfig }).handler(missingConfigExchange.request, missingConfigExchange.response);
+  await handlerWith({ env: missingAuthEnvironment }).handler(
+    missingConfigExchange.request,
+    missingConfigExchange.response
+  );
   assert.equal(missingConfigExchange.response.statusCode, 503);
   assert.equal(missingConfigExchange.response.json().error.code, "AUTH_NOT_CONFIGURED");
 
   const missingTokenExchange = fakeHttpExchange({ headers: { "content-type": "application/json" } });
-  await handlerWith().handler(missingTokenExchange.request, missingTokenExchange.response);
-  assert.equal(missingTokenExchange.response.statusCode, 401);
+  await handlerWith({ env: validAuthEnvironment }).handler(
+    missingTokenExchange.request,
+    missingTokenExchange.response
+  );
+  assert.equal(missingTokenExchange.response.statusCode, 403);
   assert.equal(missingTokenExchange.response.json().error.code, "AUTH_REQUIRED");
 
   const wrongTokenExchange = fakeHttpExchange({
@@ -56,7 +64,10 @@ test("authentication fails closed for missing server configuration, missing head
       "content-type": "application/json"
     }
   });
-  await handlerWith().handler(wrongTokenExchange.request, wrongTokenExchange.response);
+  await handlerWith({ env: validAuthEnvironment }).handler(
+    wrongTokenExchange.request,
+    wrongTokenExchange.response
+  );
   assert.equal(wrongTokenExchange.response.statusCode, 403);
   assert.equal(wrongTokenExchange.response.json().error.code, "AUTH_INVALID");
 });
