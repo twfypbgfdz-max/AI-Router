@@ -16,7 +16,9 @@ export const KNOWN_LOG_EVENTS = Object.freeze([
   "provider_registry_loaded", "provider_registry_invalid", "provider_selection_started", "provider_selected",
   "provider_selection_failed", "provider_fallback_used", "provider_simulation_started", "provider_simulation_completed",
   "provider_simulation_failed", "provider_workflow_started", "provider_workflow_completed", "provider_workflow_failed",
-  "provider_result_synthesized", "providers_listed", "provider_details_viewed", "provider_selection_previewed"
+  "provider_result_synthesized", "providers_listed", "provider_details_viewed", "provider_selection_previewed",
+  // Command-Center status contract (v1) events.
+  "cc_status_checked", "cc_status_rejected"
 ]);
 
 const SAFE_TOKEN = (value, maximum = 60) => (typeof value === "string" ? value.replace(/[^A-Za-z0-9_:.-]/g, "").slice(0, maximum) || null : null);

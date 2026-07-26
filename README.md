@@ -59,6 +59,29 @@ Timeout-/Abort-Kette, Loggingregeln und bekannte Production-Grenzen stehen in
 `POST /api/router/route` und die bestehende Cockpit-Simulation bleiben davon
 getrennt und rufen weiterhin keinen externen Provider auf.
 
+## Command-Center-Statuskontrakt (v1)
+
+`GET /api/v1/cc/status` ist ein separater, intern authentifizierter, rein
+lesender Statuskontrakt ausschliesslich fuer das Felix Command Center. Seine
+`schemaVersion "1.0"` ist ein eigener, unabhaengiger Zaehler und darf nie mit
+der Router-`schemaVersion "2.0"` verglichen oder synchron gehalten werden —
+es sind zwei getrennte Vertraege.
+
+Der Endpunkt fuehrt keine neue Providerpruefung durch und liest ausschliesslich
+den bereits vorhandenen, synchronen Provider-Registry-Zustand. `routerStatus`
+(`ok`/`degraded`) beschreibt nur die Integritaet der Provider-Registry und ist
+nicht identisch mit `serviceStatus` aus `/api/router/status` oder
+`/api/health`. `providers[].status` kennt kein `degraded` — nur
+`available`/`unavailable`/`unknown`/`invalid`. `checkedAt` ist aktuell immer
+`null` und traegt keine Freshness-Garantie. Nutzungs-/Kontingentdaten
+(`usage`) sind in v1 immer explizit als nicht verfuegbar gekennzeichnet, nie
+als `0` — es gibt aktuell keine reale Quelle fuer Provider- oder
+Account-Limits.
+
+Zugriff erfolgt ueber `Authorization: Bearer <AI_ROUTER_CC_TOKEN>` (eigenes,
+von `AI_ROUTER_INTERNAL_TOKEN` getrenntes Secret), server-zu-server, ohne
+Browser-Origin. Schema: [`schemas/cc-status-response-v1.json`](schemas/cc-status-response-v1.json).
+
 ## Evidence-basierte Workflow-Empfehlungen
 
 `POST /api/router/recommendations` wertet normalisierte, belegte Statusdaten

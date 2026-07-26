@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-router.local/schemas/cc-status-response-v1.json",
+  "title": "AI Router Command-Center status response v1",
+  "description": "Independent, additive contract for GET /api/v1/cc/status. schemaVersion is a separate counter from the core router schemaVersion (2.0) and must never be compared or synced with it.",
+  "oneOf": [
+    { "$ref": "#/$defs/success" },
+    { "$ref": "#/$defs/failure" }
+  ],
+  "$defs": {
+    "success": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "generatedAt", "routerVersion", "routerStatus", "activeModes", "providers", "usage", "error"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "routerVersion": { "type": "string", "maxLength": 80 },
+        "routerStatus": {
+          "enum": ["ok", "degraded"],
+          "description": "Aggregate status of the provider registry only. Not identical to /api/router/status.serviceStatus or /api/health.serviceStatus."
+        },
+        "activeModes": {
+          "type": "array",
+          "items": { "enum": ["recommendation", "simulation"] }
+        },
+        "providers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/provider" }
+        },
+        "usage": { "$ref": "#/$defs/usage" },
+        "error": { "type": "null" }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "generatedAt", "status", "error"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "status": { "const": "failed" },
+        "error": { "$ref": "#/$defs/error" }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providerId", "status", "simulated", "executable", "checkedAt"],
+      "properties": {
+        "providerId": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "status": {
+          "enum": ["available", "unavailable", "unknown", "invalid"],
+          "description": "No 'degraded' value on an individual provider — that value only exists as the aggregate routerStatus."
+        },
+        "simulated": { "type": "boolean" },
+        "executable": { "type": "boolean" },
+        "checkedAt": {
+          "type": ["string", "null"],
+          "description": "Currently always null. No active per-provider check is performed for this endpoint; null carries no freshness/liveness guarantee."
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "source", "requestsInWindow", "requestLimit", "remainingRequests", "windowResetAt"],
+      "properties": {
+        "available": { "const": false },
+        "source": { "enum": ["unavailable"] },
+        "requestsInWindow": { "type": "null" },
+        "requestLimit": { "type": "null" },
+        "remainingRequests": { "type": "null" },
+        "windowResetAt": { "type": "null" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {
+          "enum": ["AUTH_REQUIRED", "AUTH_INVALID", "AUTH_NOT_CONFIGURED", "ORIGIN_NOT_ALLOWED", "METHOD_NOT_ALLOWED", "UPSTREAM_UNAVAILABLE", "INTERNAL_ERROR"]
+        },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      }
+    }
+  }
+}
