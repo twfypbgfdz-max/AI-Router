@@ -563,3 +563,18 @@ benoetigt dagegen den lokalen Node-Orchestrator, aber keine externen Libraries.
 - Groessere Kartenrundungen und klarere Abstaende
 - Chip-Darstellung fuer Vertrauen, Risiko und Lernbonus
 - Mobile-freundliche Controls und Buttons
+
+## Integration Baseline
+
+Version: v0.13.0-test
+Commit: cf0bf80
+Status: ready for consumers
+
+API:
+GET /api/v1/cc/status
+
+Tests:
+305 total
+304 passed
+1 skipped
+0 failed

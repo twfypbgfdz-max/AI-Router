@@ -1,5 +1,32 @@
 # Changelog
 
+## Integration Baseline (cf0bf80)
+
+- Neuen, separaten, intern authentifizierten, rein lesenden Statuskontrakt
+  `GET /api/v1/cc/status` ausschliesslich fuer das Felix Command Center
+  ergaenzt. Eigene, unabhaengige `schemaVersion "1.0"` — darf nie mit der
+  Router-`schemaVersion "2.0"` verglichen oder synchron gehalten werden.
+- Fuehrt keine neue Providerpruefung durch, liest ausschliesslich den bereits
+  vorhandenen, synchronen Provider-Registry-Zustand. `routerStatus`
+  (`ok`/`degraded`) beschreibt nur die Integritaet der Provider-Registry.
+  `providers[].status` kennt `available`/`unavailable`/`unknown`/`invalid`
+  (kein `degraded`). `checkedAt` ist in v1 immer `null`. `usage` ist immer
+  explizit als nicht verfuegbar gekennzeichnet, nie als `0`.
+- Zugriff ueber eigenes, von `AI_ROUTER_INTERNAL_TOKEN` getrenntes Secret
+  `AI_ROUTER_CC_TOKEN`, server-zu-server, ohne Browser-Origin.
+- Schema: `schemas/cc-status-response-v1.json`.
+
+**Hinweis (nachgetragen, nicht Teil des Original-Commits):** Zwischen dem
+letzten regulaeren Changelog-Eintrag (`v0.13.0-test`, Commit `941cc28`) und
+`cf0bf80` liegen zusaetzlich 11 weitere, hier nicht einzeln dokumentierte
+Commits vom 19.–25.07.2026 ohne eigenen Changelog-Eintrag (u. a. "establish
+secure router backend foundation", "add evidence-based workflow
+recommendations", "add cockpit-compatible routing core", "add vercel preview
+router handlers", "add hard-blocking git hooks for agent-lock", "add secure
+read-only provider response pipeline"). Diese Luecke wurde im Rahmen dieser
+Aktualisierung nur festgestellt, nicht rueckwirkend nachgetragen — siehe
+Session-Abschlussbericht.
+
 ## v0.13.0-test
 
 - Zentrale, rein lokale **Provider-Schicht** eingefuehrt: Provider-Vertrag
