@@ -4,26 +4,35 @@ import {
   TEXT_RESPONSE_MAX_INPUT_TOKENS,
   TEXT_RESPONSE_MAX_OUTPUT_CHARS,
   TEXT_RESPONSE_MAX_OUTPUT_TOKENS,
-  TEXT_RESPONSE_MAX_TOTAL_TOKENS,
-  TEXT_RESPONSE_PROVIDER_ID
+  TEXT_RESPONSE_MAX_TOTAL_TOKENS
 } from "./text-response-config.js";
-import { loadOpenAITextProviderConfig } from "./text-response-config.js";
+import { loadOpenAITextProviderConfig, loadOllamaTextProviderConfig, loadTextResponseProviderId } from "./text-response-config.js";
 import { assertProviderInputBudget, estimateTextTokens } from "./context-limiter.js";
 import { assertWorstCaseCost, calculateProviderCost } from "./cost-guard.js";
 import { assertProviderEgressAllowed } from "./provider-egress-policy.js";
 import { createOpenAITextAdapter } from "./provider-adapters/openai-text.js";
+import { createOllamaTextAdapter } from "./provider-adapters/ollama-text.js";
 import { TextResponseError } from "./text-response-error.js";
 import { buildTextResponsePrompt } from "./text-response-prompt.js";
+import { isStructuredReportIntent, parseStructuredReport } from "./structured-response-schema.js";
 
 const SAFE_ROUTES = new Set(["analysis", "content_generation", "general_chat", "knowledge_query", "planning"]);
 const ADAPTER_RESULT_FIELDS = new Set(["text", "usage"]);
 const USAGE_FIELDS = new Set(["inputTokens", "outputTokens", "totalTokens"]);
 
+// The only place a provider id is mapped to its config loader + adapter
+// factory. Selection itself happens in loadTextResponseProviderId (config.js),
+// driven exclusively by AI_ROUTER_TEXT_PROVIDER.
+const TEXT_RESPONSE_PROVIDERS = Object.freeze({
+  openai: Object.freeze({ loadConfig: loadOpenAITextProviderConfig, createAdapter: createOpenAITextAdapter }),
+  ollama: Object.freeze({ loadConfig: loadOllamaTextProviderConfig, createAdapter: createOllamaTextAdapter })
+});
+
 function routeName(taskType, intent) {
   if (["writing", "social_media", "career"].includes(taskType) || intent === "content_generation" || intent === "writing") return "content_generation";
   if (taskType === "planning" || intent === "planning") return "planning";
-  if (["code", "research", "finance"].includes(taskType) || ["analysis", "code_analysis"].includes(intent)) return "analysis";
-  if (["learning", "obsidian"].includes(taskType) || ["general_question", "explanation", "project_status_summary"].includes(intent)) return "knowledge_query";
+  if (["code", "research", "finance"].includes(taskType) || ["analysis", "code_analysis", "git_change_report"].includes(intent)) return "analysis";
+  if (["learning", "obsidian"].includes(taskType) || ["general_question", "explanation", "project_status_summary", "project_status_report"].includes(intent)) return "knowledge_query";
   return "general_chat";
 }
 
@@ -104,7 +113,7 @@ function abortError(signal, fallbackReason) {
 
 export function createTextResponseService({
   env = process.env,
-  adapterFactory = createOpenAITextAdapter,
+  adapterFactory = null,
   now = () => new Date(),
   setTimer = setTimeout,
   clearTimer = clearTimeout
@@ -130,13 +139,15 @@ export function createTextResponseService({
         ...prompt,
         maxOutputTokens: TEXT_RESPONSE_MAX_OUTPUT_TOKENS
       });
-      const providerConfig = loadOpenAITextProviderConfig(env);
+      const providerId = loadTextResponseProviderId(env);
+      const providerEntry = TEXT_RESPONSE_PROVIDERS[providerId];
+      const providerConfig = providerEntry.loadConfig(env);
       const worstCaseCostUsd = assertWorstCaseCost(
         inputTokenEstimate,
         TEXT_RESPONSE_MAX_OUTPUT_TOKENS,
         providerConfig
       );
-      const adapter = adapterFactory(providerConfig);
+      const adapter = (adapterFactory || providerEntry.createAdapter)(providerConfig);
       if (!adapter || typeof adapter.generateText !== "function") {
         throw new TextResponseError("INTERNAL_ERROR", "The text provider adapter is unavailable.");
       }
@@ -176,6 +187,13 @@ export function createTextResponseService({
       }
 
       const result = validatedAdapterResult(rawResult, inputTokenEstimate);
+      // Structured-report intents require the provider's plain text to also be
+      // one valid, schema-conformant JSON object. Validated here, inside the
+      // service, so a failure is a normal PROVIDER_RESPONSE_INVALID error and
+      // never a "successful" response with unvalidated structured data.
+      const structured = isStructuredReportIntent(request.intent)
+        ? parseStructuredReport(request.intent, result.text)
+        : null;
       const calculatedCostUsd = calculateProviderCost(
         result.billedInputTokens,
         result.billedOutputTokens,
@@ -185,8 +203,9 @@ export function createTextResponseService({
         request,
         route: Object.freeze({ name: route, taskType }),
         answerText: result.text,
+        structured,
         provider: Object.freeze({
-          providerId: TEXT_RESPONSE_PROVIDER_ID,
+          providerId: providerConfig.providerId,
           model: providerConfig.publicModel,
           modelAlias: providerConfig.modelAlias
         }),

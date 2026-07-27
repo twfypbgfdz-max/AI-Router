@@ -1,5 +1,4 @@
 import {
-  TEXT_RESPONSE_PROVIDER_ID,
   TEXT_RESPONSE_PUBLIC_MODEL,
   TEXT_RESPONSE_SCHEMA_VERSION
 } from "./text-response-config.js";
@@ -24,7 +23,8 @@ const SAFE_REASONS = new Set([
   "action_structure_detected", "multiple_text_outputs", "unknown_output_item",
   "provider_response_incomplete", "adapter_result_shape", "usage_metadata_invalid",
   "empty_provider_output", "output_limit_exceeded", "provider_usage_limit_exceeded",
-  "html_output_blocked", "control_characters_blocked", "protection_configuration_invalid"
+  "html_output_blocked", "control_characters_blocked", "protection_configuration_invalid",
+  "structured_output_invalid", "provider_selection_invalid", "base_url_configuration_invalid"
 ]);
 const HTTP_STATUS = Object.freeze({
   AUTH_REQUIRED: 403,
@@ -94,13 +94,14 @@ export function buildTextResponseSuccess(result, { durationMs = 0 } = {}) {
   const response = base({ requestId: result.request.requestId, status: "answered", durationMs });
   response.route = { ...result.route };
   response.answer = {
-    type: "text",
+    type: result.structured ? "structured_json" : "text",
     text: result.answerText,
+    structured: result.structured ?? null,
     trust: "untrusted_provider_text",
     truncated: false
   };
   response.provider = {
-    providerId: TEXT_RESPONSE_PROVIDER_ID,
+    providerId: result.provider.providerId,
     model: TEXT_RESPONSE_PUBLIC_MODEL
   };
   response.meta.inputTokenEstimate = result.inputTokenEstimate;

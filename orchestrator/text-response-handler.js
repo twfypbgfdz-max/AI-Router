@@ -1,6 +1,5 @@
 import {
   TEXT_RESPONSE_MAX_BODY_BYTES,
-  TEXT_RESPONSE_PROVIDER_ID,
   TEXT_RESPONSE_RATE_WINDOW_MS,
   TEXT_RESPONSE_TOTAL_TIMEOUT_MS,
   loadTextResponseProtectionConfig
@@ -165,7 +164,11 @@ export function createTextResponseHandler({
   serverSignal = null,
   totalTimeoutMs = TEXT_RESPONSE_TOTAL_TIMEOUT_MS,
   setTimer = setTimeout,
-  clearTimer = clearTimeout
+  clearTimer = clearTimeout,
+  // When set, overrides whatever intent the caller sent, server-side, before
+  // validation. Used by the dedicated structured-report endpoints so the
+  // client cannot pick a different report shape.
+  forcedIntent = null
 } = {}) {
   let protection = null;
   const protectionState = () => {
@@ -228,6 +231,9 @@ export function createTextResponseHandler({
 
       abortChain = attachAbortChain(request, response, serverSignal, setTimer, totalTimeoutMs);
       const rawInput = await parseBody(request, abortChain.signal);
+      if (forcedIntent && rawInput && typeof rawInput === "object" && !Array.isArray(rawInput)) {
+        rawInput.intent = forcedIntent;
+      }
       identity = safeTextResponseIdentity(rawInput);
       const service = createTextResponseService({
         env,
@@ -258,7 +264,7 @@ export function createTextResponseHandler({
         source: serviceResult?.request.source || identity.source,
         route: serviceResult?.route.name || null,
         taskType: serviceResult?.route.taskType || null,
-        providerId: serviceResult ? TEXT_RESPONSE_PROVIDER_ID : null,
+        providerId: serviceResult ? serviceResult.provider.providerId : null,
         modelAlias: serviceResult?.provider.modelAlias || null,
         durationMs: Math.max(0, now() - startedAt),
         status: serviceResult ? "answered" : "failed",
@@ -275,6 +281,8 @@ export function createTextResponseHandler({
 }
 
 export const handleTextResponseRequest = createTextResponseHandler();
+export const handleProjectStatusRequest = createTextResponseHandler({ forcedIntent: "project_status_report" });
+export const handleGitChangeRequest = createTextResponseHandler({ forcedIntent: "git_change_report" });
 
 export const textResponseHandlerInternals = Object.freeze({
   bodySize,

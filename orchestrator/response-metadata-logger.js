@@ -4,6 +4,11 @@ const TASK_TYPES = new Set(["code", "research", "planning", "writing", "obsidian
 const SOURCES = new Set(["cockpit", "internal_test"]);
 const STATUSES = new Set(["answered", "failed"]);
 const RATE_DECISIONS = new Set(["allowed", "rejected", "not_checked"]);
+// Closed allowlist of known-safe provider identities. Widen this only by
+// adding another known constant pair from text-response-config.js - never by
+// accepting arbitrary caller-supplied values.
+const KNOWN_PROVIDER_IDS = new Set(["openai-text-v1", "ollama-text-v1"]);
+const KNOWN_MODEL_ALIASES = new Set(["configured-openai-text", "configured-ollama-text"]);
 
 function safeToken(value, maximum = 120) {
   return typeof value === "string" && value.length <= maximum && TOKEN.test(value) ? value : null;
@@ -22,8 +27,8 @@ export function createResponseMetadataLogger({ sink = (entry) => console.info(JS
         source: SOURCES.has(value.source) ? value.source : null,
         route: ROUTES.has(value.route) ? value.route : null,
         taskType: TASK_TYPES.has(value.taskType) ? value.taskType : null,
-        providerId: value.providerId === "openai-text-v1" ? value.providerId : null,
-        modelAlias: value.modelAlias === "configured-openai-text" ? value.modelAlias : null,
+        providerId: KNOWN_PROVIDER_IDS.has(value.providerId) ? value.providerId : null,
+        modelAlias: KNOWN_MODEL_ALIASES.has(value.modelAlias) ? value.modelAlias : null,
         durationMs: finite(value.durationMs),
         status: STATUSES.has(value.status) ? value.status : "failed",
         errorCode: safeToken(value.errorCode, 48),

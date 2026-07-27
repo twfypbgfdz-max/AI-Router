@@ -9,7 +9,10 @@ import { TextResponseError } from "./text-response-error.js";
 const SOURCES = new Set(["cockpit", "internal_test"]);
 const INTENTS = new Set([
   "auto", "general_question", "explanation", "analysis", "writing", "planning",
-  "content_generation", "code_analysis", "project_status_summary"
+  "content_generation", "code_analysis", "project_status_summary",
+  // Structured-report intents: the answer text must be one JSON object
+  // matching the closed schema in structured-response-schema.js.
+  "project_status_report", "git_change_report"
 ]);
 const TOP_LEVEL_FIELDS = new Set(["schemaVersion", "requestId", "source", "intent", "input", "context"]);
 const INPUT_FIELDS = new Set(["type", "content"]);

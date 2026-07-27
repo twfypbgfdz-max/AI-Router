@@ -20,7 +20,7 @@ import { safeRequestIdentity } from "./router-contract.js";
 import { buildRouterFailure, routerHttpStatus } from "./router-response.js";
 import { createRecommendations } from "./recommendation-engine.js";
 import { buildRecommendationFailure, recommendationHttpStatus } from "./recommendation-response.js";
-import { handleTextResponseRequest } from "./text-response-handler.js";
+import { handleTextResponseRequest, handleProjectStatusRequest, handleGitChangeRequest } from "./text-response-handler.js";
 import { handleCcStatusRequest } from "./cc-status-handler.js";
 
 const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_13-test.html");
@@ -66,7 +66,7 @@ function safeFilterValue(value, allowed, maximum = 40) {
 
 function isoOrNull(value) { const parsed = Date.parse(value); return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null; }
 
-export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, ccStatusHandler = handleCcStatusRequest, now = Date.now } = {}) {
+export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, now = Date.now } = {}) {
   const serverStartedAt = Date.now();
   const safeLog = (event, safeMetadata = {}) => {
     try { Promise.resolve(eventLogger?.log?.({ event, safeMetadata })).catch(() => {}); } catch { /* logging is non-critical */ }
@@ -89,6 +89,10 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
     const isRouterPath = pathname.startsWith("/api/router/");
 
     if (pathname === "/api/router/respond") return textResponseHandler(request, response);
+
+    if (pathname === "/api/router/project-status") return projectStatusHandler(request, response);
+
+    if (pathname === "/api/router/git-changes") return gitChangeHandler(request, response);
 
     if (pathname === "/api/v1/cc/status") return ccStatusHandler(request, response);
 

@@ -1,9 +1,23 @@
+import { DEFAULT_BASE_URL as OLLAMA_DEFAULT_BASE_URL } from "./provider-adapters/ollama-text.js";
 import { TextResponseError } from "./text-response-error.js";
 
 export const TEXT_RESPONSE_SCHEMA_VERSION = "1.0";
 export const TEXT_RESPONSE_PROVIDER_ID = "openai-text-v1";
 export const TEXT_RESPONSE_MODEL_ALIAS = "configured-openai-text";
 export const TEXT_RESPONSE_PUBLIC_MODEL = "server-configured";
+
+// Which text-generation provider is actually called is controlled by exactly
+// one place: the AI_ROUTER_TEXT_PROVIDER environment variable, read here and
+// nowhere else. Defaults to "openai" so existing deployments and tests keep
+// their current behaviour unless this variable is set explicitly.
+export const TEXT_RESPONSE_PROVIDER_SELECTION_ENV = "AI_ROUTER_TEXT_PROVIDER";
+export const TEXT_RESPONSE_ALLOWED_PROVIDERS = Object.freeze(["openai", "ollama"]);
+export const TEXT_RESPONSE_DEFAULT_PROVIDER = "openai";
+
+export const OLLAMA_TEXT_PROVIDER_ID = "ollama-text-v1";
+export const OLLAMA_TEXT_MODEL_ALIAS = "configured-ollama-text";
+export const OLLAMA_TEXT_DEFAULT_BASE_URL = OLLAMA_DEFAULT_BASE_URL;
+export const OLLAMA_TEXT_DEFAULT_TIMEOUT_MS = 60_000;
 export const TEXT_RESPONSE_MAX_BODY_BYTES = 16_384;
 export const TEXT_RESPONSE_MAX_QUESTION_CHARS = 8_000;
 export const TEXT_RESPONSE_MAX_CONTEXT_CHARS = 4_000;
@@ -62,6 +76,21 @@ export function loadTextResponseProtectionConfig(env = process.env) {
   });
 }
 
+// The single, explicit provider-selection switch. Nothing else in the
+// codebase decides which text-generation provider is active.
+export function loadTextResponseProviderId(env = process.env) {
+  const raw = typeof env[TEXT_RESPONSE_PROVIDER_SELECTION_ENV] === "string"
+    ? env[TEXT_RESPONSE_PROVIDER_SELECTION_ENV].trim().toLowerCase()
+    : "";
+  const providerId = raw || TEXT_RESPONSE_DEFAULT_PROVIDER;
+  if (!TEXT_RESPONSE_ALLOWED_PROVIDERS.includes(providerId)) {
+    throw new TextResponseError("PROVIDER_NOT_CONFIGURED", "The text provider is not configured.", {
+      safeDetails: { reason: "provider_selection_invalid", field: TEXT_RESPONSE_PROVIDER_SELECTION_ENV }
+    });
+  }
+  return providerId;
+}
+
 export function loadOpenAITextProviderConfig(env = process.env) {
   const apiKey = typeof env.OPENAI_API_KEY === "string" ? env.OPENAI_API_KEY.trim() : "";
   const model = typeof env.AI_ROUTER_OPENAI_MODEL === "string" ? env.AI_ROUTER_OPENAI_MODEL.trim() : "";
@@ -98,6 +127,7 @@ export function loadOpenAITextProviderConfig(env = process.env) {
     "AI_ROUTER_PROVIDER_TIMEOUT_MS"
   );
   return Object.freeze({
+    providerId: TEXT_RESPONSE_PROVIDER_ID,
     apiKey,
     model,
     modelAlias: TEXT_RESPONSE_MODEL_ALIAS,
@@ -106,5 +136,40 @@ export function loadOpenAITextProviderConfig(env = process.env) {
     inputUsdPerMillionTokens,
     outputUsdPerMillionTokens,
     maxCostUsd
+  });
+}
+
+// Ollama runs locally with no per-token price, so its cost fields are fixed
+// at zero rather than read from the environment (nothing to misconfigure).
+export function loadOllamaTextProviderConfig(env = process.env) {
+  const model = typeof env.AI_ROUTER_OLLAMA_MODEL === "string" ? env.AI_ROUTER_OLLAMA_MODEL.trim() : "";
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(model)) {
+    throw new TextResponseError("PROVIDER_NOT_CONFIGURED", "The text provider is not configured.", {
+      safeDetails: { reason: model ? "model_configuration_invalid" : "model_configuration_missing" }
+    });
+  }
+  const baseUrlRaw = typeof env.AI_ROUTER_OLLAMA_BASE_URL === "string" ? env.AI_ROUTER_OLLAMA_BASE_URL.trim() : "";
+  const baseUrl = baseUrlRaw || OLLAMA_TEXT_DEFAULT_BASE_URL;
+  if (!/^https?:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?$/.test(baseUrl)) {
+    throw new TextResponseError("PROVIDER_NOT_CONFIGURED", "The text provider is not configured.", {
+      safeDetails: { reason: "base_url_configuration_invalid" }
+    });
+  }
+  const timeoutMs = configuredInteger(
+    env.AI_ROUTER_OLLAMA_TIMEOUT_MS,
+    OLLAMA_TEXT_DEFAULT_TIMEOUT_MS,
+    OLLAMA_TEXT_DEFAULT_TIMEOUT_MS,
+    "AI_ROUTER_OLLAMA_TIMEOUT_MS"
+  );
+  return Object.freeze({
+    providerId: OLLAMA_TEXT_PROVIDER_ID,
+    model,
+    baseUrl,
+    modelAlias: OLLAMA_TEXT_MODEL_ALIAS,
+    publicModel: TEXT_RESPONSE_PUBLIC_MODEL,
+    timeoutMs,
+    inputUsdPerMillionTokens: 0,
+    outputUsdPerMillionTokens: 0,
+    maxCostUsd: TEXT_RESPONSE_MAX_COST_USD
   });
 }
