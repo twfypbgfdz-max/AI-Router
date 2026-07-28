@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createCcSummaryHandler } from "../orchestrator/cc-summary-handler.js";
+import { ccSummaryHandlerInternals, createCcSummaryHandler } from "../orchestrator/cc-summary-handler.js";
 import { TextResponseError } from "../orchestrator/text-response-error.js";
 import { successfulAdapter } from "./text-response-helpers.js";
 
@@ -271,7 +271,7 @@ test("no automatic retries: a provider error results in exactly one adapter call
   assert.equal(calls.length, 0);
 });
 
-test("no parallel summary calls: the second concurrent generation is rejected, not queued", async () => {
+test("no parallel summary calls: a second call while the first is in flight is rejected as temporarily_unavailable, not queued", async () => {
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
   let started = 0;
@@ -286,13 +286,96 @@ test("no parallel summary calls: the second concurrent generation is rejected, n
     const first = post(baseUrl, validBody());
     await new Promise((resolve) => setTimeout(resolve, 20));
     const second = await post(baseUrl, validBody());
+    assert.equal(second.status, 429);
     const secondBody = await second.json();
     release();
     const firstBody = await (await first).json();
     assert.equal(started, 1, "the second call must never reach the adapter while the first is in flight");
-    assert.equal(secondBody.state, "invalid_response");
+    // With CC_SUMMARY_MAX_REQUESTS_PER_WINDOW and
+    // CC_SUMMARY_MAX_CONCURRENT_REQUESTS both at 1 and a single shared
+    // internal identity, the shared pipeline's rate check runs (and rejects)
+    // before its concurrency check ever would - so this specific end-to-end
+    // scenario surfaces as RATE_LIMITED, not CONCURRENCY_LIMITED. Both map to
+    // the same closed state; the CONCURRENCY_LIMITED mapping itself is
+    // verified directly below since it cannot currently be forced this way.
+    assert.equal(secondBody.state, "temporarily_unavailable");
+    assert.equal(secondBody.summary, null);
+    assert.equal(secondBody.provider, null);
+    assert.equal(secondBody.model, null);
+    assert.ok(Number.isInteger(secondBody.retryAfterSeconds));
     assert.equal(firstBody.state, "ok");
   }, { handlerOptions: { adapterFactory: () => slowAdapter } });
+});
+
+test("mapping: CONCURRENCY_LIMITED maps to temporarily_unavailable with no retryAfterSeconds", () => {
+  const { mapGenerationFailure } = ccSummaryHandlerInternals;
+  const result = mapGenerationFailure(
+    { status: "failed", error: { code: "CONCURRENCY_LIMITED" } },
+    { getHeader: () => undefined }
+  );
+  assert.deepEqual(result, { state: "temporarily_unavailable", retryAfterSeconds: null });
+});
+
+test("mapping: RATE_LIMITED maps to temporarily_unavailable, retryAfterSeconds only if the header is a valid, in-range integer", () => {
+  const { mapGenerationFailure } = ccSummaryHandlerInternals;
+  const failed = { status: "failed", error: { code: "RATE_LIMITED" } };
+  assert.deepEqual(
+    mapGenerationFailure(failed, { getHeader: () => "42" }),
+    { state: "temporarily_unavailable", retryAfterSeconds: 42 }
+  );
+  for (const badValue of [undefined, "0", "-1", "61", "not-a-number", "3.5"]) {
+    assert.deepEqual(
+      mapGenerationFailure(failed, { getHeader: () => badValue }),
+      { state: "temporarily_unavailable", retryAfterSeconds: null },
+      `value: ${badValue}`
+    );
+  }
+});
+
+test("mapping: unrelated provider error codes are unaffected by the new state", () => {
+  const { mapGenerationFailure } = ccSummaryHandlerInternals;
+  const noHeader = { getHeader: () => undefined };
+  assert.equal(mapGenerationFailure({ status: "failed", error: { code: "PROVIDER_TIMEOUT" } }, noHeader).state, "timeout");
+  assert.equal(mapGenerationFailure({ status: "failed", error: { code: "PROVIDER_UNAVAILABLE" } }, noHeader).state, "not_connected");
+  assert.equal(mapGenerationFailure({ status: "failed", error: { code: "PROVIDER_NOT_CONFIGURED" } }, noHeader).state, "not_connected");
+  assert.equal(mapGenerationFailure({ status: "failed", error: { code: "PROVIDER_RESPONSE_INVALID" } }, noHeader).state, "invalid_response");
+  assert.equal(mapGenerationFailure({ status: "failed", error: { code: "VALIDATION_FAILED" } }, noHeader).state, "invalid_response");
+});
+
+test("rate limit: the request is rejected as temporarily_unavailable with a real, validated Retry-After", async () => {
+  await withServer(async (baseUrl) => {
+    const first = await post(baseUrl, validBody());
+    assert.equal(first.status, 200);
+    const second = await post(baseUrl, validBody());
+    assert.equal(second.status, 429);
+    const body = await second.json();
+    assert.equal(body.state, "temporarily_unavailable");
+    assert.equal(body.summary, null);
+    assert.equal(body.provider, null);
+    assert.equal(body.model, null);
+    assert.ok(Number.isInteger(body.retryAfterSeconds));
+    assert.ok(body.retryAfterSeconds >= 1 && body.retryAfterSeconds <= 60);
+    assert.equal(second.headers.get("retry-after"), String(body.retryAfterSeconds));
+    assert.deepEqual(
+      Object.keys(body).sort(),
+      ["generatedAt", "mode", "model", "provider", "reason", "retryAfterSeconds", "schemaVersion", "state", "summary"].sort()
+    );
+  }, {
+    // No env override needed: this endpoint's own scoped env already forces
+    // the shared rate limiter to CC_SUMMARY_MAX_REQUESTS_PER_WINDOW (1) per
+    // window, independent of whatever the real environment configures.
+    handlerOptions: { adapterFactory: () => successfulAdapter({ text: "First answer." }).adapter }
+  });
+});
+
+test("an invalid or empty provider answer still maps to invalid_response, not temporarily_unavailable", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await post(baseUrl, validBody());
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.state, "invalid_response");
+    assert.equal(body.retryAfterSeconds, null);
+  }, { handlerOptions: { adapterFactory: () => ({ async generateText() { return { text: "   ", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } }; } }) } });
 });
 
 // --- Logging safety ------------------------------------------------------
@@ -348,7 +431,7 @@ test("the observation response has exactly the closed set of fields", async () =
     const body = await response.json();
     assert.deepEqual(
       Object.keys(body).sort(),
-      ["generatedAt", "mode", "model", "provider", "reason", "schemaVersion", "state", "summary"].sort()
+      ["generatedAt", "mode", "model", "provider", "reason", "retryAfterSeconds", "schemaVersion", "state", "summary"].sort()
     );
     assert.equal(body.mode, "observe");
   }, { handlerOptions: { adapterFactory: () => successfulAdapter({ text: "ok" }).adapter } });

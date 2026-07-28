@@ -15,6 +15,7 @@ import {
   CC_SUMMARY_MAX_CONCURRENT_REQUESTS,
   CC_SUMMARY_MAX_REQUEST_BYTES,
   CC_SUMMARY_MAX_REQUESTS_PER_WINDOW,
+  CC_SUMMARY_MAX_RETRY_AFTER_SECONDS,
   CC_SUMMARY_MAX_VISIBLE_SUMMARY_BYTES
 } from "./cc-summary-config.js";
 import { loadOllamaTextProviderConfig } from "./text-response-config.js";
@@ -74,13 +75,18 @@ function buildInternalRequest(promptText, internalToken) {
   };
 }
 
+// Captures headers the shared handler sets (notably Retry-After on
+// RATE_LIMITED) instead of discarding them, so a real limiter-issued value
+// can be read back after the call - never invented or estimated here.
 function captureResponse() {
+  const headers = new Map();
   return {
     writableEnded: false,
     destroyed: false,
     statusCode: 200,
     body: "",
-    setHeader() {},
+    setHeader(name, value) { headers.set(String(name).toLowerCase(), value); },
+    getHeader(name) { return headers.get(String(name).toLowerCase()); },
     end(chunk = "") {
       this.body = chunk;
       this.writableEnded = true;
@@ -92,6 +98,36 @@ function mapProviderErrorToState(code) {
   if (code === "PROVIDER_TIMEOUT") return "timeout";
   if (code === "PROVIDER_UNAVAILABLE" || code === "PROVIDER_NOT_CONFIGURED") return "not_connected";
   return "invalid_response";
+}
+
+// Only a value that actually came from the shared rate limiter's own
+// Retry-After header is ever surfaced, strictly validated and bounded by
+// the limiter's fixed window - anything else (missing, non-numeric, zero,
+// out of range) is dropped rather than guessed.
+function safeRetryAfterSeconds(rawValue) {
+  if (rawValue === undefined || rawValue === null) return null;
+  const parsed = Number(rawValue);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > CC_SUMMARY_MAX_RETRY_AFTER_SECONDS) return null;
+  return parsed;
+}
+
+// RATE_LIMITED and CONCURRENCY_LIMITED are the only two shared-pipeline
+// codes that mean "temporary capacity, try again" rather than an actual
+// connectivity, model, timeout or validity problem - they get their own
+// closed state instead of being folded into invalid_response. This never
+// introduces a new /api/router/respond error code: the shared pipeline's
+// existing RATE_LIMITED/CONCURRENCY_LIMITED codes are read here, not added.
+function mapGenerationFailure(generationPayload, internalResponse) {
+  const code = generationPayload.error?.code;
+  if (code === "RATE_LIMITED") {
+    return { state: "temporarily_unavailable", retryAfterSeconds: safeRetryAfterSeconds(internalResponse.getHeader("retry-after")) };
+  }
+  if (code === "CONCURRENCY_LIMITED") {
+    // No Retry-After is ever set by the shared handler for this code - never
+    // estimate one.
+    return { state: "temporarily_unavailable", retryAfterSeconds: null };
+  }
+  return { state: mapProviderErrorToState(code), retryAfterSeconds: null };
 }
 
 function mapRequestErrorToReason(error) {
@@ -206,8 +242,9 @@ export function createCcSummaryHandler({
     const generationPayload = await textResponseHandler(internalRequest, internalResponse);
 
     if (generationPayload.status !== "answered") {
-      const state = mapProviderErrorToState(generationPayload.error?.code);
-      const payload = buildCcSummaryObservation({ state, now });
+      const { state, retryAfterSeconds } = mapGenerationFailure(generationPayload, internalResponse);
+      if (retryAfterSeconds !== null) response.setHeader("retry-after", String(retryAfterSeconds));
+      const payload = buildCcSummaryObservation({ state, retryAfterSeconds, now });
       safeLog(eventLogger, "cc_summary_observed", { state, durationMs: Date.now() - startedAt });
       return sendJson(response, ccSummaryObservationHttpStatus(payload.state), payload);
     }
@@ -236,3 +273,10 @@ export function createCcSummaryHandler({
 }
 
 export const handleCcSummaryRequest = createCcSummaryHandler();
+
+// Exposed for targeted unit testing only. With CC_SUMMARY_MAX_REQUESTS_PER_WINDOW
+// and CC_SUMMARY_MAX_CONCURRENT_REQUESTS both at 1 and a single shared internal
+// identity, the shared pipeline's rate check always runs before its
+// concurrency check - so CONCURRENCY_LIMITED cannot currently be forced
+// end-to-end through real HTTP calls. Its mapping is verified directly here.
+export const ccSummaryHandlerInternals = Object.freeze({ mapGenerationFailure, safeRetryAfterSeconds });

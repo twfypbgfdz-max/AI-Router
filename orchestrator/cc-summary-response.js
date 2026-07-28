@@ -37,7 +37,9 @@ export function ccSummaryTransportHttpStatus(payload) {
 
 // The one, always-closed observation shape. Every field is always present;
 // summary/provider/model are populated only for state "ok", reason only for
-// state "input_rejected" - never a raw exception, never provider output
+// state "input_rejected", retryAfterSeconds only for state
+// "temporarily_unavailable" and only when a real, validated value came from
+// the shared rate limiter - never a raw exception, never provider output
 // beyond the validated, length-capped summary text itself.
 export function buildCcSummaryObservation({
   state,
@@ -45,6 +47,7 @@ export function buildCcSummaryObservation({
   provider = null,
   model = null,
   reason = null,
+  retryAfterSeconds = null,
   now = () => new Date()
 } = {}) {
   return Object.freeze({
@@ -55,13 +58,20 @@ export function buildCcSummaryObservation({
     provider,
     model,
     reason,
+    retryAfterSeconds,
     generatedAt: now().toISOString()
   });
 }
 
-// Every "observe" outcome (including input_rejected) is a successfully
-// handled request from the transport's point of view - only input_rejected
-// gets a non-200 status, since that one is a genuine client-request problem.
+const OBSERVATION_HTTP_STATUS = Object.freeze({
+  input_rejected: 422,
+  temporarily_unavailable: 429
+});
+
+// Every "observe" outcome is a successfully handled request from the
+// transport's point of view; only input_rejected (a genuine client-request
+// problem) and temporarily_unavailable (a real, temporary capacity limit -
+// the standard meaning of 429) get a non-200 status.
 export function ccSummaryObservationHttpStatus(state) {
-  return state === "input_rejected" ? 422 : 200;
+  return OBSERVATION_HTTP_STATUS[state] || 200;
 }

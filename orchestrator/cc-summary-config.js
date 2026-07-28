@@ -1,3 +1,5 @@
+import { TEXT_RESPONSE_RATE_WINDOW_MS } from "./text-response-config.js";
+
 // Command-Center summary contract (v1). Independent schemaVersion counter,
 // unrelated to the core router's "2.0" or the text-response pipeline's "1.0"
 // - never compared or kept in sync with either.
@@ -30,5 +32,12 @@ export const CC_SUMMARY_MAX_REQUESTS_PER_WINDOW = 1;
 
 export const CC_SUMMARY_STATES = Object.freeze([
   "ok", "not_connected", "model_missing", "timeout", "invalid_response",
-  "input_rejected", "response_too_large"
+  "input_rejected", "response_too_large", "temporarily_unavailable"
 ]);
+
+// Ceiling for the optional retryAfterSeconds field: it is only ever taken
+// from the shared rate limiter's own Retry-After header, whose value can
+// never exceed its fixed window - derived from TEXT_RESPONSE_RATE_WINDOW_MS
+// rather than duplicated as a separate literal. A value outside (0, this]
+// cannot be a real limiter output and is dropped, never estimated.
+export const CC_SUMMARY_MAX_RETRY_AFTER_SECONDS = Math.ceil(TEXT_RESPONSE_RATE_WINDOW_MS / 1000);
