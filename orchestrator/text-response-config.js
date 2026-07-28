@@ -27,7 +27,15 @@ export const TEXT_RESPONSE_MAX_OUTPUT_TOKENS = 800;
 export const TEXT_RESPONSE_MAX_TOTAL_TOKENS = 4_800;
 export const TEXT_RESPONSE_MAX_OUTPUT_CHARS = 8_000;
 export const TEXT_RESPONSE_DEFAULT_PROVIDER_TIMEOUT_MS = 15_000;
-export const TEXT_RESPONSE_TOTAL_TIMEOUT_MS = 20_000;
+// Outer ceiling for the whole request (body parse + provider call + response
+// build). Must exceed the slowest configured provider timeout (Ollama: up to
+// OLLAMA_TEXT_DEFAULT_TIMEOUT_MS = 60_000) so a provider's own timeout fires
+// first with a clear PROVIDER_TIMEOUT, instead of this generic total_timeout.
+// Raising this globally does not change how long a request waits on a dead
+// provider - that is still bounded by each provider's own inner timeoutMs
+// (OpenAI: capped at TEXT_RESPONSE_DEFAULT_PROVIDER_TIMEOUT_MS = 15_000,
+// unchanged) - it only avoids killing a healthy but slow local model early.
+export const TEXT_RESPONSE_TOTAL_TIMEOUT_MS = 65_000;
 export const TEXT_RESPONSE_DEFAULT_RATE_LIMIT = 10;
 export const TEXT_RESPONSE_DEFAULT_CONCURRENCY_LIMIT = 2;
 export const TEXT_RESPONSE_RATE_WINDOW_MS = 60_000;
