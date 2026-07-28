@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI-Router – Router-Konsole</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --surface-2: #f8f9fb;
+    --border: #e4e5ea;
+    --text: #1c1d21;
+    --text-muted: #6b6c76;
+    --accent: #3b5bdb;
+    --accent-contrast: #ffffff;
+    --ok-fg: #14804a; --ok-bg: #14804a1a; --ok-bd: #14804a40;
+    --fail-fg: #c92a2a; --fail-bg: #c92a2a1a; --fail-bd: #c92a2a40;
+    --pending-fg: #6b6c76; --pending-bg: #6b6c761a; --pending-bd: #6b6c7640;
+    --radius-lg: 18px;
+    --radius-md: 12px;
+    --radius-sm: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16171c;
+      --surface: #1e1f26;
+      --surface-2: #26272f;
+      --border: #33343d;
+      --text: #eceef2;
+      --text-muted: #9a9ba6;
+      --accent: #7c9bff;
+      --accent-contrast: #101223;
+      --ok-fg: #4fd693; --ok-bg: #4fd6931a; --ok-bd: #4fd69340;
+      --fail-fg: #ff8080; --fail-bg: #ff808020; --fail-bd: #ff808045;
+      --pending-fg: #9a9ba6; --pending-bg: #9a9ba61a; --pending-bd: #9a9ba640;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    max-width: 620px; margin: 0 auto; padding: 36px 20px 60px;
+    line-height: 1.45;
+  }
+  header { margin-bottom: 28px; }
+  h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { color: var(--text-muted); margin: 0; font-size: 0.92rem; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px 22px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 2px #0000000a;
+  }
+  .card h2 { font-size: 1.05rem; font-weight: 600; margin: 0 0 4px; }
+  .card-hint { color: var(--text-muted); font-size: 0.86rem; margin: 0 0 16px; }
+
+  textarea {
+    width: 100%; min-height: 84px; font: inherit; color: inherit;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: 12px 14px; resize: vertical;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    border-radius: 999px; border: 1px solid transparent; padding: 9px 20px;
+    background: var(--accent); color: var(--accent-contrast); transition: opacity 0.15s;
+  }
+  button:hover:not(:disabled) { opacity: 0.88; }
+  button:disabled { cursor: not-allowed; opacity: 0.5; }
+  button.ghost {
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+    font-weight: 500; padding: 6px 14px; font-size: 0.88rem;
+  }
+  .status-text { color: var(--text-muted); font-size: 0.88rem; }
+
+  .result-panel { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .result-row { display: flex; gap: 14px; padding: 5px 0; font-size: 0.92rem; }
+  .result-row .label { flex: 0 0 148px; color: var(--text-muted); font-weight: 500; }
+  .result-row .value { flex: 1; word-break: break-word; }
+
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.76rem; font-weight: 600; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok-fg); border: 1px solid var(--ok-bd); }
+  .badge.fail { background: var(--fail-bg); color: var(--fail-fg); border: 1px solid var(--fail-bd); }
+  .badge.pending { background: var(--pending-bg); color: var(--pending-fg); border: 1px solid var(--pending-bd); }
+
+  details.inline-details { margin-top: 10px; }
+  details.inline-details summary {
+    cursor: pointer; font-size: 0.84rem; color: var(--text-muted); list-style: none;
+  }
+  details.inline-details summary::-webkit-details-marker { display: none; }
+  details.inline-details summary::before { content: "▸ "; }
+  details.inline-details[open] summary::before { content: "▾ "; }
+  details.inline-details .panel-body { margin-top: 8px; font-size: 0.86rem; color: var(--text-muted); }
+
+  details.card { padding: 0; }
+  details.card > summary {
+    list-style: none; cursor: pointer; padding: 18px 22px; display: flex;
+    align-items: center; justify-content: space-between; gap: 12px;
+  }
+  details.card > summary::-webkit-details-marker { display: none; }
+  details.card > summary .summary-text { display: flex; flex-direction: column; gap: 3px; }
+  details.card > summary .summary-title { font-weight: 600; font-size: 1.02rem; }
+  details.card > summary .summary-hint { color: var(--text-muted); font-size: 0.85rem; font-weight: 400; }
+  details.card > summary .chevron { color: var(--text-muted); transition: transform 0.15s; flex: 0 0 auto; }
+  details.card[open] > summary .chevron { transform: rotate(90deg); }
+  details.card > .panel-body { padding: 0 22px 22px; }
+  details.card > summary { border-radius: var(--radius-lg); }
+  details.card[open] > summary { border-bottom: 1px solid var(--border); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+
+  .test-group { margin-top: 4px; }
+  .test-group + .test-group { margin-top: 18px; }
+  .test-group h3 {
+    font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-muted); margin: 0 0 8px; font-weight: 600;
+  }
+  .test-card {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 8px; font-size: 0.9rem;
+  }
+  .test-card .row { margin-top: 8px; }
+  .test-card .result { margin-top: 8px; font-size: 0.86rem; }
+
+  ul.history { list-style: none; margin: 0; padding: 0; }
+  ul.history li { padding: 10px 0; font-size: 0.86rem; border-bottom: 1px solid var(--border); }
+  ul.history li:last-child { border-bottom: none; padding-bottom: 0; }
+  ul.history li:first-child { padding-top: 0; }
+  .muted { color: var(--text-muted); }
+  code { font-size: 0.85em; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Router-Konsole</h1>
+  <p class="sub">Frag den AI-Router direkt und sieh Antwort, Provider und Antwortzeit. Weitere Werkzeuge (Systemstatus, Testfälle, Verlauf) findest du unten zum Aufklappen.</p>
+</header>
+
+<section class="card" id="ask-section">
+  <h2>Frage stellen</h2>
+  <p class="card-hint">Deine Frage geht direkt an den aktiven Text-Provider des Routers.</p>
+  <textarea id="question" placeholder="Frage eingeben…" maxlength="8000"></textarea>
+  <div class="row">
+    <button id="ask-btn">Senden</button>
+    <span class="status-text" id="ask-status"></span>
+  </div>
+  <div id="ask-result" class="result-panel" hidden>
+    <div class="result-row"><span class="label">Status</span><span class="value" id="r-status">–</span></div>
+    <div class="result-row"><span class="label">Antwort</span><span class="value" id="r-answer">–</span></div>
+    <div class="result-row"><span class="label">Aktiver Text-Provider</span><span class="value" id="r-provider">–</span></div>
+    <div class="result-row"><span class="label">Modell</span><span class="value" id="r-model">–</span></div>
+    <div class="result-row"><span class="label">Antwortzeit</span><span class="value" id="r-duration">–</span></div>
+    <div class="result-row"><span class="label">Fehler</span><span class="value" id="r-error">–</span></div>
+    <details class="inline-details">
+      <summary>Technische Routing-Diagnose</summary>
+      <div class="panel-body">
+        <span id="r-diagnostics">–</span><br>
+        Diese Zeile wird ausschließlich vom Konsolen-Proxy ergänzt (Feld <code>consoleDiagnostics</code>) und ist nicht Teil der echten <code>/api/router/respond</code>-Antwort.
+      </div>
+    </details>
+  </div>
+</section>
+
+<details class="card" id="provider-check-details">
+  <summary>
+    <span class="summary-text">
+      <span class="summary-title">Provider-Check</span>
+      <span class="summary-hint">Technischer Systemstatus im Hintergrund — nicht der Provider deiner Frage</span>
+    </span>
+    <span class="chevron">›</span>
+  </summary>
+  <div class="panel-body">
+    <p class="card-hint">Ruft den bestehenden <code>GET /api/health</code>-Endpunkt ab (read-only, keine Secrets, keine Prozesssteuerung). Zeigt die simulierten Router-Kern-Provider der Orchestrator-Registry (<code>mock-local</code>, <code>codex-local-readonly</code>, <code>claude-simulated</code>, <code>openai-simulated</code>, <code>gemini-simulated</code>) — <strong>nicht</strong> den tatsächlich aktiven Text-Provider von <code>/api/router/respond</code>. Dieser erscheint pro Anfrage oben als „Aktiver Text-Provider".</p>
+    <div class="row">
+      <button class="ghost" id="check-btn">Provider-Check ausführen</button>
+      <span class="status-text" id="check-status"></span>
+    </div>
+    <div id="check-result" class="result-panel" hidden>
+      <div class="result-row"><span class="label">Service-Status</span><span class="value" id="c-service">–</span></div>
+      <div class="result-row"><span class="label">Router-Kern-Provider-Registry</span><span class="value" id="c-registry">–</span></div>
+      <div class="result-row"><span class="label">Gesamt / aktiv / ausführbar / simuliert</span><span class="value" id="c-counts">–</span></div>
+      <div class="result-row"><span class="label">Provider-Details</span><span class="value" id="c-providers">–</span></div>
+    </div>
+  </div>
+</details>
+
+<details class="card" id="smoke-details">
+  <summary>
+    <span class="summary-text">
+      <span class="summary-title">Schnelltests</span>
+      <span class="summary-hint">Vorgefertigte Testfragen zum schnellen Prüfen der Anbindung</span>
+    </span>
+    <span class="chevron">›</span>
+  </summary>
+  <div class="panel-body">
+    <p class="card-hint">„Echte Tests" und „Erwartete Fehler" rufen tatsächlich den Router auf. Der Ausfall-Test führt keine echte Anfrage aus (siehe Begründung unten).</p>
+    <div id="smoke-tests"></div>
+  </div>
+</details>
+
+<details class="card" id="history-details">
+  <summary>
+    <span class="summary-text">
+      <span class="summary-title">Verlauf</span>
+      <span class="summary-hint">Deine letzten Anfragen dieser Sitzung</span>
+    </span>
+    <span class="chevron">›</span>
+  </summary>
+  <div class="panel-body">
+    <p class="card-hint">Letzte 10 Anfragen dieser Browser-Sitzung (<code>sessionStorage</code>), keine dauerhafte Speicherung.</p>
+    <ul class="history" id="history-list"><li class="muted">Noch keine Einträge.</li></ul>
+  </div>
+</details>
+
+<script>
+(function () {
+  "use strict";
+
+  var HISTORY_KEY = "aiRouterConsoleHistory";
+  var HISTORY_MAX = 10;
+
+  function na(value) {
+    return (value === null || value === undefined || value === "") ? "nicht verfügbar" : String(value);
+  }
+
+  function loadHistory() {
+    try {
+      var raw = sessionStorage.getItem(HISTORY_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) { return []; }
+  }
+
+  function saveHistory(entries) {
+    try { sessionStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, HISTORY_MAX))); } catch (e) { /* ignore */ }
+  }
+
+  function pushHistory(entry) {
+    var entries = loadHistory();
+    entries.unshift(entry);
+    saveHistory(entries);
+    renderHistory();
+  }
+
+  function renderHistory() {
+    var list = document.getElementById("history-list");
+    var entries = loadHistory();
+    if (!entries.length) {
+      list.innerHTML = '<li class="muted">Noch keine Einträge.</li>';
+      return;
+    }
+    list.innerHTML = entries.map(function (entry) {
+      var statusBadge = entry.success
+        ? '<span class="badge ok">erfolgreich</span>'
+        : '<span class="badge fail">fehlgeschlagen</span>';
+      return '<li>' +
+        '<div>' + statusBadge + ' &middot; ' + escapeHtml(entry.timestamp) + '</div>' +
+        '<div><strong>Frage:</strong> ' + escapeHtml(truncate(entry.question, 140)) + '</div>' +
+        '<div class="muted">Text-Provider: ' + escapeHtml(na(entry.providerId)) + ' &middot; Modell: ' + escapeHtml(na(entry.model)) +
+        ' &middot; Antwortzeit: ' + escapeHtml(na(entry.durationMs !== null && entry.durationMs !== undefined ? entry.durationMs + ' ms' : null)) +
+        (entry.errorCode ? ' &middot; Fehlercode: ' + escapeHtml(entry.errorCode) : '') +
+        '</div></li>';
+    }).join("");
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+
+  function truncate(value, max) {
+    var text = String(value == null ? "" : value);
+    return text.length > max ? text.slice(0, max) + "…" : text;
+  }
+
+  async function callRespond(question) {
+    var response = await fetch("/api/router-console/respond", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question: question })
+    });
+    var payload = null;
+    try { payload = await response.json(); } catch (e) { /* leave null */ }
+    return { httpStatus: response.status, payload: payload };
+  }
+
+  function extractDisplay(question, result) {
+    var payload = result.payload || {};
+    var success = payload.status === "answered";
+    var diagnostics = payload.consoleDiagnostics || null;
+    return {
+      timestamp: new Date().toISOString(),
+      question: question,
+      success: success,
+      answerText: success ? (payload.answer && payload.answer.text) : null,
+      providerId: success ? (payload.provider && payload.provider.providerId) : null,
+      model: success ? (payload.provider && payload.provider.model) : null,
+      durationMs: (payload.meta && typeof payload.meta.durationMs === "number") ? payload.meta.durationMs : null,
+      errorCode: !success ? (payload.error && payload.error.code) : null,
+      errorMessage: !success ? (payload.error && payload.error.message) : null,
+      diagnostics: diagnostics
+    };
+  }
+
+  function formatDiagnostics(diagnostics) {
+    if (!diagnostics) return "nicht verfügbar";
+    return "Route: " + na(diagnostics.routeName) + "/" + na(diagnostics.taskType) +
+      " · Provider: " + na(diagnostics.selectedProviderId) +
+      " · Validierungs-Reason: " + na(diagnostics.validationReasonCode);
+  }
+
+  function renderAskResult(display) {
+    document.getElementById("ask-result").hidden = false;
+    document.getElementById("r-status").innerHTML = display.success
+      ? '<span class="badge ok">erfolgreich</span>'
+      : '<span class="badge fail">fehlgeschlagen</span>';
+    document.getElementById("r-answer").textContent = na(display.answerText);
+    document.getElementById("r-provider").textContent = na(display.providerId);
+    document.getElementById("r-model").textContent = na(display.model);
+    document.getElementById("r-duration").textContent = display.durationMs !== null ? display.durationMs + " ms" : "nicht verfügbar";
+    document.getElementById("r-error").textContent = display.errorCode
+      ? display.errorCode + (display.errorMessage ? " – " + display.errorMessage : "")
+      : "–";
+    document.getElementById("r-diagnostics").textContent = formatDiagnostics(display.diagnostics);
+  }
+
+  document.getElementById("ask-btn").addEventListener("click", async function () {
+    var btn = document.getElementById("ask-btn");
+    var statusEl = document.getElementById("ask-status");
+    var question = document.getElementById("question").value;
+    if (!question.trim()) {
+      statusEl.textContent = "Bitte eine Frage eingeben.";
+      return;
+    }
+    btn.disabled = true;
+    statusEl.textContent = "Sende…";
+    try {
+      var result = await callRespond(question);
+      var display = extractDisplay(question, result);
+      renderAskResult(display);
+      pushHistory(display);
+      statusEl.textContent = "";
+    } catch (e) {
+      statusEl.textContent = "Anfrage fehlgeschlagen (Netzwerk/Client-Fehler).";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById("check-btn").addEventListener("click", async function () {
+    var btn = document.getElementById("check-btn");
+    var statusEl = document.getElementById("check-status");
+    btn.disabled = true;
+    statusEl.textContent = "Prüfe…";
+    try {
+      var response = await fetch("/api/health");
+      var health = await response.json();
+      document.getElementById("check-result").hidden = false;
+      document.getElementById("c-service").textContent = na(health.serviceStatus);
+      document.getElementById("c-registry").textContent = na(health.providerRegistryStatus);
+      document.getElementById("c-counts").textContent =
+        na(health.providerCount) + " / " + na(health.enabledProviderCount) + " / " +
+        na(health.executableProviderCount) + " / " + na(health.simulatedProviderCount);
+      var providers = Array.isArray(health.providerStatuses) ? health.providerStatuses : [];
+      document.getElementById("c-providers").textContent = providers.length
+        ? providers.map(function (p) { return p.providerId + " (" + p.status + ")"; }).join(", ")
+        : "nicht verfügbar";
+      statusEl.textContent = "";
+    } catch (e) {
+      statusEl.textContent = "Provider-Check fehlgeschlagen.";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  var SMOKE_TESTS = [
+    {
+      id: "real-1", category: "real",
+      label: "Echte API-Anfrage: einfache Frage",
+      question: "Was ist die Hauptstadt von Deutschland?"
+    },
+    {
+      id: "real-2", category: "real",
+      label: "Echte API-Anfrage: kurze Zusammenfassung",
+      question: "Fasse in einem Satz zusammen: Der AI-Router leitet Textanfragen an einen konfigurierten Anbieter weiter."
+    },
+    {
+      id: "val-empty", category: "validation",
+      label: "Erwarteter Validierungsfehler: leere Eingabe",
+      question: ""
+    },
+    {
+      id: "val-toolong", category: "validation",
+      label: "Erwarteter Validierungsfehler: Eingabe über dem Zeichenlimit",
+      question: "A".repeat(8001)
+    },
+    {
+      id: "sim-outage", category: "outage",
+      label: "Simulierter Provider-Ausfall",
+      notExecutable: true,
+      reason: "Für /api/router/respond existiert kein Fake-Provider- oder Diagnosemodus, der einen Ausfall simuliert, ohne den echten Ollama-Prozess zu manipulieren. Daher nicht ausführbar (siehe Auftrag)."
+    }
+  ];
+
+  var CATEGORY_LABELS = {
+    real: "Echte API-Tests",
+    validation: "Erwartete Validierungsfehler",
+    outage: "Simulierte Provider-Ausfälle"
+  };
+
+  function buildSmokeTestsUi() {
+    var container = document.getElementById("smoke-tests");
+    var byCategory = {};
+    SMOKE_TESTS.forEach(function (t) {
+      (byCategory[t.category] = byCategory[t.category] || []).push(t);
+    });
+    Object.keys(CATEGORY_LABELS).forEach(function (category) {
+      var tests = byCategory[category] || [];
+      if (!tests.length) return;
+      var group = document.createElement("div");
+      group.className = "test-group";
+      var heading = document.createElement("h3");
+      heading.textContent = CATEGORY_LABELS[category];
+      group.appendChild(heading);
+      tests.forEach(function (t) {
+        var card = document.createElement("div");
+        card.className = "test-card";
+        card.id = "test-" + t.id;
+        var label = document.createElement("div");
+        label.textContent = t.label;
+        card.appendChild(label);
+        var row = document.createElement("div");
+        row.className = "row";
+        var button = document.createElement("button");
+        button.className = "ghost";
+        button.textContent = t.notExecutable ? "Nicht ausführbar" : "Ausführen";
+        if (t.notExecutable) button.disabled = true;
+        row.appendChild(button);
+        var status = document.createElement("span");
+        status.className = "status-text";
+        row.appendChild(status);
+        card.appendChild(row);
+        var result = document.createElement("div");
+        result.className = "result";
+        if (t.notExecutable) {
+          result.innerHTML = '<span class="badge pending">nicht ausführbar</span> ' + escapeHtml(t.reason);
+        }
+        card.appendChild(result);
+        if (!t.notExecutable) {
+          button.addEventListener("click", async function () {
+            button.disabled = true;
+            status.textContent = "Läuft…";
+            try {
+              var res = await callRespond(t.question);
+              var display = extractDisplay(t.question, res);
+              pushHistory(display);
+              var badge = display.success
+                ? '<span class="badge ok">erfolgreich</span>'
+                : '<span class="badge fail">fehlgeschlagen</span>';
+              var detail = display.success
+                ? escapeHtml(truncate(display.answerText, 200))
+                : escapeHtml(na(display.errorCode)) + (display.errorMessage ? " – " + escapeHtml(display.errorMessage) : "");
+              result.innerHTML = badge + " " + detail + '<div class="muted">' + escapeHtml(formatDiagnostics(display.diagnostics)) + '</div>';
+              status.textContent = "";
+            } catch (e) {
+              result.innerHTML = '<span class="badge fail">fehlgeschlagen</span> Netzwerk-/Client-Fehler.';
+              status.textContent = "";
+            } finally {
+              button.disabled = false;
+            }
+          });
+        }
+        group.appendChild(card);
+      });
+      container.appendChild(group);
+    });
+  }
+
+  buildSmokeTestsUi();
+  renderHistory();
+})();
+</script>
+</body>
+</html>
