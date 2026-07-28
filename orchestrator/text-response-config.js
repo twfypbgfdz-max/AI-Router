@@ -1,4 +1,5 @@
 import { DEFAULT_BASE_URL as OLLAMA_DEFAULT_BASE_URL } from "./provider-adapters/ollama-text.js";
+import { parseOllamaLoopbackUrl } from "./ollama-loopback.js";
 import { TextResponseError } from "./text-response-error.js";
 
 export const TEXT_RESPONSE_SCHEMA_VERSION = "1.0";
@@ -157,8 +158,11 @@ export function loadOllamaTextProviderConfig(env = process.env) {
     });
   }
   const baseUrlRaw = typeof env.AI_ROUTER_OLLAMA_BASE_URL === "string" ? env.AI_ROUTER_OLLAMA_BASE_URL.trim() : "";
-  const baseUrl = baseUrlRaw || OLLAMA_TEXT_DEFAULT_BASE_URL;
-  if (!/^https?:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?$/.test(baseUrl)) {
+  // Loopback-only: Ollama is a local-only provider. No external hostname,
+  // private/public IP, credentials, query string, fragment, non-root path or
+  // non-http protocol is ever accepted, regardless of what is configured.
+  const baseUrl = parseOllamaLoopbackUrl(baseUrlRaw || OLLAMA_TEXT_DEFAULT_BASE_URL);
+  if (!baseUrl) {
     throw new TextResponseError("PROVIDER_NOT_CONFIGURED", "The text provider is not configured.", {
       safeDetails: { reason: "base_url_configuration_invalid" }
     });

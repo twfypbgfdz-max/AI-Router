@@ -44,6 +44,29 @@ test("missing or invalid Ollama model/base URL configuration fails closed", () =
   );
 });
 
+test("Ollama base URL is loopback-only, even though a full URL parses fine otherwise", () => {
+  const invalidReason = (error) => error.code === "PROVIDER_NOT_CONFIGURED" && error.safeDetails?.reason === "base_url_configuration_invalid";
+  for (const baseUrl of [
+    "http://evil.example.com:11434",
+    "http://192.168.1.5:11434",
+    "http://user:pass@localhost:11434",
+    "http://localhost:11434?x=1",
+    "http://localhost:11434#frag",
+    "http://localhost:11434/api",
+    "https://localhost:11434"
+  ]) {
+    assert.throws(
+      () => loadOllamaTextProviderConfig({ AI_ROUTER_OLLAMA_MODEL: "ok-model", AI_ROUTER_OLLAMA_BASE_URL: baseUrl }),
+      invalidReason,
+      baseUrl
+    );
+  }
+  for (const baseUrl of ["http://127.0.0.1:11434", "http://localhost:11434", "http://[::1]:11434"]) {
+    const config = loadOllamaTextProviderConfig({ AI_ROUTER_OLLAMA_MODEL: "ok-model", AI_ROUTER_OLLAMA_BASE_URL: baseUrl });
+    assert.equal(config.baseUrl, baseUrl);
+  }
+});
+
 test("with no adapterFactory override, AI_ROUTER_TEXT_PROVIDER=ollama actually routes through the Ollama adapter", async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];

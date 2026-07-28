@@ -104,6 +104,14 @@ function normalizeFetchError(error, signal) {
       safeDetails: { reason: "provider_aborted" }
     });
   }
+  // fetch({redirect:"error"}) throws a TypeError with this exact cause
+  // message when the server answers with a redirect - never followed.
+  if (error?.cause?.message === "unexpected redirect") {
+    return new TextResponseError("PROVIDER_UNAVAILABLE", "The text provider is unavailable.", {
+      retryable: false,
+      safeDetails: { reason: "redirect_blocked" }
+    });
+  }
   // Covers Ollama not running / not reachable (connection refused, DNS, etc.).
   return new TextResponseError("PROVIDER_UNAVAILABLE", "The text provider is unavailable.", {
     retryable: false,
@@ -137,6 +145,7 @@ export function createOllamaTextAdapter({ model, baseUrl = DEFAULT_BASE_URL, fet
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(providerRequest),
+          redirect: "error",
           signal
         });
         if (!response?.ok) {

@@ -24,7 +24,8 @@ const SAFE_REASONS = new Set([
   "provider_response_incomplete", "adapter_result_shape", "usage_metadata_invalid",
   "empty_provider_output", "output_limit_exceeded", "provider_usage_limit_exceeded",
   "html_output_blocked", "control_characters_blocked", "protection_configuration_invalid",
-  "structured_output_invalid", "provider_selection_invalid", "base_url_configuration_invalid"
+  "structured_output_invalid", "provider_selection_invalid", "base_url_configuration_invalid",
+  "redirect_blocked"
 ]);
 const HTTP_STATUS = Object.freeze({
   AUTH_REQUIRED: 403,

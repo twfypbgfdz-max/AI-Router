@@ -212,6 +212,64 @@ test("invalid provider JSON and excessive body size fail closed", async () => {
   await assert.rejects(oversizedAdapter.generateText(adapterInput()), { code: "PROVIDER_RESPONSE_INVALID" });
 });
 
+test("every request rejects redirects explicitly and a redirect is surfaced as a distinct, safe reason", async () => {
+  const calls = [];
+  const adapter = createOllamaTextAdapter({
+    model: "qwen2.5:7b-instruct",
+    fetchImpl: async (url, options) => {
+      calls.push(options);
+      const error = new TypeError("fetch failed");
+      error.cause = new Error("unexpected redirect");
+      throw error;
+    }
+  });
+  assert.equal(calls.length, 0);
+  let caught;
+  try {
+    await adapter.generateText(adapterInput());
+  } catch (error) {
+    caught = error;
+  }
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].redirect, "error");
+  assert.equal(caught.code, "PROVIDER_UNAVAILABLE");
+  assert.equal(caught.safeDetails?.reason, "redirect_blocked");
+});
+
+test("a redirect target is never followed or contacted", async () => {
+  const http = await import("node:http");
+  const redirectCalls = { count: 0 };
+  const redirectTarget = http.createServer((_req, res) => {
+    redirectCalls.count += 1;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(ollamaPayload("Should never be reached.")));
+  });
+  await new Promise((resolve) => redirectTarget.listen(0, "127.0.0.1", resolve));
+  const targetPort = redirectTarget.address().port;
+
+  const redirectingServer = http.createServer((_req, res) => {
+    res.writeHead(302, { location: `http://127.0.0.1:${targetPort}/` });
+    res.end();
+  });
+  await new Promise((resolve) => redirectingServer.listen(0, "127.0.0.1", resolve));
+  const sourcePort = redirectingServer.address().port;
+
+  try {
+    const adapter = createOllamaTextAdapter({
+      model: "qwen2.5:7b-instruct",
+      baseUrl: `http://127.0.0.1:${sourcePort}`
+    });
+    await assert.rejects(adapter.generateText(adapterInput()), {
+      code: "PROVIDER_UNAVAILABLE",
+      safeDetails: { reason: "redirect_blocked" }
+    });
+    assert.equal(redirectCalls.count, 0);
+  } finally {
+    await new Promise((resolve) => redirectingServer.close(resolve));
+    await new Promise((resolve) => redirectTarget.close(resolve));
+  }
+});
+
 test("missing configuration is rejected", () => {
   assert.throws(() => createOllamaTextAdapter({ fetchImpl: async () => {} }), { code: "PROVIDER_NOT_CONFIGURED" });
   assert.throws(() => createOllamaTextAdapter({ model: "" }), { code: "PROVIDER_NOT_CONFIGURED" });
