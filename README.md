@@ -95,13 +95,13 @@ behandelt; `unknown` wird nicht als Fehler interpretiert.
 Vertraege, Prioritaeten, Sicherheitsgrenzen und Beispiele stehen in
 [`docs/recommendation-engine-v1.md`](docs/recommendation-engine-v1.md).
 
-## Lokaler FELIX_SYSTEM-Wissensindex (Commit B, noch nicht angebunden)
+## Lokaler FELIX_SYSTEM-Wissensindex (Commit B)
 
 `orchestrator/knowledge/` baut einen lokalen Embedding-Index über explizit
 freigegebene Markdown-Dokumente aus dem FELIX_SYSTEM-Obsidian-Vault auf.
-**Dieses Feature ist noch an keine Antwortpipeline angebunden** — weder an
-`/api/router/respond` noch an `/api/v1/cc/summary`. `rag-search.js` ist
-implementiert und getestet, wird aber aktuell von keinem Endpunkt aufgerufen.
+Seit Commit C2b wird dieser Index über `POST /api/v1/cc/knowledge` (siehe
+unten) für Antworten genutzt — weiterhin **nicht** über `/api/router/respond`
+oder `/api/v1/cc/summary`.
 
 - **Read-only gegenüber dem Vault:** Der gesamte Modul-Namespace öffnet
   ausschließlich die konkreten, in `config/rag-allowlist.json` freigegebenen
@@ -126,6 +126,48 @@ implementiert und getestet, wird aber aktuell von keinem Endpunkt aufgerufen.
   Filesystem-Watcher, kein automatischer Start mit `npm start`.
 - Änderungsprüfung erfolgt über SHA-256 des Dokumentinhalts; `mtime` ist rein
   ergänzendes Metadatum und begründet allein weder Re-Index noch Skip.
+
+## Command-Center-Wissenskontext (v1)
+
+`POST /api/v1/cc/knowledge` ist ein separater, intern authentifizierter
+Endpunkt, der eine Frage mit dem bereinigten Command-Center-Echtzeitkontext
+und bis zu drei lokalen FELIX_SYSTEM-Fundstellen kombiniert und über die
+bestehende, lokale Ollama-Text-Response-Pipeline (Intent `knowledge_answer`)
+beantwortet.
+
+- **Authentifizierung:** `Authorization: Bearer <AI_ROUTER_CC_TOKEN>` —
+  dasselbe Secret wie `/api/v1/cc/summary`, server-zu-server, keine
+  Browser-Origin.
+- **Request:** `{ schemaVersion: "1.0", question: string (≤500 Zeichen,
+  einzeilig), context?: {...gleiche geschlossene Felder wie cc-summary} }`.
+  `context` ist optional — reine Wissensfragen ohne aktuellen
+  Command-Center-Zustand sind zulässig.
+- **Ausschließlich lokales Ollama:** über den bestehenden Loopback-Guard
+  (`AI_ROUTER_OLLAMA_BASE_URL`), kein Cloud-Fallback, kein zweiter
+  Provider-Client. Ohne Kontext **und** ohne passende Fundstelle wird Ollama
+  gar nicht erst aufgerufen (`state: "unavailable"`,
+  `warnings: ["no_context_no_knowledge"]`).
+- **States:** `state` (`ok` | `partial` | `unavailable`),
+  `systemContextState` (`available` | `unavailable`), `knowledgeState`
+  (`available` | `no_match` | `index_missing` | `index_stale` |
+  `embedding_model_unavailable` | `search_failed`). Ein veralteter Index
+  (Staleness-Schwelle aktuell **24 Stunden** — bewusst konservativer
+  Startwert, nicht empirisch kalibriert) blockiert die Antwort nicht,
+  senkt das Gesamtergebnis aber mindestens auf `partial` und erzwingt die
+  Warnung `index_stale`.
+- **Quellenformat:** RAG-Fundstellen werden serverseitig `[K1]`–`[K3]`
+  zugeordnet. Das Modell darf nur diese Kennungen zitieren; `sources[]` im
+  Response wird ausschließlich aus den tatsächlich zitierten, serverseitig
+  validierten Treffern gebaut — nie aus Modelltext geparst. Eine unbekannte
+  oder fehlende Pflichtquelle führt fail-closed zu `state: "unavailable"`.
+- **Keine Tools, keine Aktionen:** Die Modellantwort ist ein geschlossenes
+  JSON-Objekt `{ answer, citedSources }`; Tool-Calling-artige Ausgaben und
+  eindeutige Ich-Form-Aktionsbehauptungen ("Ich habe den Commit erstellt.")
+  werden hart blockiert.
+- **Keine automatische Re-Indexierung, keine Cloud, keine Vault-Schreibzugriffe:**
+  Der Endpunkt liest ausschließlich den bereits vorhandenen lokalen Index
+  (`npm run rag:reindex` bleibt ein separater, manueller Schritt) und öffnet
+  FELIX_SYSTEM nie direkt.
 
 ### Lokaler post-commit-Hook: Contract-Test-Erinnerung
 

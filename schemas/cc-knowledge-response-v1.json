@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ai-router.local/schemas/cc-knowledge-response-v1.json",
   "title": "AI Router CC-knowledge response v1",
-  "description": "Fully defined in Commit C1 for forward validation, but not yet produced by any active route or Ollama call - that wiring is Commit C2. schemaVersion is a separate counter from cc-summary (1.0), cc-status (1.0) and the core router schema (2.0). `sources` is always built server-side from the RAG search results actually included in the prompt, never parsed out of a model's free text - see orchestrator/cc-knowledge-rag-service.js.",
+  "description": "Produced by POST /api/v1/cc/knowledge (Commit C2b), authenticated via AI_ROUTER_CC_TOKEN. schemaVersion is a separate counter from cc-summary (1.0), cc-status (1.0) and the core router schema (2.0). `sources` is always built server-side from the RAG search results the model actually cited (validated against the results offered for this request), never parsed out of the model's free text - see orchestrator/cc-knowledge-handler.js.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "state", "answer", "systemContextState", "knowledgeState", "sources", "warnings", "generatedAt"],
@@ -14,9 +14,12 @@
     },
     "answer": {
       "type": ["string", "null"],
-      "description": "Null only when state is 'unavailable'. Never produced in Commit C1 - no route calls Ollama yet."
+      "description": "Null only when state is 'unavailable'. Non-null and non-empty for 'ok' and 'partial'."
     },
-    "systemContextState": { "enum": ["available", "unavailable", "partial"] },
+    "systemContextState": {
+      "enum": ["available", "unavailable"],
+      "description": "Whether the request included a validated Command-Center context object. Partial availability within the context itself (e.g. freshness: 'unknown') is expressed inside the context fields, not as a third value here."
+    },
     "knowledgeState": {
       "enum": ["available", "no_match", "index_missing", "index_stale", "embedding_model_unavailable", "search_failed"]
     },
@@ -27,6 +30,7 @@
     },
     "warnings": {
       "type": "array",
+      "maxItems": 5,
       "items": { "type": "string", "maxLength": 120 }
     },
     "generatedAt": { "type": "string", "format": "date-time" }

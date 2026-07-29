@@ -23,6 +23,7 @@ import { buildRecommendationFailure, recommendationHttpStatus } from "./recommen
 import { handleTextResponseRequest, handleProjectStatusRequest, handleGitChangeRequest } from "./text-response-handler.js";
 import { handleCcStatusRequest } from "./cc-status-handler.js";
 import { handleCcSummaryRequest } from "./cc-summary-handler.js";
+import { handleCcKnowledgeRequest } from "./cc-knowledge-handler.js";
 import { handleRouterConsoleRespond } from "./router-console-proxy.js";
 
 const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_13-test.html");
@@ -69,7 +70,7 @@ function safeFilterValue(value, allowed, maximum = 40) {
 
 function isoOrNull(value) { const parsed = Date.parse(value); return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null; }
 
-export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, now = Date.now } = {}) {
+export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, ccKnowledgeHandler = handleCcKnowledgeRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, now = Date.now } = {}) {
   const serverStartedAt = Date.now();
   const safeLog = (event, safeMetadata = {}) => {
     try { Promise.resolve(eventLogger?.log?.({ event, safeMetadata })).catch(() => {}); } catch { /* logging is non-critical */ }
@@ -100,6 +101,8 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
     if (pathname === "/api/v1/cc/status") return ccStatusHandler(request, response);
 
     if (pathname === "/api/v1/cc/summary") return ccSummaryHandler(request, response);
+
+    if (pathname === "/api/v1/cc/knowledge") return ccKnowledgeHandler(request, response);
 
     if (isRouterPath) {
       if (!isTrustedRouterRequest(request, allowedRouterOrigins)) {
