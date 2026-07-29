@@ -77,6 +77,69 @@ test("malformed commit entries fail closed", () => {
   }
 });
 
+test("a valid knowledge answer with one cited source parses", () => {
+  const payload = { answer: "FELIX_SYSTEM speichert langfristiges Wissen.", citedSources: ["K1"] };
+  const parsed = parseStructuredReport("knowledge_answer", JSON.stringify(payload));
+  assert.deepEqual(parsed, payload);
+});
+
+test("a valid knowledge answer citing all three sources parses", () => {
+  const payload = { answer: "Beleg aus drei Fundstellen.", citedSources: ["K1", "K2", "K3"] };
+  const parsed = parseStructuredReport("knowledge_answer", JSON.stringify(payload));
+  assert.deepEqual(parsed, payload);
+});
+
+test("a knowledge answer with an empty citedSources array is valid (context-only answer)", () => {
+  const payload = { answer: "Der Branch ist aktuell dev.", citedSources: [] };
+  const parsed = parseStructuredReport("knowledge_answer", JSON.stringify(payload));
+  assert.deepEqual(parsed, payload);
+});
+
+test("an empty answer string fails closed", () => {
+  assert.throws(() => parseStructuredReport("knowledge_answer", JSON.stringify({ answer: "   ", citedSources: [] })), { code: "PROVIDER_RESPONSE_INVALID" });
+});
+
+test("an unknown source id like K9 fails closed", () => {
+  assert.throws(() => parseStructuredReport("knowledge_answer", JSON.stringify({ answer: "x", citedSources: ["K9"] })), { code: "PROVIDER_RESPONSE_INVALID" });
+});
+
+test("a duplicate source id fails closed, is never silently deduplicated", () => {
+  assert.throws(() => parseStructuredReport("knowledge_answer", JSON.stringify({ answer: "x", citedSources: ["K1", "K1"] })), { code: "PROVIDER_RESPONSE_INVALID" });
+});
+
+test("more than three source ids fail closed", () => {
+  assert.throws(() => parseStructuredReport("knowledge_answer", JSON.stringify({ answer: "x", citedSources: ["K1", "K2", "K3", "K1"] })), { code: "PROVIDER_RESPONSE_INVALID" });
+});
+
+test("a non-array citedSources fails closed", () => {
+  assert.throws(() => parseStructuredReport("knowledge_answer", JSON.stringify({ answer: "x", citedSources: "K1" })), { code: "PROVIDER_RESPONSE_INVALID" });
+});
+
+test("a non-string entry in citedSources fails closed", () => {
+  assert.throws(() => parseStructuredReport("knowledge_answer", JSON.stringify({ answer: "x", citedSources: [1] })), { code: "PROVIDER_RESPONSE_INVALID" });
+});
+
+test("a lowercase or malformed source id fails closed", () => {
+  assert.throws(() => parseStructuredReport("knowledge_answer", JSON.stringify({ answer: "x", citedSources: ["k1"] })), { code: "PROVIDER_RESPONSE_INVALID" });
+  assert.throws(() => parseStructuredReport("knowledge_answer", JSON.stringify({ answer: "x", citedSources: ["K4"] })), { code: "PROVIDER_RESPONSE_INVALID" });
+  assert.throws(() => parseStructuredReport("knowledge_answer", JSON.stringify({ answer: "x", citedSources: ["K1 "] })), { code: "PROVIDER_RESPONSE_INVALID" });
+});
+
+test("an additional field on a knowledge answer fails closed", () => {
+  assert.throws(() => parseStructuredReport("knowledge_answer", JSON.stringify({ answer: "x", citedSources: [], sourceDoc: "10_Apps/x.md" })), { code: "PROVIDER_RESPONSE_INVALID" });
+});
+
+test("a missing field on a knowledge answer fails closed", () => {
+  assert.throws(() => parseStructuredReport("knowledge_answer", JSON.stringify({ answer: "x" })), { code: "PROVIDER_RESPONSE_INVALID" });
+  assert.throws(() => parseStructuredReport("knowledge_answer", JSON.stringify({ citedSources: [] })), { code: "PROVIDER_RESPONSE_INVALID" });
+});
+
+test("the model cannot smuggle sourceDoc, section or similarity through the answer schema", () => {
+  assert.throws(() => parseStructuredReport("knowledge_answer", JSON.stringify({
+    answer: "x", citedSources: ["K1"], sourceDoc: "10_Apps/x.md", section: "A", similarity: 0.9
+  })), { code: "PROVIDER_RESPONSE_INVALID" });
+});
+
 test("a top-level array or non-object JSON value fails closed", () => {
   assert.throws(() => parseStructuredReport("project_status_report", "[]"), { code: "PROVIDER_RESPONSE_INVALID" });
   assert.throws(() => parseStructuredReport("project_status_report", "42"), { code: "PROVIDER_RESPONSE_INVALID" });

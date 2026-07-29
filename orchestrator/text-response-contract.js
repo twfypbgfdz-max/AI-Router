@@ -12,7 +12,11 @@ const INTENTS = new Set([
   "content_generation", "code_analysis", "project_status_summary",
   // Structured-report intents: the answer text must be one JSON object
   // matching the closed schema in structured-response-schema.js.
-  "project_status_report", "git_change_report"
+  "project_status_report", "git_change_report",
+  // Commit C2a: structured knowledge-answer output ({answer, citedSources}).
+  // Not reachable through any active route yet - added to the shared
+  // pipeline in isolation, wired to a real handler only in Commit C2b.
+  "knowledge_answer"
 ]);
 const TOP_LEVEL_FIELDS = new Set(["schemaVersion", "requestId", "source", "intent", "input", "context"]);
 const INPUT_FIELDS = new Set(["type", "content"]);

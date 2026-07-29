@@ -89,6 +89,22 @@ test("conservative token estimation blocks oversized multibyte input before adap
   assert.equal(calls.length, 0);
 });
 
+test("the new knowledge_answer intent is accepted", () => {
+  const result = normalizeTextResponseRequest(validTextResponseRequest({ intent: "knowledge_answer" }), { now });
+  assert.equal(result.intent, "knowledge_answer");
+});
+
+test("previously accepted intents remain accepted after adding knowledge_answer", () => {
+  for (const intent of ["auto", "general_question", "explanation", "analysis", "writing", "planning", "content_generation", "code_analysis", "project_status_summary", "project_status_report", "git_change_report"]) {
+    const result = normalizeTextResponseRequest(validTextResponseRequest({ intent }), { now });
+    assert.equal(result.intent, intent);
+  }
+});
+
+test("an unknown intent is still rejected", () => {
+  assert.throws(() => normalizeTextResponseRequest(validTextResponseRequest({ intent: "made_up_intent" }), { now }), { code: "VALIDATION_FAILED" });
+});
+
 test("request and response schemas are strict JSON Schema documents", () => {
   for (const file of ["schemas/text-response-request-v1.json", "schemas/text-response-response-v1.json"]) {
     const schema = JSON.parse(fs.readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));

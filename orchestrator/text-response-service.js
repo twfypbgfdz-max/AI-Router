@@ -32,7 +32,7 @@ function routeName(taskType, intent) {
   if (["writing", "social_media", "career"].includes(taskType) || intent === "content_generation" || intent === "writing") return "content_generation";
   if (taskType === "planning" || intent === "planning") return "planning";
   if (["code", "research", "finance"].includes(taskType) || ["analysis", "code_analysis", "git_change_report"].includes(intent)) return "analysis";
-  if (["learning", "obsidian"].includes(taskType) || ["general_question", "explanation", "project_status_summary", "project_status_report"].includes(intent)) return "knowledge_query";
+  if (["learning", "obsidian"].includes(taskType) || ["general_question", "explanation", "project_status_summary", "project_status_report", "knowledge_answer"].includes(intent)) return "knowledge_query";
   return "general_chat";
 }
 

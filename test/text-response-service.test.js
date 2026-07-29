@@ -234,6 +234,52 @@ test("provider text above the character limit remains rejected", async () => {
   );
 });
 
+test("knowledge_answer classifies as route knowledge_query, not general_chat", async () => {
+  const { adapter } = successfulAdapter({ text: JSON.stringify({ answer: "Der AI-Router empfiehlt, führt aber nicht autonom aus.", citedSources: ["K1"] }) });
+  const result = await serviceWith(adapter).respond(validTextResponseRequest({ intent: "knowledge_answer" }), {
+    signal: new AbortController().signal
+  });
+  assert.equal(result.route.name, "knowledge_query");
+});
+
+test("a valid knowledge_answer output is validated and exposed as serviceResult.structured", async () => {
+  const payload = { answer: "Der AI-Router empfiehlt, führt aber nicht autonom aus.", citedSources: ["K1", "K2"] };
+  const { adapter } = successfulAdapter({ text: JSON.stringify(payload) });
+  const result = await serviceWith(adapter).respond(validTextResponseRequest({ intent: "knowledge_answer" }), {
+    signal: new AbortController().signal
+  });
+  assert.deepEqual(result.structured, payload);
+});
+
+test("an invalid knowledge_answer output fails closed as PROVIDER_RESPONSE_INVALID, structured_output_invalid", async () => {
+  const { adapter } = successfulAdapter({ text: JSON.stringify({ answer: "x", citedSources: ["K9"] }) });
+  await assert.rejects(
+    serviceWith(adapter).respond(validTextResponseRequest({ intent: "knowledge_answer" }), {
+      signal: new AbortController().signal
+    }),
+    (error) => error.code === "PROVIDER_RESPONSE_INVALID" && error.safeDetails.reason === "structured_output_invalid"
+  );
+});
+
+test("non-JSON output for knowledge_answer fails closed the same way as other structured intents", async () => {
+  const { adapter } = successfulAdapter({ text: "This is not JSON at all." });
+  await assert.rejects(
+    serviceWith(adapter).respond(validTextResponseRequest({ intent: "knowledge_answer" }), {
+      signal: new AbortController().signal
+    }),
+    { code: "PROVIDER_RESPONSE_INVALID" }
+  );
+});
+
+test("existing structured intents (project_status_report) still validate correctly after adding knowledge_answer", async () => {
+  const payload = { summary: "ok", keyFacts: [], openQuestions: [], risks: [] };
+  const { adapter } = successfulAdapter({ text: JSON.stringify(payload) });
+  const result = await serviceWith(adapter).respond(validTextResponseRequest({ intent: "project_status_report" }), {
+    signal: new AbortController().signal
+  });
+  assert.deepEqual(result.structured, payload);
+});
+
 test("shell, Git, email, calendar and deploy statements in model text remain inert plain text", async () => {
   const text = "Run a shell command; git push; send email; edit calendar; deploy now.";
   const { adapter } = successfulAdapter({ text });

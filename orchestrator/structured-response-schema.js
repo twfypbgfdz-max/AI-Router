@@ -14,8 +14,19 @@ const SCHEMAS = Object.freeze({
     stringFields: ["summary"],
     stringArrayFields: ["risks"],
     commitArrayField: "commits"
+  }),
+  // Commit C2a: structured knowledge-answer output. Not reachable through
+  // any active route yet - registered here so the shared service already
+  // validates it fail-closed, ahead of the handler/route added in C2b.
+  knowledge_answer: Object.freeze({
+    fields: new Set(["answer", "citedSources"]),
+    stringFields: ["answer"],
+    citedSourcesField: "citedSources"
   })
 });
+
+const CITED_SOURCE_ID_PATTERN = /^K[1-3]$/;
+const MAX_CITED_SOURCES = 3;
 
 function fail(reason, message = "Provider response has unexpected structure.") {
   throw new TextResponseError("PROVIDER_RESPONSE_INVALID", message, { safeDetails: { reason } });
@@ -29,6 +40,21 @@ function isValidCommitEntry(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
     && Object.keys(value).length === 2
     && typeof value.ref === "string" && typeof value.description === "string";
+}
+
+// Closed: only the literal strings "K1", "K2", "K3", each at most once, at
+// most three entries total. No duplicate-removal or format coercion here -
+// an invalid array fails the whole response fail-closed rather than being
+// silently repaired, same as every other structured-report field.
+function isValidCitedSourcesArray(value) {
+  if (!Array.isArray(value) || value.length > MAX_CITED_SOURCES) return false;
+  const seen = new Set();
+  for (const item of value) {
+    if (typeof item !== "string" || !CITED_SOURCE_ID_PATTERN.test(item)) return false;
+    if (seen.has(item)) return false;
+    seen.add(item);
+  }
+  return true;
 }
 
 export function isStructuredReportIntent(intent) {
@@ -61,7 +87,7 @@ export function parseStructuredReport(intent, rawText) {
       fail("structured_output_invalid", "Provider response field is not a non-empty string.");
     }
   }
-  for (const field of schema.stringArrayFields) {
+  for (const field of schema.stringArrayFields || []) {
     if (!isStringArray(parsed[field])) fail("structured_output_invalid", "Provider response field is not a string array.");
   }
   if (schema.commitArrayField) {
@@ -70,7 +96,12 @@ export function parseStructuredReport(intent, rawText) {
       fail("structured_output_invalid", "Provider response commits field is invalid.");
     }
   }
+  if (schema.citedSourcesField) {
+    if (!isValidCitedSourcesArray(parsed[schema.citedSourcesField])) {
+      fail("structured_output_invalid", "Provider response citedSources field is invalid.");
+    }
+  }
   return Object.freeze(JSON.parse(JSON.stringify(parsed)));
 }
 
-export const structuredResponseSchemaInternals = Object.freeze({ SCHEMAS });
+export const structuredResponseSchemaInternals = Object.freeze({ SCHEMAS, isValidCitedSourcesArray });
