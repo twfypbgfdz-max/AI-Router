@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-router.local/schemas/cc-knowledge-response-v1.json",
+  "title": "AI Router CC-knowledge response v1",
+  "description": "Fully defined in Commit C1 for forward validation, but not yet produced by any active route or Ollama call - that wiring is Commit C2. schemaVersion is a separate counter from cc-summary (1.0), cc-status (1.0) and the core router schema (2.0). `sources` is always built server-side from the RAG search results actually included in the prompt, never parsed out of a model's free text - see orchestrator/cc-knowledge-rag-service.js.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "state", "answer", "systemContextState", "knowledgeState", "sources", "warnings", "generatedAt"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "state": {
+      "enum": ["ok", "partial", "unavailable"],
+      "description": "ok: an answer was produced with at least one grounding source (context and/or knowledge). partial: an answer was produced despite one of the two grounding sources being unavailable. unavailable: no answer was produced (Ollama failure, or neither context nor knowledge available at all)."
+    },
+    "answer": {
+      "type": ["string", "null"],
+      "description": "Null only when state is 'unavailable'. Never produced in Commit C1 - no route calls Ollama yet."
+    },
+    "systemContextState": { "enum": ["available", "unavailable", "partial"] },
+    "knowledgeState": {
+      "enum": ["available", "no_match", "index_missing", "index_stale", "embedding_model_unavailable", "search_failed"]
+    },
+    "sources": {
+      "type": "array",
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 120 }
+    },
+    "generatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceDoc", "section", "docStatus", "docVersion", "similarity", "freshness"],
+      "properties": {
+        "sourceDoc": { "type": "string", "description": "Relative FELIX_SYSTEM vault path only - never an absolute path or an internal index file path." },
+        "section": { "type": ["string", "null"] },
+        "docStatus": { "type": ["string", "null"] },
+        "docVersion": { "type": ["string", "null"] },
+        "similarity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "freshness": { "enum": ["fresh", "stale"] }
+      }
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-router.local/schemas/cc-knowledge-request-v1.json",
+  "title": "AI Router CC-knowledge request v1",
+  "description": "Independent, additive contract for the planned POST /api/v1/cc/knowledge (Commit C1: contract, RAG retrieval and prompt only - no route wired yet, no Ollama call). schemaVersion is a separate counter, never compared or synced with cc-summary (1.0), cc-status (1.0) or the core router schema (2.0). Mirrors orchestrator/cc-knowledge-contract.js exactly; the `context` object reuses the same closed field set as cc-summary's context (orchestrator/cc-context-fields.js) and is optional here - a pure knowledge question without a Command-Center state snapshot is valid.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "question"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "question": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "description": "Single-line, bounded question. No control characters (including CR/LF), no path or URL shape, no secret-like content, no execution-request phrasing - enforced in orchestrator/cc-knowledge-contract.js, not just documented here."
+    },
+    "context": { "$ref": "#/$defs/ccContext" }
+  },
+  "$defs": {
+    "ccContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "projectName"],
+      "properties": {
+        "projectId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+        "projectName": { "type": "string", "maxLength": 120 },
+        "projectStatus": { "type": "string", "maxLength": 60 },
+        "phase": { "type": "string", "maxLength": 60 },
+        "branch": { "type": "string", "maxLength": 200 },
+        "clean": { "type": "boolean" },
+        "changedFileCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "untrackedFileCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "testStatus": { "type": "string", "maxLength": 60 },
+        "buildStatus": { "type": "string", "maxLength": 60 },
+        "docsStatus": { "type": "string", "maxLength": 60 },
+        "releaseStatus": { "type": "string", "maxLength": 60 },
+        "activeAlertCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "criticalAlertCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "serviceStates": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "state"],
+            "properties": {
+              "name": { "type": "string", "maxLength": 40 },
+              "state": { "enum": ["ok", "degraded", "down", "unknown"] }
+            }
+          }
+        },
+        "responseTimeSummary": { "type": "string", "maxLength": 80 },
+        "cloudSummary": { "type": "string", "maxLength": 160 },
+        "milestoneCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "blockedCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "overdueCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "progressPercent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "freshness": { "enum": ["fresh", "stale", "unknown"] }
+      }
+    }
+  }
+}
