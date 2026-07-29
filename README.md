@@ -114,9 +114,11 @@ implementiert und getestet, wird aber aktuell von keinem Endpunkt aufgerufen.
   Allowlist überstimmbar: `60_Finanzen/`, `00_Inbox/`, `.obsidian/`,
   `.claudian/`, `.git/`, `.claude/` (siehe `orchestrator/knowledge/rag-config.js`).
 - **Embedding-Modell:** `AI_ROUTER_OLLAMA_EMBEDDING_MODEL` (vorgesehen:
-  `bge-m3`), getrennt von `AI_ROUTER_OLLAMA_MODEL` (Antwortmodell). Kein
-  automatischer Modell-Pull — fehlt das Modell, liefert der Indexlauf den
-  strukturierten Fehler `EMBEDDING_MODEL_NOT_AVAILABLE`.
+  `bge-m3:latest` — Ollama normalisiert einen Pull ohne Tag auf `:latest`,
+  der Availability-Check vergleicht exakt), getrennt von
+  `AI_ROUTER_OLLAMA_MODEL` (Antwortmodell). Kein automatischer Modell-Pull —
+  fehlt das Modell, liefert der Indexlauf den strukturierten Fehler
+  `EMBEDDING_MODEL_NOT_AVAILABLE`.
 - **Indexspeicher:** ausschließlich unter `.ai-router-data/rag-index/`
   (`chunks.jsonl`, `manifest.json`, `index-meta.json`, Lock-Datei) — durch
   den bestehenden `.gitignore`-Eintrag `.ai-router-data/` nicht versioniert.

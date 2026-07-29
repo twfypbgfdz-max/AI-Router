@@ -1,5 +1,12 @@
 {
   "schemaVersion": "1.0",
   "vaultRootEnvVar": "AI_ROUTER_VAULT_ROOT",
-  "documents": []
+  "documents": [
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-001-Rollen-Verantwortlichkeiten-Grenzen.md", "addedAt": "2026-07-29", "addedBy": "felix" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-002-KI-Agenten-Regeln-und-Schreibrechte.md", "addedAt": "2026-07-29", "addedBy": "felix" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-003-Dokumentations-Synchronisations-und-Statusregeln.md", "addedAt": "2026-07-29", "addedBy": "felix" },
+    { "relativePath": "00_System/FELIX_SYSTEM_Architektur_Index.md", "addedAt": "2026-07-29", "addedBy": "felix" },
+    { "relativePath": "10_Apps/01_Aktive-Projekte/AI-Router.md", "addedAt": "2026-07-29", "addedBy": "felix" },
+    { "relativePath": "10_Apps/01_Aktive-Projekte/Felix-Command-Center.md", "addedAt": "2026-07-29", "addedBy": "felix" }
+  ]
 }
