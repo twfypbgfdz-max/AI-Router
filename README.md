@@ -95,6 +95,36 @@ behandelt; `unknown` wird nicht als Fehler interpretiert.
 Vertraege, Prioritaeten, Sicherheitsgrenzen und Beispiele stehen in
 [`docs/recommendation-engine-v1.md`](docs/recommendation-engine-v1.md).
 
+## Lokaler FELIX_SYSTEM-Wissensindex (Commit B, noch nicht angebunden)
+
+`orchestrator/knowledge/` baut einen lokalen Embedding-Index über explizit
+freigegebene Markdown-Dokumente aus dem FELIX_SYSTEM-Obsidian-Vault auf.
+**Dieses Feature ist noch an keine Antwortpipeline angebunden** — weder an
+`/api/router/respond` noch an `/api/v1/cc/summary`. `rag-search.js` ist
+implementiert und getestet, wird aber aktuell von keinem Endpunkt aufgerufen.
+
+- **Read-only gegenüber dem Vault:** Der gesamte Modul-Namespace öffnet
+  ausschließlich die konkreten, in `config/rag-allowlist.json` freigegebenen
+  Dateien. Es gibt keinen rekursiven Verzeichnis-Scan und keinen
+  Schreib-/Lösch-/Umbenennungs-Zugriff auf `AI_ROUTER_VAULT_ROOT`.
+- **Allowlist bewusst leer:** `config/rag-allowlist.json` enthält aktuell
+  `"documents": []`. Eine echte Indexierung realer FELIX_SYSTEM-Dokumente
+  erfordert einen weiteren, ausdrücklichen Auftrag.
+- **Harte Denylist**, unabhängig vom Frontmatter-Typ und nicht durch die
+  Allowlist überstimmbar: `60_Finanzen/`, `00_Inbox/`, `.obsidian/`,
+  `.claudian/`, `.git/`, `.claude/` (siehe `orchestrator/knowledge/rag-config.js`).
+- **Embedding-Modell:** `AI_ROUTER_OLLAMA_EMBEDDING_MODEL` (vorgesehen:
+  `bge-m3`), getrennt von `AI_ROUTER_OLLAMA_MODEL` (Antwortmodell). Kein
+  automatischer Modell-Pull — fehlt das Modell, liefert der Indexlauf den
+  strukturierten Fehler `EMBEDDING_MODEL_NOT_AVAILABLE`.
+- **Indexspeicher:** ausschließlich unter `.ai-router-data/rag-index/`
+  (`chunks.jsonl`, `manifest.json`, `index-meta.json`, Lock-Datei) — durch
+  den bestehenden `.gitignore`-Eintrag `.ai-router-data/` nicht versioniert.
+- **Manueller Ablauf:** `npm run rag:reindex`. Kein Scheduler, kein
+  Filesystem-Watcher, kein automatischer Start mit `npm start`.
+- Änderungsprüfung erfolgt über SHA-256 des Dokumentinhalts; `mtime` ist rein
+  ergänzendes Metadatum und begründet allein weder Re-Index noch Skip.
+
 ### Lokaler post-commit-Hook: Contract-Test-Erinnerung
 
 Der Contract-Test `test/recommendation-contract.test.js` im Repo

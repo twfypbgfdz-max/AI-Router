@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node orchestrator/server.js",
-    "test": "node scripts/run-tests.js"
+    "test": "node scripts/run-tests.js",
+    "rag:reindex": "node scripts/rag-reindex.js"
   }
 }
