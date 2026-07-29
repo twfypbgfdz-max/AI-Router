@@ -8,6 +8,16 @@ import { RagError } from "./rag-error.js";
 // principle as cc-summary-config.js: separate contracts, separate counters).
 export const RAG_INDEX_SCHEMA_VERSION = "1.0";
 
+// Bumped whenever the shape of the text actually sent to the embedding
+// model changes (e.g. adding the "Dokument: ... / Abschnitt: ..." prefix in
+// chunking version 2). A mismatch against index-meta.json forces a full
+// re-index, the same way an embedding model change does - this prevents
+// silently mixing embeddings computed from two different text formats in
+// one index. chunkId itself is deliberately NOT tied to this version: it
+// identifies a chunk's position (document + section + ordinal), not the
+// text format used to embed it.
+export const RAG_CHUNKING_VERSION = "2";
+
 export const RAG_INDEX_DIR = path.join(DATA_DIR, "rag-index");
 export const RAG_CHUNKS_FILE = path.join(RAG_INDEX_DIR, "chunks.jsonl");
 export const RAG_MANIFEST_FILE = path.join(RAG_INDEX_DIR, "manifest.json");
@@ -25,7 +35,16 @@ export const RAG_MAX_CHUNK_CHARS = 2_000;
 export const RAG_TARGET_CHUNK_CHARS = 1_200;
 export const RAG_MAX_CHUNKS_PER_DOCUMENT = 200;
 
-export const RAG_DEFAULT_MIN_SIMILARITY = 0.65;
+// Calibrated against a 15-question German quality set on the real
+// FELIX_SYSTEM allowlist (6 documents, 109 chunks) after the chunking
+// version 2 title/section prefix was introduced. Compared 0.65/0.62/0.60:
+// 0.60 answered 10/15 questions (up from 4/15 at 0.65) with zero observed
+// wrong-document or off-topic top-3 results at any of the three tested
+// values - the earlier cross-document confusion (Command-Center chunk
+// outranking AI-Router for an AI-Router question) was fixed by the prefix
+// itself, not by this threshold change. Still a starting point for a small,
+// hand-picked corpus - revisit once the allowlist grows.
+export const RAG_DEFAULT_MIN_SIMILARITY = 0.60;
 export const RAG_DEFAULT_TOP_K = 3;
 export const RAG_MAX_TOP_K = 5;
 export const RAG_MAX_COMBINED_SNIPPET_CHARS = 2_000;

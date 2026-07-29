@@ -8,8 +8,9 @@ import { fileURLToPath } from "node:url";
 process.env.AI_ROUTER_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "rag-indexer-"));
 
 const { runRagReindex } = await import("../orchestrator/knowledge/rag-indexer.js");
-const { acquireIndexLock, releaseIndexLock, readManifest, readAllChunks } = await import("../orchestrator/knowledge/rag-index-store.js");
+const { acquireIndexLock, releaseIndexLock, readManifest, readAllChunks, readIndexMeta, writeIndexMeta } = await import("../orchestrator/knowledge/rag-index-store.js");
 const { RagError } = await import("../orchestrator/knowledge/rag-error.js");
+const { RAG_CHUNKING_VERSION } = await import("../orchestrator/knowledge/rag-config.js");
 
 const FIXTURES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "rag-vault");
 
@@ -178,6 +179,44 @@ test("throws VAULT_ROOT_NOT_CONFIGURED when the vault root is unset", async () =
     runRagReindex({ env: baseEnv({ AI_ROUTER_VAULT_ROOT: "" }), loadAllowlistFn: fixtureAllowlist([]) }),
     (error) => error instanceof RagError && error.code === "VAULT_ROOT_NOT_CONFIGURED"
   );
+});
+
+test("the embedding call receives the document title and section, not just the raw chunk text", async () => {
+  const seen = [];
+  const embedTextFn = async (text) => {
+    seen.push(text);
+    return [0, 1];
+  };
+  await runRagReindex({
+    env: baseEnv(),
+    loadAllowlistFn: fixtureAllowlist(["10_Apps/decision-doc.md"]),
+    embedTextFn,
+    assertEmbeddingModelAvailableFn: noopAvailability
+  });
+  assert.ok(seen.some((text) => text.startsWith("Dokument: Sample Decision") && text.includes("Abschnitt:")));
+});
+
+test("a chunkingVersion mismatch in index-meta forces a full re-index", async () => {
+  const first = countingEmbedder();
+  await runRagReindex({
+    env: baseEnv(),
+    loadAllowlistFn: fixtureAllowlist(["10_Apps/decision-doc.md"]),
+    embedTextFn: first.embedTextFn,
+    assertEmbeddingModelAvailableFn: noopAvailability
+  });
+  const meta = readIndexMeta();
+  assert.equal(meta.chunkingVersion, RAG_CHUNKING_VERSION);
+  writeIndexMeta({ ...meta, chunkingVersion: "0-old" });
+
+  const second = countingEmbedder();
+  const result = await runRagReindex({
+    env: baseEnv(),
+    loadAllowlistFn: fixtureAllowlist(["10_Apps/decision-doc.md"]),
+    embedTextFn: second.embedTextFn,
+    assertEmbeddingModelAvailableFn: noopAvailability
+  });
+  assert.equal(result.forceFullReindex, true);
+  assert.ok(second.calls.length > 0);
 });
 
 test("throws EMBEDDING_MODEL_NOT_AVAILABLE when the model check fails", async () => {

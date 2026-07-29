@@ -65,3 +65,27 @@ test("malformed frontmatter does not crash, falls back to full body", () => {
   assert.deepEqual(document.frontmatter, {});
   assert.ok(document.body.includes("just text"));
 });
+
+test("extracts the document title from the first H1 heading", () => {
+  const vaultRoot = tempVaultWithFile("10_Apps/doc.md", "---\ntype: project\n---\n\n# My Project Title\n\nSome body text.");
+  const document = loadVaultDocument(vaultRoot, "10_Apps/doc.md");
+  assert.equal(document.title, "My Project Title");
+});
+
+test("does not mistake a level-2 heading for the document title", () => {
+  const vaultRoot = tempVaultWithFile("10_Apps/doc.md", "## Not a title\n\n# Real Title\n\nBody.");
+  const document = loadVaultDocument(vaultRoot, "10_Apps/doc.md");
+  assert.equal(document.title, "Real Title");
+});
+
+test("falls back to a cleaned filename when no H1 is present", () => {
+  const vaultRoot = tempVaultWithFile("10_Apps/DEC-001-Rollen-Grenzen.md", "## Only a subheading\n\nBody without an H1.");
+  const document = loadVaultDocument(vaultRoot, "10_Apps/DEC-001-Rollen-Grenzen.md");
+  assert.equal(document.title, "DEC 001 Rollen Grenzen");
+});
+
+test("falls back to a cleaned filename for a plain-text document with no headings at all", () => {
+  const vaultRoot = tempVaultWithFile("10_Apps/plain_notes.md", "Just a paragraph, no headings.");
+  const document = loadVaultDocument(vaultRoot, "10_Apps/plain_notes.md");
+  assert.equal(document.title, "plain notes");
+});

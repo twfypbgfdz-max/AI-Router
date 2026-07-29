@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chunkMarkdownBody } from "../orchestrator/knowledge/markdown-chunker.js";
+import { buildEmbeddingText, chunkMarkdownBody } from "../orchestrator/knowledge/markdown-chunker.js";
 import { RagError } from "../orchestrator/knowledge/rag-error.js";
+import { RAG_MAX_CHUNK_CHARS } from "../orchestrator/knowledge/rag-config.js";
 
 test("chunks are bounded by headings and carry a full ancestor section path", () => {
   const body = "# Title\n\n## A\n\nText A.\n\n## B\n\nText B.";
@@ -61,4 +62,39 @@ test("frontmatter-free plain text still chunks without a heading", () => {
   const chunks = chunkMarkdownBody("Just a paragraph with no heading at all.", { relativePath: "x.md" });
   assert.equal(chunks.length, 1);
   assert.equal(chunks[0].section, null);
+});
+
+test("buildEmbeddingText includes the document title and section path", () => {
+  const embeddingText = buildEmbeddingText("AI-Router", "Projektprofil", "Some project status text.");
+  assert.match(embeddingText, /^Dokument: AI-Router$/m);
+  assert.match(embeddingText, /^Abschnitt: Projektprofil$/m);
+  assert.ok(embeddingText.includes("Some project status text."));
+});
+
+test("buildEmbeddingText omits the Abschnitt line when there is no section", () => {
+  const embeddingText = buildEmbeddingText("Some Title", null, "Body text.");
+  assert.match(embeddingText, /^Dokument: Some Title$/m);
+  assert.ok(!embeddingText.includes("Abschnitt:"));
+});
+
+test("two documents with the same section title produce distinguishable embedding inputs", () => {
+  const a = buildEmbeddingText("AI-Router", "Projektprofil", "Ziel: Routing.");
+  const b = buildEmbeddingText("Felix-Command-Center", "Projektprofil", "Ziel: Routing.");
+  assert.notEqual(a, b);
+  assert.ok(a.includes("AI-Router"));
+  assert.ok(b.includes("Felix-Command-Center"));
+});
+
+test("the stored chunk text never contains the Dokument/Abschnitt prefix", () => {
+  const chunks = chunkMarkdownBody("## A\n\nOriginal content only.", { relativePath: "x.md" });
+  assert.ok(!chunks[0].text.includes("Dokument:"));
+  assert.ok(!chunks[0].text.includes("Abschnitt:"));
+});
+
+test("chunk size limits are enforced on the stored text independently of the embedding prefix", () => {
+  const body = "## Long\n\n" + "x".repeat(RAG_MAX_CHUNK_CHARS - 20);
+  const chunks = chunkMarkdownBody(body, { relativePath: "x.md" });
+  assert.ok(chunks.every((c) => c.text.length <= RAG_MAX_CHUNK_CHARS));
+  const embeddingText = buildEmbeddingText("A Long Document Title", chunks[0].section, chunks[0].text);
+  assert.ok(embeddingText.length > chunks[0].text.length);
 });

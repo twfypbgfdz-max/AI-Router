@@ -5,6 +5,7 @@ import { resolveSafeVaultPath } from "./vault-path-guard.js";
 import { RAG_MAX_DOCUMENT_BYTES } from "./rag-config.js";
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+const H1_PATTERN = /^#[ \t]+(.+)$/m;
 
 // Minimal, deliberately narrow frontmatter reader for FELIX_SYSTEM's
 // consistent "---\nkey: value\n---" format - not a general YAML parser.
@@ -27,6 +28,22 @@ function parseFrontmatter(rawText) {
 
 function sha256(text) {
   return `sha256:${crypto.createHash("sha256").update(text, "utf8").digest("hex")}`;
+}
+
+// Document title used to disambiguate embeddings across documents with
+// similarly-named sections (e.g. "Projektprofil" in both AI-Router.md and
+// Felix-Command-Center.md). Prefers the first H1 heading in the body; falls
+// back to a cleaned filename only when no H1 is present, so every document
+// gets a stable, human-readable title without requiring frontmatter changes.
+function fallbackTitleFromPath(relativePath) {
+  const base = relativePath.split("/").pop().replace(/\.md$/i, "");
+  return base.replace(/[-_]+/g, " ").trim();
+}
+
+function extractDocumentTitle(body, relativePath) {
+  const match = H1_PATTERN.exec(body);
+  const fromHeading = match ? match[1].trim() : "";
+  return fromHeading || fallbackTitleFromPath(relativePath);
 }
 
 // Only opens the single, already-guard-validated absolute path handed in by
@@ -55,6 +72,7 @@ export function loadVaultDocument(vaultRoot, relativePath, { readFileSync = fs.r
     exists: true,
     relativePath,
     frontmatter: Object.freeze(frontmatter),
+    title: extractDocumentTitle(body, relativePath),
     body,
     contentHash: sha256(rawText),
     mtimeMs: stats.mtimeMs

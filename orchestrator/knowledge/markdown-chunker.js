@@ -94,3 +94,18 @@ export function chunkMarkdownBody(body, { relativePath } = {}) {
 
   return merged.map((chunk, index) => Object.freeze({ ordinal: index, section: chunk.section, text: chunk.text }));
 }
+
+// Builds the text actually sent to the embedding model - never stored and
+// never shown in a search snippet. Prefixing the document title and full
+// section path disambiguates chunks whose original body text alone reads
+// almost identically across different documents (e.g. a generic
+// "Projektprofil" section repeated with similar wording in several project
+// notes). Deliberately excludes the relative file path: the title alone is
+// enough to identify the document once every allowlisted document has one,
+// and keeps the prefix short relative to RAG_MAX_CHUNK_CHARS.
+export function buildEmbeddingText(documentTitle, section, text) {
+  const lines = [`Dokument: ${documentTitle}`];
+  if (section) lines.push(`Abschnitt: ${section}`);
+  lines.push("", text);
+  return lines.join("\n");
+}
