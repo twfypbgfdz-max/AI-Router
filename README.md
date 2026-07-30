@@ -82,6 +82,53 @@ Zugriff erfolgt ueber `Authorization: Bearer <AI_ROUTER_CC_TOKEN>` (eigenes,
 von `AI_ROUTER_INTERNAL_TOKEN` getrenntes Secret), server-zu-server, ohne
 Browser-Origin. Schema: [`schemas/cc-status-response-v1.json`](schemas/cc-status-response-v1.json).
 
+## Command-Center-Statuszusammenfassung (v1)
+
+`POST /api/v1/cc/summary` ist ein separater, intern authentifizierter
+Endpunkt ausschliesslich fuer das Felix Command Center. Er baut aus dem
+uebermittelten Projekt-/Service-Kontext einen Prompt und beantwortet ihn ueber
+dieselbe read-only Text-Response-Pipeline wie `/api/router/respond`, dabei
+aber fest auf den lokalen Ollama-Provider und den Intent
+`project_status_summary` gezwungen (`AI_ROUTER_TEXT_PROVIDER` wird fuer diesen
+Endpunkt intern ueberschrieben, unabhaengig von der globalen Konfiguration).
+Authentifizierung wie bei `/api/v1/cc/status`:
+`Authorization: Bearer <AI_ROUTER_CC_TOKEN>`.
+
+`state` ist ein geschlossenes Enum mit genau diesen Werten:
+
+- `ok` — Ollama erreichbar, Modell verfuegbar, Antwort erfolgreich erzeugt
+  und unter dem eigenen Sichtbarkeits-Limit (2 KiB); `summary`, `provider`
+  (immer `"ollama"`) und `model` sind gesetzt.
+- `not_connected` — Ollama-Provider ist nicht konfiguriert oder nicht
+  erreichbar (Netzwerkfehler, Verbindung verweigert).
+- `model_missing` — Ollama laeuft, aber das konfigurierte Antwortmodell ist
+  dort nicht vorhanden.
+- `timeout` — die Provideranfrage hat die eigene absolute Zeitgrenze
+  ueberschritten.
+- `invalid_response` — Ollama hat geantwortet, aber die Antwort erfuellt die
+  strikten Formatvorgaben der Pipeline nicht (kein reiner Text, unerwartete
+  Struktur, ungueltige Nutzungsdaten o. ae.).
+- `input_rejected` — der eingehende Request selbst ist ungueltig
+  (falscher Content-Type, Schema-Verstoss, Sicherheitsblock, zu gross); dies
+  ist der einzige Fall mit gesetztem `reason`.
+- `response_too_large` — die erzeugte Antwort ist zwar gueltig, ueberschreitet
+  aber das endpoint-eigene 2-KiB-Sichtbarkeitslimit und wird deshalb
+  verworfen statt teilweise ausgeliefert.
+- `temporarily_unavailable` — die geteilte Pipeline hat den Request wegen
+  Kapazitaetsgrenzen abgelehnt (Rate- oder Concurrency-Limit dieses
+  Endpunkts, unabhaengig von `/api/router/respond` gezaehlt), keine
+  Provider-, Modell- oder Formatstoerung. Eingefuehrt, um diesen Fall von
+  `invalid_response` zu unterscheiden, da er keinen echten Fehler darstellt,
+  sondern eine erwartbare, kurzfristige Ueberlastsituation.
+
+`retryAfterSeconds` ist bei jedem anderen Zustand `null` und wird nur bei
+`temporarily_unavailable` gesetzt — und auch dort ausschliesslich, wenn die
+geteilte Pipeline selbst einen `Retry-After`-Header liefert (Rate-Limit-Fall);
+beim Concurrency-Limit bleibt er `null`, da die Pipeline dafuer keinen
+eigenen Wert liefert und keiner geschaetzt wird. Ein gesetzter Wert ist
+immer eine ganze Zahl zwischen 1 und dem festen Zeitfenster des Limiters
+(aktuell 60 Sekunden) — alles ausserhalb wird verworfen statt geraten.
+
 ## Evidence-basierte Workflow-Empfehlungen
 
 `POST /api/router/recommendations` wertet normalisierte, belegte Statusdaten
