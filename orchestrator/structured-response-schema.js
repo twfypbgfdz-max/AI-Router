@@ -22,11 +22,27 @@ const SCHEMAS = Object.freeze({
     fields: new Set(["answer", "citedSources"]),
     stringFields: ["answer"],
     citedSourcesField: "citedSources"
+  }),
+  // POST /api/v1/cc/snapshot: text is free-form (validated only for shape
+  // here; byte-length and prose content are the endpoint's own concern,
+  // same division of labor as cc-summary/cc-knowledge). recommendedItemId
+  // must be one of the positional ranking labels R1..R10 (see
+  // cc-snapshot-prompt.js) or null - the model never sees or supplies a
+  // real item ID, only ever the label.
+  snapshot_briefing: Object.freeze({
+    fields: new Set(["text", "recommendedItemId"]),
+    stringFields: ["text"],
+    nullableRankedItemField: "recommendedItemId"
   })
 });
 
 const CITED_SOURCE_ID_PATTERN = /^K[1-3]$/;
 const MAX_CITED_SOURCES = 3;
+// Mirrors CC_SNAPSHOT_MAX_RANKED_ITEMS=10 (cc-snapshot-config.js) - kept as
+// its own literal here, same as CITED_SOURCE_ID_PATTERN mirroring
+// CC_KNOWLEDGE_MAX_SOURCES=3 above, since this shared pipeline file does not
+// import per-endpoint config.
+const RANKED_ITEM_ID_PATTERN = /^R([1-9]|10)$/;
 
 function fail(reason, message = "Provider response has unexpected structure.") {
   throw new TextResponseError("PROVIDER_RESPONSE_INVALID", message, { safeDetails: { reason } });
@@ -99,6 +115,12 @@ export function parseStructuredReport(intent, rawText) {
   if (schema.citedSourcesField) {
     if (!isValidCitedSourcesArray(parsed[schema.citedSourcesField])) {
       fail("structured_output_invalid", "Provider response citedSources field is invalid.");
+    }
+  }
+  if (schema.nullableRankedItemField) {
+    const fieldValue = parsed[schema.nullableRankedItemField];
+    if (fieldValue !== null && (typeof fieldValue !== "string" || !RANKED_ITEM_ID_PATTERN.test(fieldValue))) {
+      fail("structured_output_invalid", "Provider response recommendedItemId field is invalid.");
     }
   }
   return Object.freeze(JSON.parse(JSON.stringify(parsed)));

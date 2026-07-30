@@ -142,6 +142,90 @@ behandelt; `unknown` wird nicht als Fehler interpretiert.
 Vertraege, Prioritaeten, Sicherheitsgrenzen und Beispiele stehen in
 [`docs/recommendation-engine-v1.md`](docs/recommendation-engine-v1.md).
 
+## Command-Center-Snapshot und deterministisches Ranking (v1)
+
+`POST /api/v1/cc/snapshot` ist ein separater, intern authentifizierter,
+ausschliesslich eingehender Endpunkt fuer das Felix Command Center. Der
+Router erhebt hier keine eigenen Rohdaten (kein Git, keine Dateiscans, keine
+Alert-Quellen) — jedes Feld kommt ausschliesslich aus dem uebermittelten
+Snapshot-Payload. Eingehende Snapshots werden ausschliesslich in-memory pro
+Request verarbeitet; es gibt keine Persistenz, kein Schreiben nach
+`.ai-router-data/` oder anderswo fuer diesen Endpunkt.
+
+**Verhaeltnis zur Recommendation Engine:** `POST /api/router/recommendations`
+und `cc/snapshot` sind zwei bewusst getrennte, nicht austauschbare
+Priorisierungssysteme fuer unterschiedliche Fragestellungen. Die
+Recommendation Engine beantwortet „welcher einzelne, erlaubte Workflow ist
+jetzt der richtige naechste Schritt?“ ueber eine geordnete Regelkaskade
+(erste zutreffende Regel gewinnt). `cc/snapshot` beantwortet „wie sind
+mehrere gleichzeitig gemeldete, heterogene Zustaende (Alerts, Services, Git,
+Checks, Fortschritt) relativ zueinander zu ordnen?“ ueber ein additives
+Scoring (Dringlichkeit × Auswirkung). Keines der beiden Systeme ruft das
+andere auf, keines ersetzt das andere.
+
+**Authentifizierung:** `Authorization: Bearer <AI_ROUTER_CC_TOKEN>` — dasselbe
+Secret wie `/api/v1/cc/status`, `/api/v1/cc/summary` und `/api/v1/cc/knowledge`.
+Mit `cc/snapshot` steuert dasselbe Secret erstmals nicht nur Lesezugriff,
+sondern die Dateneingabe, aus der Priorisierung und Handlungsempfehlung
+direkt berechnet werden. Ein kompromittiertes Token erlaubt damit nicht nur
+Datenzugriff, sondern die gezielte Manipulation der Entscheidungsgrundlage
+(z. B. vorgetaeuschte kritische Alerts, um eine bestimmte
+Handlungsempfehlung zu erzwingen) — das ist bei der Token-Aufbewahrung
+entsprechend hoeher zu gewichten als bei den bisherigen drei Endpunkten.
+
+**Fuenf Datenbereiche** (`sections.alerts`, `.services`, `.gitRepositories`,
+`.failedChecks`, `.projectProgress`), jeder mit derselben dreiwertigen
+Codierung: ein komplett ausgelassener Bereich gilt als *nicht geliefert*
+(`evidence.status: "unavailable"`); ein gelieferter, aber leerer Bereich hat
+`evidence.status: "available"` mit gueltigem Zeitstempel und `items: []`; ein
+veralteter Bereich traegt zusaetzlich `freshness: "stale"` (von Command
+Center selbst gesetzt, der Router berechnet Staleness nicht selbst). Kein
+Wert wird geraten, kein `0` dient als Platzhalter fuer „nicht verfuegbar“.
+
+**Deterministisches Ranking:** `priorityScore = urgencyScore × impactScore`,
+beides aus festen, im Code hinterlegten Mapping-Tabellen (nie pro Instanz
+erraten). Items ohne belegte Evidence oder mit nicht handlungsrelevantem
+Status (z. B. Alert-Status `unknown`, Service `ok`, Git `clean`) werden nicht
+mit Score `0` gefuehrt, sondern aus dem Ranking ausgeschlossen und mit
+Begruendungscode in `ranking.unranked` aufgefuehrt.
+
+*Sonderregel `failedChecks.severity: "unknown"`:* anders als bei den vier
+uebrigen Bereichen wird dieser Fall **nicht** ausgeschlossen, sondern mit
+demselben Score wie `"non-blocking"` (=1) gefuehrt. Grund: Ein Eintrag in
+`failedChecks.items` ist per Vertrag bereits ein belegter Fehlschlag
+(`evidence.status: "available"` fuer den Fehlschlag selbst) —
+`severity: "unknown"` betrifft ausschliesslich die Schwereklassifikation,
+nicht die Existenz des Problems. Das unterscheidet sich kategorial von
+`status: "unknown"` bei den anderen vier Bereichen, wo unbekannt bleibt, ob
+ueberhaupt ein Attention-wuerdiger Zustand vorliegt.
+
+**Ollama-Rolle — strikt begrenzt:** Ollama erhaelt ausschliesslich die
+bereits fertige, geordnete `ranking.items`-Liste (positionale Labels `R1..R10`,
+nie die echten Item-IDs) und darf sie nur zusammenfassen und erklaeren. Das
+Feld `narrative.recommendedItemId` in der Antwort wird ausschliesslich vom
+Router selbst aus dem bereits feststehenden Top-Item abgeleitet — niemals aus
+der Modellantwort uebernommen. Die Modellantwort dient nur als
+Konsistenzpruefung: Bestaetigt sie nicht exakt das bereits feststehende
+Top-Label (`R1`, oder `null` wenn nichts gerankt wurde), gilt
+`narrative.state: "invalid_response"` und die Rangliste selbst (`ranking`)
+bleibt davon unberuehrt und weiterhin vollstaendig nutzbar — sie haengt nie
+von Ollamas Verfuegbarkeit ab.
+
+`narrative.state` kennt `ok`, `not_connected`, `model_missing`, `timeout`,
+`invalid_response`, `temporarily_unavailable` — dieselbe Bedeutung wie bei
+`/api/v1/cc/summary`. `retryAfterSeconds` ist nur bei
+`temporarily_unavailable` gesetzt und nur, wenn die geteilte Pipeline selbst
+einen `Retry-After`-Header liefert.
+
+**Knowledge-Treffer:** `knowledgeHits` wird nur befuellt, wenn `knowledgeQuery`
+gesetzt ist, nutzt denselben RAG-Dienst und exakt dasselbe `source`-Schema
+wie `/api/v1/cc/knowledge` (max. 3 Treffer, keine unbegrenzte Textmasse).
+
+**Eigene, unabhaengige `schemaVersion "1.0"`** — wie bei jedem anderen
+Command-Center-Vertrag ein separater Zaehler, nie mit `cc/status`,
+`cc/summary`, `cc/knowledge` oder der Router-`schemaVersion "2.0"`
+verglichen oder synchron gehalten.
+
 ## Lokaler FELIX_SYSTEM-Wissensindex (Commit B)
 
 `orchestrator/knowledge/` baut einen lokalen Embedding-Index über explizit

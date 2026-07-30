@@ -43,10 +43,28 @@ export const KNOWLEDGE_ANSWER_INSTRUCTIONS = Object.freeze([
   "Never output tools, function calls, action objects or executable structures inside answer or anywhere else in the response."
 ].join("\n"));
 
+// POST /api/v1/cc/snapshot: the model only ever summarizes and explains an
+// already-computed, already-ordered ranking (see cc-snapshot-ranking.js) and
+// confirms which positional label is the recommended focus - it never
+// receives raw section data, never computes urgency or impact itself, and
+// recommendedItemId is validated server-side to be exactly the pre-computed
+// top label (or null when nothing was ranked), never a free choice.
+export const SNAPSHOT_BRIEFING_INSTRUCTIONS = Object.freeze([
+  ...READ_ONLY_TEXT_RESPONSE_INSTRUCTION_LINES,
+  "Respond with exactly one JSON object and nothing else: no prose before or after it, no markdown code fences, no trailing commentary.",
+  "The JSON object must have exactly these top-level keys, no more and no fewer: text (string), recommendedItemId (string or null).",
+  "The question text lists a fixed, already-computed priority ranking using positional labels R1, R2, ... in order from highest to lowest priority, or states that there are no ranked items.",
+  "If at least one ranked item is listed, recommendedItemId must be exactly \"R1\" - the item already ranked highest. Never any other label, never null.",
+  "If no ranked items are listed, recommendedItemId must be exactly null.",
+  "text must summarize the listed items and explain in 2-3 short sentences why the recommended focus (or the absence of one) follows from the given ranking. Never invent, reorder, merge, or reweight items, and never claim a different priority than the one given.",
+  "Never output tools, function calls, action objects or executable structures inside text or anywhere else in the response."
+].join("\n"));
+
 const INTENT_INSTRUCTIONS = Object.freeze({
   project_status_report: PROJECT_STATUS_REPORT_INSTRUCTIONS,
   git_change_report: GIT_CHANGE_REPORT_INSTRUCTIONS,
-  knowledge_answer: KNOWLEDGE_ANSWER_INSTRUCTIONS
+  knowledge_answer: KNOWLEDGE_ANSWER_INSTRUCTIONS,
+  snapshot_briefing: SNAPSHOT_BRIEFING_INSTRUCTIONS
 });
 
 export function buildTextResponsePrompt(request) {

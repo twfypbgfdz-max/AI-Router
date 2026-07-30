@@ -16,7 +16,10 @@ const INTENTS = new Set([
   // Commit C2a: structured knowledge-answer output ({answer, citedSources}).
   // Not reachable through any active route yet - added to the shared
   // pipeline in isolation, wired to a real handler only in Commit C2b.
-  "knowledge_answer"
+  "knowledge_answer",
+  // POST /api/v1/cc/snapshot: structured snapshot-briefing output
+  // ({text, recommendedItemId}), see structured-response-schema.js.
+  "snapshot_briefing"
 ]);
 const TOP_LEVEL_FIELDS = new Set(["schemaVersion", "requestId", "source", "intent", "input", "context"]);
 const INPUT_FIELDS = new Set(["type", "content"]);
