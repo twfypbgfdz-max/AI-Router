@@ -209,15 +209,16 @@ test("a delivered-but-empty section (evidence available, items: []) is distingui
 
 // --- Ollama narrative states -------------------------------------------
 
-test("narrative state ok: ranking non-empty, model confirms the deterministic top item (R1)", async () => {
+test("narrative state ok: ranking non-empty, model confirms the deterministic top item's real itemId", async () => {
   await withServer(async (baseUrl) => {
     const response = await post(baseUrl, fullSnapshotBody());
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.narrative.state, "ok");
     assert.equal(body.narrative.recommendedItemId, body.ranking.items[0].itemId);
+    assert.equal(body.narrative.recommendedItemId, "svc-router");
     assert.ok(body.narrative.text.length > 0);
-  }, { handlerOptions: { adapterFactory: () => structuredSnapshotAdapter({ recommendedItemId: "R1" }).adapter } });
+  }, { handlerOptions: { adapterFactory: () => structuredSnapshotAdapter({ recommendedItemId: "svc-router" }).adapter } });
 });
 
 test("narrative state ok with no ranked items: model must answer recommendedItemId null", async () => {
@@ -231,7 +232,7 @@ test("narrative state ok with no ranked items: model must answer recommendedItem
   }, { handlerOptions: { adapterFactory: () => structuredSnapshotAdapter({ recommendedItemId: null }).adapter } });
 });
 
-test("narrative state invalid_response: the model names a label other than the deterministic top item", async () => {
+test("narrative state invalid_response: the model names a different, non-top item's real itemId", async () => {
   await withServer(async (baseUrl) => {
     const response = await post(baseUrl, fullSnapshotBody());
     assert.equal(response.status, 200);
@@ -242,16 +243,30 @@ test("narrative state invalid_response: the model names a label other than the d
     // The deterministic ranking itself is entirely unaffected by the
     // model's non-compliant answer - it is never derived from the model.
     assert.ok(body.ranking.items.length > 0);
-  }, { handlerOptions: { adapterFactory: () => structuredSnapshotAdapter({ recommendedItemId: "R2" }).adapter } });
+    // "alert-1" is itself a real, valid entry in ranking.items (see
+    // fullSnapshotBody()) - just not the top one. A merely-valid-but-wrong
+    // membership must be rejected exactly like an unknown ID.
+    assert.ok(body.ranking.items.some((i) => i.itemId === "alert-1"));
+  }, { handlerOptions: { adapterFactory: () => structuredSnapshotAdapter({ recommendedItemId: "alert-1" }).adapter } });
 });
 
-test("narrative state invalid_response: the model claims a non-null label when nothing was ranked", async () => {
+test("narrative state invalid_response: the model names an ID that does not exist in the ranking at all", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await post(baseUrl, fullSnapshotBody());
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.narrative.state, "invalid_response");
+    assert.equal(body.narrative.recommendedItemId, null);
+  }, { handlerOptions: { adapterFactory: () => structuredSnapshotAdapter({ recommendedItemId: "invented-item-id" }).adapter } });
+});
+
+test("narrative state invalid_response: the model claims a non-null itemId when nothing was ranked", async () => {
   await withServer(async (baseUrl) => {
     const response = await post(baseUrl, validSnapshotBody());
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.narrative.state, "invalid_response");
-  }, { handlerOptions: { adapterFactory: () => structuredSnapshotAdapter({ recommendedItemId: "R1" }).adapter } });
+  }, { handlerOptions: { adapterFactory: () => structuredSnapshotAdapter({ recommendedItemId: "svc-router" }).adapter } });
 });
 
 test("narrative state not_connected: Ollama unreachable, ranking is still returned", async () => {
@@ -298,7 +313,7 @@ test("narrative state temporarily_unavailable: a second call while the first is 
   const slowAdapter = {
     async generateText() {
       await gate;
-      return { text: JSON.stringify({ text: "Slow answer.", recommendedItemId: "R1" }), usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } };
+      return { text: JSON.stringify({ text: "Slow answer.", recommendedItemId: "svc-router" }), usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } };
     }
   };
   await withServer(async (baseUrl) => {

@@ -40,7 +40,7 @@ export function validSnapshotBody(overrides = {}) {
 // One item per domain, each already evidenced and actionable, so the
 // deterministic ranking always produces a non-empty result:
 // - alerts: critical, single-project -> urgency 3 x impact 1 = 3
-// - services: down, cross-project -> 3 x 2 = 6 (this becomes R1)
+// - services: down, cross-project -> 3 x 2 = 6 (this becomes the top item)
 // - gitRepositories: conflict, single-project -> 3 x 1 = 3
 // - failedChecks: severity unknown, single-project -> 1 x 1 = 1
 // - projectProgress: blocked, single-project -> 3 x 1 = 3
@@ -91,10 +91,11 @@ export function ragHit(overrides = {}) {
 
 // A structured snapshot_briefing adapter: text + recommendedItemId, both
 // JSON-stringified exactly as the shared pipeline expects for a structured
-// intent. `recommendedItemId` defaults to "R1" (the correct answer whenever
-// ranking.items is non-empty); tests that need to simulate a
-// model-disagrees-with-the-ranking case pass a different value.
-export function structuredSnapshotAdapter({ text = "Der Service-Ausfall hat die höchste Priorität.", recommendedItemId = "R1" } = {}) {
+// intent. `recommendedItemId` defaults to "svc-router" (the real itemId of
+// fullSnapshotBody()'s top-ranked item - services, priorityScore 6, see
+// cc-snapshot-ranking.test.js); tests that need to simulate a
+// model-disagrees-with-the-ranking case pass a different, non-matching value.
+export function structuredSnapshotAdapter({ text = "Der Service-Ausfall hat die höchste Priorität.", recommendedItemId = "svc-router" } = {}) {
   const calls = [];
   return {
     adapter: {

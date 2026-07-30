@@ -201,7 +201,6 @@ export function createCcSnapshotHandler({
     // for the duration of this request.
     const ranking = rankSnapshot(normalized);
     const topItemId = ranking.items.length ? ranking.items[0].itemId : null;
-    const expectedLabel = ranking.items.length ? "R1" : null;
 
     function finish(narrative, knowledgeHits, extraMeta = {}) {
       const payload = buildCcSnapshotResult({ ranking, narrative, knowledgeHits, now });
@@ -249,15 +248,17 @@ export function createCcSnapshotHandler({
 
     // The shared service already ran parseStructuredReport("snapshot_briefing", ...)
     // fail-closed before reaching "answered" - structured is always a valid
-    // {text, recommendedItemId: "R1".."R10"|null} object here.
-    const { text: narrativeText, recommendedItemId: modelLabel } = generationPayload.answer.structured;
+    // {text, recommendedItemId: <ID-shaped string>|null} object here, but
+    // that only checked shape, not membership in this request's ranking.
+    const { text: narrativeText, recommendedItemId: modelRecommendedItemId } = generationPayload.answer.structured;
 
-    // The model's label is a consistency check only, never the source of
-    // truth: recommendedItemId in the response is always the router's own
-    // deterministic top item (or null), never taken from the model's output.
-    // Router decides; Ollama only confirms and explains (Abschnitt 6 des
-    // genehmigten Vertrags).
-    if (modelLabel !== expectedLabel) {
+    // The model's stated ID is a consistency check only, never the source
+    // of truth: recommendedItemId in the response is always the router's
+    // own deterministic top item (or null), never taken from the model's
+    // output. Router decides; Ollama only confirms and explains (Abschnitt 6
+    // des genehmigten Vertrags). A mismatch - including any ID that is not
+    // an entry in ranking.items at all - fails closed as invalid_response.
+    if (modelRecommendedItemId !== topItemId) {
       return finish(emptyNarrative("invalid_response"), await knowledgeHitsPromise, { errorCode: "recommendation_not_in_ranking" });
     }
 

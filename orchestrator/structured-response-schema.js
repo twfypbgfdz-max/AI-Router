@@ -26,23 +26,26 @@ const SCHEMAS = Object.freeze({
   // POST /api/v1/cc/snapshot: text is free-form (validated only for shape
   // here; byte-length and prose content are the endpoint's own concern,
   // same division of labor as cc-summary/cc-knowledge). recommendedItemId
-  // must be one of the positional ranking labels R1..R10 (see
-  // cc-snapshot-prompt.js) or null - the model never sees or supplies a
-  // real item ID, only ever the label.
+  // must be null, or a string shaped like a real ranking item ID (see
+  // cc-snapshot-contract.js's own ID_PATTERN, mirrored below) - this only
+  // validates shape. Whether the value actually matches an item that exists
+  // in ranking.items (and specifically the deterministic top item) is a
+  // membership/consistency check the handler performs itself, since this
+  // shared pipeline file has no notion of a request-specific ranking.
   snapshot_briefing: Object.freeze({
     fields: new Set(["text", "recommendedItemId"]),
     stringFields: ["text"],
-    nullableRankedItemField: "recommendedItemId"
+    nullableIdField: "recommendedItemId"
   })
 });
 
 const CITED_SOURCE_ID_PATTERN = /^K[1-3]$/;
 const MAX_CITED_SOURCES = 3;
-// Mirrors CC_SNAPSHOT_MAX_RANKED_ITEMS=10 (cc-snapshot-config.js) - kept as
-// its own literal here, same as CITED_SOURCE_ID_PATTERN mirroring
-// CC_KNOWLEDGE_MAX_SOURCES=3 above, since this shared pipeline file does not
-// import per-endpoint config.
-const RANKED_ITEM_ID_PATTERN = /^R([1-9]|10)$/;
+// Mirrors cc-snapshot-contract.js's own ID_PATTERN exactly (the same shape
+// every alertId/serviceId/repoId/checkId/projectId must already satisfy) -
+// kept as its own literal here, same as CITED_SOURCE_ID_PATTERN above, since
+// this shared pipeline file does not import per-endpoint config.
+const NULLABLE_ID_FIELD_PATTERN = /^[a-z0-9][a-z0-9._:-]{0,95}$/;
 
 function fail(reason, message = "Provider response has unexpected structure.") {
   throw new TextResponseError("PROVIDER_RESPONSE_INVALID", message, { safeDetails: { reason } });
@@ -117,9 +120,9 @@ export function parseStructuredReport(intent, rawText) {
       fail("structured_output_invalid", "Provider response citedSources field is invalid.");
     }
   }
-  if (schema.nullableRankedItemField) {
-    const fieldValue = parsed[schema.nullableRankedItemField];
-    if (fieldValue !== null && (typeof fieldValue !== "string" || !RANKED_ITEM_ID_PATTERN.test(fieldValue))) {
+  if (schema.nullableIdField) {
+    const fieldValue = parsed[schema.nullableIdField];
+    if (fieldValue !== null && (typeof fieldValue !== "string" || !NULLABLE_ID_FIELD_PATTERN.test(fieldValue))) {
       fail("structured_output_invalid", "Provider response recommendedItemId field is invalid.");
     }
   }

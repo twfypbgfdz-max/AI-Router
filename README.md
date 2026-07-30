@@ -200,16 +200,18 @@ nicht die Existenz des Problems. Das unterscheidet sich kategorial von
 ueberhaupt ein Attention-wuerdiger Zustand vorliegt.
 
 **Ollama-Rolle — strikt begrenzt:** Ollama erhaelt ausschliesslich die
-bereits fertige, geordnete `ranking.items`-Liste (positionale Labels `R1..R10`,
-nie die echten Item-IDs) und darf sie nur zusammenfassen und erklaeren. Das
-Feld `narrative.recommendedItemId` in der Antwort wird ausschliesslich vom
-Router selbst aus dem bereits feststehenden Top-Item abgeleitet — niemals aus
-der Modellantwort uebernommen. Die Modellantwort dient nur als
-Konsistenzpruefung: Bestaetigt sie nicht exakt das bereits feststehende
-Top-Label (`R1`, oder `null` wenn nichts gerankt wurde), gilt
-`narrative.state: "invalid_response"` und die Rangliste selbst (`ranking`)
-bleibt davon unberuehrt und weiterhin vollstaendig nutzbar — sie haengt nie
-von Ollamas Verfuegbarkeit ab.
+bereits fertige, geordnete `ranking.items`-Liste (inklusive der echten
+`itemId` jedes Eintrags) und darf sie nur zusammenfassen und erklaeren. Das
+Feld `narrative.recommendedItemId` in der Antwort ist immer die echte
+`itemId` eines Eintrags aus `ranking.items` (oder `null`, wenn nichts
+gerankt wurde) — niemals ein Positionslabel wie „R1“ und niemals eine freie
+oder im Ranking nicht vorhandene ID. Der Wert wird ausschliesslich vom
+Router selbst aus dem bereits feststehenden Top-Item abgeleitet — niemals
+aus der Modellantwort uebernommen. Die Modellantwort dient nur als
+Konsistenzpruefung: Bestaetigt sie nicht exakt dieselbe `itemId` (oder
+`null`, wenn nichts gerankt wurde), gilt `narrative.state: "invalid_response"`
+und die Rangliste selbst (`ranking`) bleibt davon unberuehrt und weiterhin
+vollstaendig nutzbar — sie haengt nie von Ollamas Verfuegbarkeit ab.
 
 `narrative.state` kennt `ok`, `not_connected`, `model_missing`, `timeout`,
 `invalid_response`, `temporarily_unavailable` — dieselbe Bedeutung wie bei

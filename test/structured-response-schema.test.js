@@ -145,3 +145,51 @@ test("a top-level array or non-object JSON value fails closed", () => {
   assert.throws(() => parseStructuredReport("project_status_report", "42"), { code: "PROVIDER_RESPONSE_INVALID" });
   assert.throws(() => parseStructuredReport("project_status_report", "null"), { code: "PROVIDER_RESPONSE_INVALID" });
 });
+
+// --- snapshot_briefing: this schema only validates the raw provider text
+// (the model's JSON output) BEFORE cc-snapshot-handler.js ever sees it -
+// it has no notion of a request-specific ranking and therefore cannot and
+// does not check membership in ranking.items. It only checks that
+// recommendedItemId is null or shaped like a real item ID (the same
+// ID_PATTERN cc-snapshot-contract.js already enforces for every
+// alertId/serviceId/repoId/checkId/projectId). The membership/consistency
+// check against the actual ranking is exclusively the handler's job.
+
+test("a valid snapshot_briefing answer with a real-ID-shaped recommendedItemId parses", () => {
+  const payload = { text: "Der Service-Ausfall hat Prioritaet.", recommendedItemId: "svc-router" };
+  assert.deepEqual(parseStructuredReport("snapshot_briefing", JSON.stringify(payload)), payload);
+});
+
+test("a valid snapshot_briefing answer with recommendedItemId null parses", () => {
+  const payload = { text: "Keine offenen Punkte.", recommendedItemId: null };
+  assert.deepEqual(parseStructuredReport("snapshot_briefing", JSON.stringify(payload)), payload);
+});
+
+test("a positional label like 'R1' is no longer a valid recommendedItemId shape", () => {
+  assert.throws(() => parseStructuredReport("snapshot_briefing", JSON.stringify({ text: "x", recommendedItemId: "R1" })), { code: "PROVIDER_RESPONSE_INVALID" });
+});
+
+test("recommendedItemId must still match the same ID shape every ranking item ID uses (lowercase, allowed characters, max length)", () => {
+  assert.throws(() => parseStructuredReport("snapshot_briefing", JSON.stringify({ text: "x", recommendedItemId: "Invalid Item!" })), { code: "PROVIDER_RESPONSE_INVALID" });
+  assert.throws(() => parseStructuredReport("snapshot_briefing", JSON.stringify({ text: "x", recommendedItemId: "A".repeat(97) })), { code: "PROVIDER_RESPONSE_INVALID" });
+  assert.doesNotThrow(() => parseStructuredReport("snapshot_briefing", JSON.stringify({ text: "x", recommendedItemId: "a".repeat(96) })));
+});
+
+test("this schema accepts any real-ID-shaped recommendedItemId regardless of any actual ranking - membership is validated by the handler, not here", () => {
+  // "an-id-that-does-not-exist-in-any-ranking" is shape-valid and therefore
+  // parses fine at this layer; cc-snapshot-handler.js is what rejects it
+  // for not matching the deterministic top item.
+  const payload = { text: "x", recommendedItemId: "an-id-that-does-not-exist-in-any-ranking" };
+  assert.deepEqual(parseStructuredReport("snapshot_briefing", JSON.stringify(payload)), payload);
+});
+
+test("a non-string, non-null recommendedItemId fails closed", () => {
+  assert.throws(() => parseStructuredReport("snapshot_briefing", JSON.stringify({ text: "x", recommendedItemId: 1 })), { code: "PROVIDER_RESPONSE_INVALID" });
+  assert.throws(() => parseStructuredReport("snapshot_briefing", JSON.stringify({ text: "x", recommendedItemId: ["svc-router"] })), { code: "PROVIDER_RESPONSE_INVALID" });
+});
+
+test("an extra or missing field on a snapshot_briefing answer fails closed", () => {
+  assert.throws(() => parseStructuredReport("snapshot_briefing", JSON.stringify({ text: "x", recommendedItemId: null, extra: 1 })), { code: "PROVIDER_RESPONSE_INVALID" });
+  assert.throws(() => parseStructuredReport("snapshot_briefing", JSON.stringify({ text: "x" })), { code: "PROVIDER_RESPONSE_INVALID" });
+  assert.throws(() => parseStructuredReport("snapshot_briefing", JSON.stringify({ recommendedItemId: null })), { code: "PROVIDER_RESPONSE_INVALID" });
+});
