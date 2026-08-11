@@ -44,16 +44,36 @@ export const RAG_MAX_CHUNK_CHARS = 2_000;
 export const RAG_TARGET_CHUNK_CHARS = 1_200;
 export const RAG_MAX_CHUNKS_PER_DOCUMENT = 200;
 
-// Calibrated against a 15-question German quality set on the real
-// FELIX_SYSTEM allowlist (6 documents, 109 chunks) after the chunking
-// version 2 title/section prefix was introduced. Compared 0.65/0.62/0.60:
-// 0.60 answered 10/15 questions (up from 4/15 at 0.65) with zero observed
-// wrong-document or off-topic top-3 results at any of the three tested
-// values - the earlier cross-document confusion (Command-Center chunk
-// outranking AI-Router for an AI-Router question) was fixed by the prefix
-// itself, not by this threshold change. Still a starting point for a small,
-// hand-picked corpus - revisit once the allowlist grows.
-export const RAG_DEFAULT_MIN_SIMILARITY = 0.60;
+// Recalibrated 2026-08-11 after the allowlist grew from 6 to 10 documents
+// (109 -> 158 chunks), which the previous comment named as the trigger to
+// revisit. Measured reproducibly with `npm run rag:quality` against the
+// committed 22-case set (18 positive, 4 negative) in
+// config/rag-quality-set.json:
+//
+//   Schwelle   Top-1    Top-3    kein Treffer   Fehltreffer (negativ)
+//   0.65       22.2%    22.2%       77.8%              0/4
+//   0.60       50.0%    50.0%       27.8%              0/4   <- vorher
+//   0.55       72.2%    83.3%        5.6%              0/4   <- jetzt
+//   0.50       77.8%    88.9%        0.0%              0/4
+//
+// 0.60 was silently discarding five questions whose correct document sat
+// between 0.544 and 0.589 - the threshold, not the retrieval, was the
+// binding constraint. A run at threshold 0 shows a clean gap: the best
+// similarity any of the four negative (deliberately unanswerable) questions
+// reaches is 0.458, while the lowest correct top-1 match is 0.544.
+//
+// 0.50 scores better still but leaves only ~0.04 of margin above that
+// observed negative maximum, measured on just four negative cases. 0.55
+// keeps ~0.09 of margin for a 22-point / 33-point gain in top-1 / top-3 and
+// is the deliberate choice; the negative sample is too small to justify
+// spending that margin for one extra question.
+//
+// Known residual weaknesses at any threshold (see the report in the vault):
+// one question finds its document only at rank 4 (outranked, not missed),
+// and one short 4-chunk document is not retrieved into the top 5 at all.
+// Both are ranking problems that a threshold cannot fix and are recorded as
+// open points rather than papered over here.
+export const RAG_DEFAULT_MIN_SIMILARITY = 0.55;
 export const RAG_DEFAULT_TOP_K = 3;
 export const RAG_MAX_TOP_K = 5;
 export const RAG_MAX_COMBINED_SNIPPET_CHARS = 2_000;
