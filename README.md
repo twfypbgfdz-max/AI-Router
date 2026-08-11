@@ -240,9 +240,15 @@ oder `/api/v1/cc/summary`.
   ausschließlich die konkreten, in `config/rag-allowlist.json` freigegebenen
   Dateien. Es gibt keinen rekursiven Verzeichnis-Scan und keinen
   Schreib-/Lösch-/Umbenennungs-Zugriff auf `AI_ROUTER_VAULT_ROOT`.
-- **Allowlist bewusst leer:** `config/rag-allowlist.json` enthält aktuell
-  `"documents": []`. Eine echte Indexierung realer FELIX_SYSTEM-Dokumente
-  erfordert einen weiteren, ausdrücklichen Auftrag.
+- **Allowlist (Stand 11.08.2026): 7 freigegebene Dokumente.**
+  `config/rag-allowlist.json` listet ausschließlich einzeln von Felix
+  freigegebene Dateien (`addedBy`/`addedAt` je Eintrag): DEC-001, DEC-002,
+  DEC-003, `00_System/FELIX_SYSTEM_Architektur_Index.md`,
+  `10_Apps/01_Aktive-Projekte/AI-Router.md`,
+  `10_Apps/01_Aktive-Projekte/Felix-Command-Center.md` sowie seit 11.08.
+  `90_System/Profil.md` (Personal-Context-Grundstand). Jede weitere Datei
+  — auch DEC-004/005/006 — erfordert einen eigenen, ausdrücklichen Auftrag;
+  die Liste wächst nicht automatisch mit dem Vault.
 - **Harte Denylist**, unabhängig vom Frontmatter-Typ und nicht durch die
   Allowlist überstimmbar: `60_Finanzen/`, `00_Inbox/`, `.obsidian/`,
   `.claudian/`, `.git/`, `.claude/` (siehe `orchestrator/knowledge/rag-config.js`).
@@ -329,6 +335,49 @@ Recommendation-Engine geaendert — Contract-Test im Command-Center-Repo sollte 
     node --test test/recommendation-contract.test.js
     (im Repo felix-command-center ausfuehren)
 ```
+
+## Dauerhafte lokale Konfiguration und Betriebsweg
+
+Dieses Repository lädt `.env` bewusst **nicht** automatisch (siehe Zeile 1 in
+`.env.example`). Damit der Knowledge-Answer-Pfad einen echten Prozess-Neustart
+übersteht, liegen die dafür nötigen Werte stattdessen als **Windows-User-
+Umgebungsvariablen** vor. Das ist kein neuer Mechanismus und kein Code — nur
+die dauerhafte Ablage derselben Variablen, die `.env.example` beschreibt.
+
+Dauerhaft gesetzt sind (Stand 11.08.2026, im User-Scope, nicht Machine-Scope):
+
+| Variable | Zweck |
+|---|---|
+| `AI_ROUTER_TEXT_PROVIDER` | aktiver Textprovider (`ollama`) |
+| `AI_ROUTER_OLLAMA_MODEL` | Antwortmodell |
+| `AI_ROUTER_OLLAMA_BASE_URL` | lokaler Ollama-Endpunkt (Loopback) |
+| `AI_ROUTER_OLLAMA_EMBEDDING_MODEL` | Embedding-Modell für den RAG-Index |
+| `AI_ROUTER_VAULT_ROOT` | read-only Pfad zum FELIX_SYSTEM-Checkout |
+| `AI_ROUTER_INTERNAL_TOKEN` | Secret für `/api/router/respond` |
+| `AI_ROUTER_CC_TOKEN` | Secret für alle `/api/v1/cc/*`-Endpunkte |
+
+**Die beiden Tokenwerte stehen bewusst nirgends in diesem Repository, in der
+Dokumentation oder im Vault** — hier wird nur festgehalten, *dass* und *wo* sie
+gesetzt sind, nie *welchen Wert* sie haben. Prüfen lässt sich das ohne
+Wertausgabe, z. B. über `[Environment]::GetEnvironmentVariable('AI_ROUTER_CC_TOKEN','User')`
+auf Vorhandensein statt auf Inhalt.
+
+Lokaler Betriebsweg für den vollständigen Knowledge-Pfad:
+
+1. Ollama läuft lokal und hat sowohl das Antwort- als auch das
+   Embedding-Modell (`ollama list`) — es gibt keinen automatischen Pull.
+2. `npm run rag:reindex` erzeugt/aktualisiert den Index. Er läuft **nie**
+   automatisch: kein Scheduler, kein Watcher, kein Start mit `npm start`.
+   Nach jeder Allowlist-Änderung und nach relevanten Vault-Änderungen ist er
+   manuell nötig, sonst meldet `cc/knowledge` `index_stale` (Schwelle 24 h).
+3. `npm start` startet den Router auf `http://127.0.0.1:8787`.
+4. Das Command Center konsumiert `POST /api/v1/cc/knowledge` server-zu-server
+   mit `AI_ROUTER_CC_TOKEN`; der Browser spricht den Router nie direkt an.
+
+Das Ratelimit von `cc/knowledge` ist bewusst **eine Anfrage pro 60 Sekunden**
+(`CC_KNOWLEDGE_MAX_REQUESTS_PER_WINDOW = 1`, Concurrency 1). Schnell
+aufeinanderfolgende Testfragen laufen deshalb planmäßig in `rate_limited` —
+das ist kein Fehler, sondern die konfigurierte Grenze.
 
 ## Git-Hooks: Agent-Lock-Absicherung
 
