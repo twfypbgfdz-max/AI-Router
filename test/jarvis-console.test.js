@@ -1,0 +1,191 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { EventEmitter } from "node:events";
+import { fileURLToPath } from "node:url";
+import { createJarvisConsoleHandler } from "../orchestrator/jarvis-console-proxy.js";
+import { KNOWLEDGE_TOKEN_ENV_VAR } from "../orchestrator/knowledge-config.js";
+
+const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const PAGE = fs.readFileSync(path.join(REPO_ROOT, "01_APP", "jarvis-console.html"), "utf8");
+const TEST_TOKEN = "test-generic-knowledge-route-token-0123456789ab";
+
+function request(body) {
+  const req = new EventEmitter();
+  req.method = "POST";
+  req.headers = { "content-type": "application/json" };
+  req.socket = new EventEmitter();
+  req.destroy = () => {};
+  queueMicrotask(() => {
+    req.emit("data", Buffer.from(typeof body === "string" ? body : JSON.stringify(body)));
+    req.emit("end");
+  });
+  return req;
+}
+
+function response() {
+  const res = new EventEmitter();
+  res.headers = new Map();
+  res.statusCode = 200;
+  res.writableEnded = false;
+  res.destroyed = false;
+  res.body = "";
+  res.setHeader = (n, v) => res.headers.set(String(n).toLowerCase(), String(v));
+  res.getHeader = (n) => res.headers.get(String(n).toLowerCase());
+  // http-utils.js's sendJson writes the status line via writeHead, so the
+  // fake mirrors the real ServerResponse surface rather than a subset.
+  res.writeHead = (status, headers = {}) => {
+    res.statusCode = status;
+    for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
+    return res;
+  };
+  res.end = (v = "") => { res.body = String(v); res.writableEnded = true; };
+  res.json = () => JSON.parse(res.body);
+  return res;
+}
+
+// Captures what the proxy hands to the knowledge route, so the test can
+// assert on the internal request rather than guessing.
+function spyKnowledgeHandler(reply = { status: 200, payload: { schemaVersion: "1.0", state: "partial", answer: "A [K1]", sources: [], warnings: [] } }) {
+  const seen = [];
+  const handler = async (req, res) => {
+    const chunks = [];
+    await new Promise((resolve) => {
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", resolve);
+    });
+    seen.push({ headers: req.headers, method: req.method, body: JSON.parse(Buffer.concat(chunks.map(Buffer.from)).toString("utf8")) });
+    res.statusCode = reply.status;
+    res.end(JSON.stringify(reply.payload));
+  };
+  return { handler, seen };
+}
+
+// --- proxy behaviour ----------------------------------------------------
+
+test("attaches the knowledge token server-side and sends no browser origin", async () => {
+  const spy = spyKnowledgeHandler();
+  const handler = createJarvisConsoleHandler({ env: { [KNOWLEDGE_TOKEN_ENV_VAR]: TEST_TOKEN }, knowledgeHandler: spy.handler });
+  const res = response();
+  await handler(request({ question: "Wer darf ins Sheet schreiben?" }), res);
+
+  assert.equal(spy.seen.length, 1);
+  assert.equal(spy.seen[0].headers.authorization, `Bearer ${TEST_TOKEN}`);
+  assert.equal(spy.seen[0].headers.origin, undefined);
+  assert.equal(res.statusCode, 200);
+});
+
+// The page must never learn the token, otherwise the whole server-side
+// bridge is pointless.
+test("the token never appears in the response sent to the page", async () => {
+  const spy = spyKnowledgeHandler();
+  const handler = createJarvisConsoleHandler({ env: { [KNOWLEDGE_TOKEN_ENV_VAR]: TEST_TOKEN }, knowledgeHandler: spy.handler });
+  const res = response();
+  await handler(request({ question: "Frage" }), res);
+  assert.ok(!res.body.includes(TEST_TOKEN));
+});
+
+// schemaVersion is filled in by the server so a stale cached page cannot
+// pin an old contract version.
+test("supplies schemaVersion itself and forwards only the question", async () => {
+  const spy = spyKnowledgeHandler();
+  const handler = createJarvisConsoleHandler({ env: { [KNOWLEDGE_TOKEN_ENV_VAR]: TEST_TOKEN }, knowledgeHandler: spy.handler });
+  await handler(request({ question: "Frage", schemaVersion: "9.9", context: { projectName: "x" } }), response());
+  assert.deepEqual(spy.seen[0].body, { schemaVersion: "1.0", question: "Frage" });
+});
+
+test("relays the observation payload unchanged", async () => {
+  const payload = { schemaVersion: "1.0", state: "partial", answer: "Antwort [K1]", sources: [{ sourceDoc: "a.md" }], warnings: ["index_stale"] };
+  const spy = spyKnowledgeHandler({ status: 200, payload });
+  const handler = createJarvisConsoleHandler({ env: { [KNOWLEDGE_TOKEN_ENV_VAR]: TEST_TOKEN }, knowledgeHandler: spy.handler });
+  const res = response();
+  await handler(request({ question: "Frage" }), res);
+  assert.deepEqual(res.json(), payload);
+});
+
+// The rate limit has to reach the page as a real 429 so the UI can show a
+// countdown instead of a dead click or a raw error.
+test("relays a 429 rate limit as a real 429 with its warning intact", async () => {
+  const payload = { schemaVersion: "1.0", state: "unavailable", answer: null, sources: [], warnings: ["rate_limited"] };
+  const spy = spyKnowledgeHandler({ status: 429, payload });
+  const handler = createJarvisConsoleHandler({ env: { [KNOWLEDGE_TOKEN_ENV_VAR]: TEST_TOKEN }, knowledgeHandler: spy.handler });
+  const res = response();
+  await handler(request({ question: "Frage" }), res);
+  assert.equal(res.statusCode, 429);
+  assert.deepEqual(res.json().warnings, ["rate_limited"]);
+});
+
+test("relays an auth failure instead of hiding it", async () => {
+  const payload = { schemaVersion: "1.0", error: { code: "AUTH_NOT_CONFIGURED", message: "Internal authentication is unavailable." } };
+  const spy = spyKnowledgeHandler({ status: 503, payload });
+  const handler = createJarvisConsoleHandler({ env: {}, knowledgeHandler: spy.handler });
+  const res = response();
+  await handler(request({ question: "Frage" }), res);
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.json().error.code, "AUTH_NOT_CONFIGURED");
+});
+
+test("rejects a body that is not valid JSON", async () => {
+  const spy = spyKnowledgeHandler();
+  const handler = createJarvisConsoleHandler({ env: { [KNOWLEDGE_TOKEN_ENV_VAR]: TEST_TOKEN }, knowledgeHandler: spy.handler });
+  const res = response();
+  await handler(request("{ kaputt"), res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(spy.seen.length, 0, "a malformed body must never reach the knowledge route");
+});
+
+// A missing question becomes an empty string and is rejected downstream by
+// the knowledge contract - the proxy deliberately does not validate itself,
+// so there is only one place where the rules live.
+test("forwards an empty question rather than inventing its own validation", async () => {
+  const spy = spyKnowledgeHandler();
+  const handler = createJarvisConsoleHandler({ env: { [KNOWLEDGE_TOKEN_ENV_VAR]: TEST_TOKEN }, knowledgeHandler: spy.handler });
+  await handler(request({ notAQuestion: true }), response());
+  assert.equal(spy.seen[0].body.question, "");
+});
+
+// --- the page itself ----------------------------------------------------
+
+test("the page performs no action and offers no voice input", () => {
+  assert.ok(!/getUserMedia|SpeechRecognition|webkitSpeechRecognition|MediaRecorder/i.test(PAGE), "no voice input in v1");
+  assert.ok(!/\/api\/v1\/cc\//.test(PAGE), "the page must never address a Command Center route");
+  assert.ok(!/reindex/i.test(PAGE) || !/fetch\([^)]*reindex/i.test(PAGE), "the page must not trigger a reindex");
+});
+
+test("the page talks only to its own server-side bridge, never to the knowledge route directly", () => {
+  const fetchTargets = [...PAGE.matchAll(/fetch\(\s*"([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(fetchTargets, ["/api/jarvis/ask"]);
+});
+
+test("the page carries no token and no authorization header", () => {
+  assert.ok(!/authorization/i.test(PAGE));
+  assert.ok(!/AI_ROUTER_[A-Z_]*TOKEN\s*[:=]/.test(PAGE));
+});
+
+// The honest-rate-limit requirement: the page must name the limit and count
+// down rather than leaving a click looking dead.
+test("the page surfaces the rate limit explicitly with a countdown", () => {
+  assert.ok(/COOLDOWN_SECONDS\s*=\s*60/.test(PAGE), "the 60s budget must be represented");
+  assert.ok(PAGE.includes("Nächste Frage in"), "a countdown must be shown");
+  assert.ok(PAGE.includes("eine Anfrage pro 60 Sekunden"), "the limit must be stated in plain words");
+  assert.ok(/response\.status === 429/.test(PAGE), "a 429 must be handled as a limit, not as a generic error");
+});
+
+test("the page explains every warning the knowledge contract can emit", () => {
+  for (const warning of [
+    "no_context_no_knowledge", "index_stale", "index_missing", "embedding_model_unavailable",
+    "search_failed", "rate_limited", "concurrency_limited", "answer_provider_unavailable",
+    "answer_model_unavailable", "model_response_invalid", "prompt_budget_exceeded",
+    "model_source_validation_failed", "model_answer_too_large", "model_action_claim_blocked",
+    "model_tool_call_output_blocked", "model_output_contains_path_or_url",
+    "model_output_contains_command_reference", "internal_error"
+  ]) {
+    assert.ok(PAGE.includes(`${warning}:`), `warning ${warning} needs a plain-language explanation`);
+  }
+});
+
+test("the page escapes rendered values instead of injecting raw HTML", () => {
+  assert.ok(PAGE.includes("function escapeHtml"));
+  assert.ok(/answerEl\.textContent\s*=/.test(PAGE), "the answer must be set as text, never as HTML");
+});

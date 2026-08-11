@@ -394,6 +394,35 @@ innerhalb einer Route auftreten. Der **deterministische** Nachweis der
 Gleichheit ist `test/knowledge-parity.test.js`: dort ist der Adapter fixiert
 und die Payloads müssen byte-identisch sein.
 
+## Jarvis v1: lokale Dialogoberfläche (`GET /jarvis`)
+
+Die kleinste lokale Jarvis-Oberfläche von Felix Core: **Textfrage → lokale
+RAG-Antwort → Quellenanzeige.** Sie liegt bewusst hier im AI-Router und
+**nicht** im Command Center (siehe DEC-006 Version 1.2).
+
+- **Keine Spracheingabe, keine Aktionen.** v1 ist reine Frage/Antwort. Die
+  Seite kann nichts auslösen — keinen Reindex, keinen Commit, nichts.
+- **Kein Token in der Seite.** Die Seite ruft `POST /api/jarvis/ask` auf;
+  dieser serverseitige Proxy hängt `AI_ROUTER_KNOWLEDGE_TOKEN` aus der
+  Serverumgebung an und ruft intern `POST /api/v1/knowledge` auf. Der
+  Wissensendpunkt weist Browser-Anfragen ohnehin ab, deshalb ist der Umweg
+  keine Bequemlichkeit, sondern die Sicherheitsgrenze.
+- **`schemaVersion` setzt der Server**, nicht die Seite — eine veraltete
+  Seite aus dem Browsercache kann keine alte Vertragsversion festnageln.
+- **Quellenanzeige:** je Fundstelle `[K1]`–`[K3]` mit Dokument, Abschnitt,
+  Übereinstimmungswert, Dokumentstand und Index-Aktualität.
+- **Rate-Limit ehrlich sichtbar:** Der Wissenspfad erlaubt eine Anfrage pro
+  60 Sekunden. Der Knopf bleibt danach gesperrt und zeigt einen Countdown
+  („Nächste Frage in 43 s"); ein 429 vom Server wird als **Limit** benannt,
+  nicht als Fehler. Kein stilles Hängen, kein roher Fehlercode.
+- **Jede Warnung des Vertrags hat einen deutschen Klartext.** „Keine
+  Fundstelle" wird als bewusste Nichtantwort erklärt, nicht als Panne — der
+  Pfad rät grundsätzlich nicht.
+
+Aufruf: Router starten (`npm start`), dann `http://127.0.0.1:8787/jarvis`.
+Ohne gesetztes `AI_ROUTER_KNOWLEDGE_TOKEN` meldet die Seite das ausdrücklich
+(`AUTH_NOT_CONFIGURED`) statt stumm zu bleiben.
+
 ### Lokaler post-commit-Hook: Contract-Test-Erinnerung
 
 Der Contract-Test `test/recommendation-contract.test.js` im Repo

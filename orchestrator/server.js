@@ -28,9 +28,11 @@ import { handleKnowledgeRequest } from "./knowledge-handler.js";
 import { handleCcSnapshotRequest } from "./cc-snapshot-handler.js";
 import { handleCcReindexRequest } from "./cc-reindex-handler.js";
 import { handleRouterConsoleRespond } from "./router-console-proxy.js";
+import { handleJarvisConsoleAsk } from "./jarvis-console-proxy.js";
 
 const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_13-test.html");
 const routerConsoleUiFile = path.join(REPOSITORY_ROOT, "01_APP", "router-console.html");
+const jarvisConsoleUiFile = path.join(REPOSITORY_ROOT, "01_APP", "jarvis-console.html");
 
 function isAllowedRouterOrigin(origin, allowedOrigins) {
   return typeof origin === "string" && allowedOrigins.includes(origin);
@@ -73,7 +75,7 @@ function safeFilterValue(value, allowed, maximum = 40) {
 
 function isoOrNull(value) { const parsed = Date.parse(value); return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null; }
 
-export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, ccKnowledgeHandler = handleCcKnowledgeRequest, knowledgeHandler = handleKnowledgeRequest, ccSnapshotHandler = handleCcSnapshotRequest, ccReindexHandler = handleCcReindexRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, now = Date.now } = {}) {
+export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, ccKnowledgeHandler = handleCcKnowledgeRequest, knowledgeHandler = handleKnowledgeRequest, ccSnapshotHandler = handleCcSnapshotRequest, ccReindexHandler = handleCcReindexRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, jarvisConsoleAskHandler = handleJarvisConsoleAsk, now = Date.now } = {}) {
   const serverStartedAt = Date.now();
   const safeLog = (event, safeMetadata = {}) => {
     try { Promise.resolve(eventLogger?.log?.({ event, safeMetadata })).catch(() => {}); } catch { /* logging is non-critical */ }
@@ -129,6 +131,17 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
     if (request.method === "GET" && pathname === "/") return sendText(response, 200, await fs.readFile(uiFile, "utf8"), "text/html; charset=utf-8");
 
     if (request.method === "GET" && pathname === "/router-console") return sendText(response, 200, await fs.readFile(routerConsoleUiFile, "utf8"), "text/html; charset=utf-8");
+
+    if (request.method === "GET" && pathname === "/jarvis") return sendText(response, 200, await fs.readFile(jarvisConsoleUiFile, "utf8"), "text/html; charset=utf-8");
+
+    // Server-side bridge for the Jarvis page. /api/v1/knowledge refuses any
+    // browser Origin and needs a bearer token, so the page cannot call it
+    // directly - the token stays in the server environment and never
+    // reaches a browser. Same-origin guard as the router console.
+    if (request.method === "POST" && pathname === "/api/jarvis/ask") {
+      if (!isTrustedMutation(request)) return sendJson(response, 403, { code: "INVALID_REQUEST", message: "Untrusted local request." });
+      return jarvisConsoleAskHandler(request, response);
+    }
 
     if (request.method === "POST" && pathname === "/api/router-console/respond") {
       if (!isTrustedMutation(request)) return sendJson(response, 403, { code: "INVALID_REQUEST", message: "Untrusted local request." });

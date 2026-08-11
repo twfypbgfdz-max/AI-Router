@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Felix Core – Jarvis</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --surface-2: #f8f9fb;
+    --border: #e4e5ea;
+    --text: #1c1d21;
+    --text-muted: #6b6c76;
+    --accent: #3b5bdb;
+    --accent-contrast: #ffffff;
+    --ok-fg: #14804a; --ok-bg: #14804a1a; --ok-bd: #14804a40;
+    --warn-fg: #a16207; --warn-bg: #a162071a; --warn-bd: #a1620740;
+    --fail-fg: #c92a2a; --fail-bg: #c92a2a1a; --fail-bd: #c92a2a40;
+    --pending-fg: #6b6c76; --pending-bg: #6b6c761a; --pending-bd: #6b6c7640;
+    --radius-lg: 18px;
+    --radius-md: 12px;
+    --radius-sm: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16171c;
+      --surface: #1e1f26;
+      --surface-2: #26272f;
+      --border: #33343d;
+      --text: #eceef2;
+      --text-muted: #9a9ba6;
+      --accent: #7c9bff;
+      --accent-contrast: #101223;
+      --ok-fg: #4fd693; --ok-bg: #4fd6931a; --ok-bd: #4fd69340;
+      --warn-fg: #e3b341; --warn-bg: #e3b3411a; --warn-bd: #e3b34140;
+      --fail-fg: #ff8080; --fail-bg: #ff808020; --fail-bd: #ff808045;
+      --pending-fg: #9a9ba6; --pending-bg: #9a9ba61a; --pending-bd: #9a9ba640;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    max-width: 680px; margin: 0 auto; padding: 36px 20px 60px;
+    line-height: 1.45;
+  }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { color: var(--text-muted); margin: 0; font-size: 0.92rem; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px 22px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 2px #0000000a;
+  }
+  .card h2 { font-size: 1.05rem; font-weight: 600; margin: 0 0 4px; }
+  .card-hint { color: var(--text-muted); font-size: 0.86rem; margin: 0 0 16px; }
+
+  textarea {
+    width: 100%; min-height: 78px; resize: vertical;
+    font: inherit; color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    padding: 10px 12px;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .row { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-weight: 600;
+    background: var(--accent); color: var(--accent-contrast);
+    border: 0; border-radius: var(--radius-md);
+    padding: 9px 18px; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .status { color: var(--text-muted); font-size: 0.88rem; }
+  .counter { color: var(--text-muted); font-size: 0.8rem; margin-left: auto; }
+
+  .badge {
+    display: inline-block; font-size: 0.76rem; font-weight: 600;
+    padding: 2px 9px; border-radius: 999px; border: 1px solid;
+    vertical-align: middle;
+  }
+  .badge.ok { color: var(--ok-fg); background: var(--ok-bg); border-color: var(--ok-bd); }
+  .badge.warn { color: var(--warn-fg); background: var(--warn-bg); border-color: var(--warn-bd); }
+  .badge.fail { color: var(--fail-fg); background: var(--fail-bg); border-color: var(--fail-bd); }
+  .badge.pending { color: var(--pending-fg); background: var(--pending-bg); border-color: var(--pending-bd); }
+
+  .answer { white-space: pre-wrap; margin: 0 0 4px; }
+  .notice {
+    border-radius: var(--radius-md); padding: 12px 14px; margin: 0 0 14px;
+    border: 1px solid; font-size: 0.9rem;
+  }
+  .notice.warn { color: var(--warn-fg); background: var(--warn-bg); border-color: var(--warn-bd); }
+  .notice.fail { color: var(--fail-fg); background: var(--fail-bg); border-color: var(--fail-bd); }
+  .notice strong { display: block; margin-bottom: 2px; }
+
+  .src {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: 11px 13px; margin-top: 10px;
+  }
+  .src-head { font-weight: 600; font-size: 0.88rem; margin-bottom: 2px; }
+  .src-meta { color: var(--text-muted); font-size: 0.79rem; }
+  .src-key { font-family: ui-monospace, Consolas, monospace; color: var(--accent); }
+  .foot { color: var(--text-muted); font-size: 0.8rem; margin-top: 26px; }
+  .foot code { font-family: ui-monospace, Consolas, monospace; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Felix Core – Jarvis</h1>
+  <p class="sub">Fragen an das lokale FELIX_SYSTEM-Wissen. Läuft vollständig auf diesem Rechner, antwortet ausschließlich aus den freigegebenen Vault-Dokumenten und führt keine Aktionen aus.</p>
+</header>
+
+<section class="card">
+  <h2>Frage</h2>
+  <p class="card-hint">Eine Frage, eine Zeile, höchstens 500 Zeichen. Ohne Fundstelle im Index wird nicht geantwortet – geraten wird nicht.</p>
+  <textarea id="question" maxlength="500" placeholder="Zum Beispiel: Welche Komponente darf als Einzige ins Google Sheet schreiben?" aria-label="Frage an FELIX_SYSTEM"></textarea>
+  <div class="row">
+    <button id="ask-btn" type="button">Fragen</button>
+    <span class="status" id="ask-status" role="status" aria-live="polite">Bereit.</span>
+    <span class="counter" id="char-counter">0 / 500</span>
+  </div>
+</section>
+
+<section class="card" id="result-card" hidden>
+  <h2>Antwort <span class="badge pending" id="state-badge">–</span></h2>
+  <p class="card-hint" id="state-hint">–</p>
+  <div id="notices"></div>
+  <p class="answer" id="answer"></p>
+  <div id="sources"></div>
+</section>
+
+<p class="foot">
+  Read-only über <code>POST /api/v1/knowledge</code>. Der Zugriff läuft serverseitig – dieses Fenster kennt kein Token.
+  Der Index wird nicht automatisch aktualisiert; nach Vault-Änderungen ist <code>npm run rag:reindex</code> nötig.
+</p>
+
+<script>
+(function () {
+  "use strict";
+
+  // The knowledge route allows one request per 60 seconds (concurrency 1).
+  // That is a real constraint, so the UI states it and counts down instead
+  // of letting a click appear to do nothing.
+  var COOLDOWN_SECONDS = 60;
+
+  var askBtn = document.getElementById("ask-btn");
+  var statusEl = document.getElementById("ask-status");
+  var questionEl = document.getElementById("question");
+  var counterEl = document.getElementById("char-counter");
+  var resultCard = document.getElementById("result-card");
+  var stateBadge = document.getElementById("state-badge");
+  var stateHint = document.getElementById("state-hint");
+  var noticesEl = document.getElementById("notices");
+  var answerEl = document.getElementById("answer");
+  var sourcesEl = document.getElementById("sources");
+
+  var inFlight = false;
+  var cooldownUntil = 0;
+  var cooldownTimer = null;
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function docName(path) {
+    var parts = String(path || "").split("/");
+    return parts[parts.length - 1].replace(/\.md$/, "");
+  }
+
+  // Every warning the knowledge contract can emit, in plain German. An
+  // unknown code is shown verbatim rather than swallowed - a silent gap
+  // would be worse than an ugly string.
+  var WARNING_TEXT = {
+    no_context_no_knowledge: "Zu dieser Frage gibt es keine Fundstelle in den freigegebenen Dokumenten. Es wurde bewusst nicht geantwortet, statt zu raten.",
+    index_stale: "Der lokale Index ist älter als 24 Stunden. Die Antwort kann veraltet sein – ein Reindex bringt ihn auf Stand.",
+    index_missing: "Es existiert noch kein lokaler Index. Zuerst einen Reindex ausführen.",
+    embedding_model_unavailable: "Das Embedding-Modell ist nicht verfügbar. Läuft Ollama, und ist das Modell geladen?",
+    search_failed: "Die Suche im lokalen Index ist fehlgeschlagen.",
+    rate_limited: "Limit erreicht: eine Anfrage pro 60 Sekunden.",
+    concurrency_limited: "Es läuft bereits eine Anfrage. Bitte diese abwarten.",
+    answer_provider_unavailable: "Das lokale Antwortmodell ist nicht erreichbar. Läuft Ollama?",
+    answer_model_unavailable: "Es ist kein lokales Antwortmodell konfiguriert.",
+    model_response_invalid: "Das Modell hat eine unbrauchbare Antwort geliefert. Sie wurde verworfen statt ungeprüft angezeigt.",
+    prompt_budget_exceeded: "Die Anfrage war zusammen mit den Fundstellen zu groß.",
+    model_source_validation_failed: "Das Modell hat keine oder eine nicht angebotene Quelle zitiert. Die Antwort wurde verworfen.",
+    model_answer_too_large: "Die Antwort war zu lang und wurde verworfen.",
+    model_action_claim_blocked: "Das Modell hat behauptet, selbst etwas ausgeführt zu haben. Die Antwort wurde blockiert – hier wird nichts ausgeführt.",
+    model_tool_call_output_blocked: "Die Modellausgabe enthielt eine werkzeugartige Struktur und wurde blockiert.",
+    model_output_contains_path_or_url: "Die Antwort enthält einen Pfad oder eine URL – bitte mit Vorsicht lesen.",
+    model_output_contains_command_reference: "Die Antwort nennt einen Befehl. Hier wird nichts ausgeführt.",
+    internal_error: "Interner Fehler bei der Beantwortung."
+  };
+
+  var TRANSPORT_TEXT = {
+    AUTH_REQUIRED: "Der Server hat kein Zugriffstoken mitgeschickt.",
+    AUTH_INVALID: "Das serverseitige Zugriffstoken wurde abgelehnt.",
+    AUTH_NOT_CONFIGURED: "Auf dem Server ist AI_ROUTER_KNOWLEDGE_TOKEN nicht gesetzt. Ohne diese Umgebungsvariable ist der Wissenspfad nicht nutzbar.",
+    VALIDATION_FAILED: "Die Frage wurde abgelehnt: höchstens 500 Zeichen, eine Zeile, keine Pfade, URLs oder geheim aussehenden Inhalte.",
+    SECURITY_BLOCKED: "Die Frage wurde blockiert. Ausführungsaufforderungen und geheim aussehende Inhalte sind hier nicht zulässig.",
+    METHOD_NOT_ALLOWED: "Ungültige Anfrageart.",
+    ORIGIN_NOT_ALLOWED: "Direkter Browserzugriff auf den Wissenspfad ist nicht zulässig.",
+    INVALID_REQUEST: "Die Anfrage konnte nicht gelesen werden.",
+    INTERNAL_ERROR: "Interner Fehler."
+  };
+
+  var STATE_HINT = {
+    ok: "Vollständig belegt.",
+    partial: "Beantwortet aus dem Vault-Wissen. Ohne Echtzeit-Systemzustand – dieser Pfad kennt nur die Dokumente.",
+    unavailable: "Keine Antwort geliefert."
+  };
+
+  function setBadge(text, kind) {
+    stateBadge.textContent = text;
+    stateBadge.className = "badge " + kind;
+  }
+
+  function renderNotices(list, kind) {
+    noticesEl.innerHTML = "";
+    for (var i = 0; i < list.length; i += 1) {
+      var div = document.createElement("div");
+      div.className = "notice " + kind;
+      div.innerHTML = "<strong>" + escapeHtml(list[i].title) + "</strong>" + escapeHtml(list[i].text);
+      noticesEl.appendChild(div);
+    }
+  }
+
+  function renderSources(sources) {
+    sourcesEl.innerHTML = "";
+    if (!sources || sources.length === 0) return;
+    var heading = document.createElement("div");
+    heading.className = "src-head";
+    heading.style.marginTop = "18px";
+    heading.textContent = sources.length === 1 ? "Belegte Quelle" : "Belegte Quellen";
+    sourcesEl.appendChild(heading);
+
+    for (var i = 0; i < sources.length; i += 1) {
+      var s = sources[i];
+      var box = document.createElement("div");
+      box.className = "src";
+      var version = s.docVersion ? " v" + s.docVersion : "";
+      var similarity = typeof s.similarity === "number" ? s.similarity.toFixed(3) : "–";
+      var freshness = s.freshness === "stale" ? "Index veraltet" : s.freshness === "fresh" ? "aktuell" : "unbekannt";
+      box.innerHTML =
+        '<div class="src-head"><span class="src-key">[K' + (i + 1) + ']</span> ' + escapeHtml(docName(s.sourceDoc)) + "</div>" +
+        '<div class="src-meta">' + escapeHtml(s.section || "(kein Abschnitt)") + "</div>" +
+        '<div class="src-meta">Übereinstimmung ' + similarity +
+        " · Stand " + escapeHtml((s.docStatus || "unbekannt") + version) +
+        " · " + escapeHtml(freshness) + "</div>";
+      sourcesEl.appendChild(box);
+    }
+  }
+
+  function showTransportError(code, message) {
+    resultCard.hidden = false;
+    setBadge("nicht verfügbar", "fail");
+    stateHint.textContent = "Die Anfrage hat den Wissenspfad nicht erreicht.";
+    renderNotices([{ title: code, text: TRANSPORT_TEXT[code] || message || "Unbekannter Fehler." }], "fail");
+    answerEl.textContent = "";
+    sourcesEl.innerHTML = "";
+  }
+
+  function render(payload) {
+    resultCard.hidden = false;
+    var state = payload.state;
+    var warnings = payload.warnings || [];
+
+    if (state === "ok") setBadge("belegt", "ok");
+    else if (state === "partial") setBadge("belegt (ohne Systemzustand)", "ok");
+    else setBadge("nicht beantwortet", "fail");
+    stateHint.textContent = STATE_HINT[state] || "";
+
+    var notices = [];
+    for (var i = 0; i < warnings.length; i += 1) {
+      notices.push({ title: warnings[i], text: WARNING_TEXT[warnings[i]] || "" });
+    }
+    renderNotices(notices, state === "unavailable" ? "fail" : "warn");
+
+    answerEl.textContent = payload.answer || "";
+    renderSources(payload.sources);
+  }
+
+  function stopCooldown() {
+    if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer = null; }
+    cooldownUntil = 0;
+    askBtn.disabled = false;
+    statusEl.textContent = "Bereit.";
+  }
+
+  // Honest waiting: the button stays disabled and the remaining seconds are
+  // shown, so a blocked request is visibly a limit rather than a dead click.
+  function startCooldown(seconds, reason) {
+    cooldownUntil = Date.now() + seconds * 1000;
+    askBtn.disabled = true;
+    if (cooldownTimer) clearInterval(cooldownTimer);
+    var tick = function () {
+      var left = Math.ceil((cooldownUntil - Date.now()) / 1000);
+      if (left <= 0) { stopCooldown(); return; }
+      statusEl.textContent = reason + " Nächste Frage in " + left + " s.";
+    };
+    tick();
+    cooldownTimer = setInterval(tick, 1000);
+  }
+
+  questionEl.addEventListener("input", function () {
+    counterEl.textContent = questionEl.value.length + " / 500";
+  });
+
+  askBtn.addEventListener("click", async function () {
+    if (inFlight || Date.now() < cooldownUntil) return;
+    var question = questionEl.value.trim();
+    if (!question) {
+      statusEl.textContent = "Bitte eine Frage eingeben.";
+      return;
+    }
+
+    inFlight = true;
+    askBtn.disabled = true;
+    statusEl.textContent = "Antwort läuft … Das lokale Modell braucht dafür meist einige Sekunden.";
+
+    var response = null;
+    var payload = null;
+    try {
+      response = await fetch("/api/jarvis/ask", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question: question })
+      });
+      try { payload = await response.json(); } catch (e) { payload = null; }
+    } catch (e) {
+      inFlight = false;
+      askBtn.disabled = false;
+      statusEl.textContent = "Anfrage fehlgeschlagen – läuft der Router noch?";
+      return;
+    }
+    inFlight = false;
+
+    if (!payload) {
+      askBtn.disabled = false;
+      statusEl.textContent = "Unlesbare Antwort vom Server.";
+      return;
+    }
+
+    if (payload.error) {
+      showTransportError(payload.error.code, payload.error.message);
+      askBtn.disabled = false;
+      statusEl.textContent = "Abgelehnt.";
+      return;
+    }
+
+    render(payload);
+
+    // 429 is the route's own limiter, not a failure. Both it and a normal
+    // answer consume the same 1-per-60s budget, so both start the countdown.
+    if (response.status === 429) {
+      startCooldown(COOLDOWN_SECONDS, "Limit erreicht: eine Anfrage pro 60 Sekunden.");
+    } else {
+      startCooldown(COOLDOWN_SECONDS, "Beantwortet.");
+    }
+  });
+})();
+</script>
+</body>
+</html>
