@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node orchestrator/server.js",
     "test": "node scripts/run-tests.js",
-    "rag:reindex": "node scripts/rag-reindex.js"
+    "rag:reindex": "node scripts/rag-reindex.js",
+    "rag:quality": "node scripts/rag-quality-eval.js"
   }
 }

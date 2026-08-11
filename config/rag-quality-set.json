@@ -1,0 +1,125 @@
+{
+  "schemaVersion": "1.0",
+  "_readme": [
+    "Measurement input for `npm run rag:quality`. Never read by the server, the indexer or the knowledge endpoint.",
+    "Each case names the ONE document that should answer it. Questions are worded so that exactly one allowlisted document can answer them - a question two documents could legitimately answer measures the question set, not the retrieval.",
+    "expectedDoc: null marks a negative case. Those must return no match at all; they exist so that lowering the similarity threshold cannot silently buy hit rate with false matches.",
+    "Every expectedDoc must be present in config/rag-allowlist.json - the loader enforces this so a stale question set fails loudly instead of looking like a retrieval regression."
+  ],
+  "cases": [
+    {
+      "id": "Q01",
+      "question": "Welche Rolle hat der AI-Router laut der Architekturentscheidung zu Rollen, Verantwortlichkeiten und Grenzen?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-001-Rollen-Verantwortlichkeiten-Grenzen.md"
+    },
+    {
+      "id": "Q02",
+      "question": "Was ist eine Klasse-A-Entscheidung und wo wird sie festgehalten?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-001-Rollen-Verantwortlichkeiten-Grenzen.md"
+    },
+    {
+      "id": "Q03",
+      "question": "In welche Richtung fließen Entscheidungen und in welche Richtung fließen technische Zustände?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-001-Rollen-Verantwortlichkeiten-Grenzen.md"
+    },
+    {
+      "id": "Q04",
+      "question": "Welche Schreibstufen gelten für KI-Agenten und was bedeutet Level 2 mit externer Wirkung?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-002-KI-Agenten-Regeln-und-Schreibrechte.md"
+    },
+    {
+      "id": "Q05",
+      "question": "Wie sieht das verbindliche Freigabeformat aus, bevor ein Agent eine Aktion mit externer Wirkung ausführt?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-002-KI-Agenten-Regeln-und-Schreibrechte.md"
+    },
+    {
+      "id": "Q06",
+      "question": "Welche Informationsklassen unterscheidet die Entscheidung zu Dokumentation und Synchronisation?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-003-Dokumentations-Synchronisations-und-Statusregeln.md"
+    },
+    {
+      "id": "Q07",
+      "question": "Welche Aktualitätsstatus gibt es für eine dauerhaft dokumentierte Information und wann gilt sie als veraltet?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-003-Dokumentations-Synchronisations-und-Statusregeln.md"
+    },
+    {
+      "id": "Q08",
+      "question": "Welche Komponente ist der einzige kontrollierte Schreibpfad zum Google Sheet der KI-Projektsteuerung?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md"
+    },
+    {
+      "id": "Q09",
+      "question": "Widerspricht das Bearbeiten der Projektagenda im Command Center dessen read-only-Rolle?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md"
+    },
+    {
+      "id": "Q10",
+      "question": "Wie ist das Vault FELIX_SYSTEM in Ordner gegliedert und wofür ist welcher Ordner gedacht?",
+      "expectedDoc": "00_System/FELIX_SYSTEM_Architektur_Index.md"
+    },
+    {
+      "id": "Q11",
+      "question": "Welche größeren offenen Aufgaben und Meilensteine hat das Projekt AI-Router?",
+      "expectedDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md"
+    },
+    {
+      "id": "Q12",
+      "question": "Welche Umgebungen gibt es für den AI-Router und wo laufen sie?",
+      "expectedDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md"
+    },
+    {
+      "id": "Q13",
+      "question": "Welche wichtigen Commits und Releases sind für das Felix-Command-Center dokumentiert?",
+      "expectedDoc": "10_Apps/01_Aktive-Projekte/Felix-Command-Center.md"
+    },
+    {
+      "id": "Q14",
+      "question": "Welche Ausbildung absolviert Felix und welche Lizenzen hat er bereits erworben?",
+      "expectedDoc": "90_System/Profil.md"
+    },
+    {
+      "id": "Q15",
+      "question": "Welche Ziele hat Felix für das Jahr 2026 formuliert?",
+      "expectedDoc": "90_System/Profil.md"
+    },
+    {
+      "id": "Q16",
+      "question": "Welches Projekt ist aktuell als Fokusprojekt gesetzt?",
+      "expectedDoc": "10_Apps/00_Projektsteuerung.md"
+    },
+    {
+      "id": "Q17",
+      "question": "Welche Projekte sind derzeit pausiert und welche stehen zur Prüfung an?",
+      "expectedDoc": "10_Apps/00_Projektsteuerung.md"
+    },
+    {
+      "id": "Q18",
+      "question": "Wie ist die Arbeitsteilung zwischen den verschiedenen KI-Werkzeugen geregelt?",
+      "expectedDoc": "90_System/KI-Router-Regeln.md"
+    },
+    {
+      "id": "N01",
+      "question": "Wie lautet das Rezept für Spaghetti Carbonara?",
+      "expectedDoc": null,
+      "note": "Klar außerhalb der Allowlist."
+    },
+    {
+      "id": "N02",
+      "question": "Wie wird das Wetter morgen in Berlin?",
+      "expectedDoc": null,
+      "note": "Klar außerhalb der Allowlist."
+    },
+    {
+      "id": "N03",
+      "question": "Welche Programmiersprache eignet sich am besten für Spieleentwicklung?",
+      "expectedDoc": null,
+      "note": "Technisch klingend, aber in keinem freigegebenen Dokument behandelt."
+    },
+    {
+      "id": "N04",
+      "question": "Wie viel habe ich im letzten Monat für Lebensmittel ausgegeben?",
+      "expectedDoc": null,
+      "note": "Finanzthema. 60_Finanzen/ steht auf der harten Denylist und darf auch bei niedriger Schwelle nie treffen."
+    }
+  ]
+}

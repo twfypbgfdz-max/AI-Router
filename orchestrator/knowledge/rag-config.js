@@ -29,6 +29,15 @@ export const RAG_ALLOWLIST_FILE = process.env.AI_ROUTER_RAG_ALLOWLIST_FILE
   ? path.resolve(process.env.AI_ROUTER_RAG_ALLOWLIST_FILE)
   : path.join(REPOSITORY_ROOT, "config", "rag-allowlist.json");
 
+// Measurement-only input for `npm run rag:quality`. Never read by the
+// server, the indexer or the knowledge endpoint - nothing in the request
+// path depends on this file existing.
+export const RAG_QUALITY_SET_FILE = process.env.AI_ROUTER_RAG_QUALITY_SET_FILE
+  ? path.resolve(process.env.AI_ROUTER_RAG_QUALITY_SET_FILE)
+  : path.join(REPOSITORY_ROOT, "config", "rag-quality-set.json");
+
+export const RAG_QUALITY_MAX_CASES = 200;
+
 export const RAG_MAX_ALLOWLIST_ENTRIES = 100;
 export const RAG_MAX_DOCUMENT_BYTES = 200_000;
 export const RAG_MAX_CHUNK_CHARS = 2_000;

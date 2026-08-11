@@ -266,6 +266,34 @@ oder `/api/v1/cc/summary`.
 - Änderungsprüfung erfolgt über SHA-256 des Dokumentinhalts; `mtime` ist rein
   ergänzendes Metadatum und begründet allein weder Re-Index noch Skip.
 
+### Retrieval-Qualität messen: `npm run rag:quality`
+
+Reproduzierbare Messung, **wie gut der bestehende Index das richtige Dokument
+findet**. Strikt read-only: kein Re-Index, kein Vault-Zugriff, keine
+Schreiboperation außer stdout. Braucht ein laufendes Ollama und einen
+vorhandenen Index und ist deshalb **nicht** Teil von `npm test`; die reine
+Bewertungslogik ist dort über `test/rag-quality-eval.test.js` abgedeckt.
+
+```
+npm run rag:quality
+npm run rag:quality -- --min-similarity=0.50,0.55,0.60,0.65
+npm run rag:quality -- --top-k=5 --json
+```
+
+- **Fragenset:** `config/rag-quality-set.json`. Jeder Fall nennt genau **ein**
+  Dokument, das ihn beantworten soll. `expectedDoc: null` markiert einen
+  **Negativfall** — eine Frage, die die Allowlist bewusst nicht beantworten
+  kann und die deshalb gar keinen Treffer liefern darf. Ohne solche Fälle
+  würde jede Schwellensenkung automatisch „besser" aussehen.
+- Jeder `expectedDoc` muss in `config/rag-allowlist.json` stehen; ein
+  Testfall auf ein entferntes Dokument bricht laut ab, statt als
+  Retrieval-Regression zu erscheinen (offline abgesichert im Test).
+- **Mehrere Schwellen** in einem Lauf vergleichen dieselben Fragen; die
+  Fragen werden dabei nur einmal eingebettet.
+- Gemessen wird ausschließlich der **Retrieval-Schritt**, nicht die
+  Antwortqualität des Modells — Letzteres wäre nicht deterministisch
+  wiederholbar.
+
 ## Command-Center-Wissenskontext (v1)
 
 `POST /api/v1/cc/knowledge` ist ein separater, intern authentifizierter
