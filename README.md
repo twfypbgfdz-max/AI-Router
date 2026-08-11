@@ -336,6 +336,64 @@ beantwortet.
   (`npm run rag:reindex` bleibt ein separater, manueller Schritt) und öffnet
   FELIX_SYSTEM nie direkt.
 
+## Generischer Wissenskontext (read-only, mehrere Consumer)
+
+`POST /api/v1/knowledge` ist der **generische, read-only Knowledge-Pfad**. Er
+beantwortet eine Frage ausschließlich aus dem bereits gebauten lokalen
+RAG-Index und existiert, damit ein zweiter Consumer (die lokale
+Jarvis-Dialogoberfläche) nicht den Command-Center-Vertrag mitbenutzen muss.
+
+**Verhältnis zu `cc/knowledge`:** Beide Routen benutzen dieselbe Engine
+(`orchestrator/knowledge-service.js`). `POST /api/v1/cc/knowledge` bleibt
+unverändert, unmigriert und voll funktionsfähig — es ist weiterhin die
+einzige Route, die einen Command-Center-Echtzeitkontext entgegennimmt.
+
+| | `cc/knowledge` | `v1/knowledge` |
+|---|---|---|
+| Token | `AI_ROUTER_CC_TOKEN` | `AI_ROUTER_KNOWLEDGE_TOKEN` |
+| Feld `context` | ja | **nein** (wird abgewiesen) |
+| `state: "ok"` erreichbar | ja (mit Kontext) | nein — ohne Kontext immer `partial` |
+| Antwortengine | `knowledge-service.js` | dieselbe |
+| Rate-Limit | 1 Anfrage / 60 s, Concurrency 1 | eigener, getrennter Zähler mit denselben Werten |
+
+- **Eigenes Token, absichtlich getrennt.** Wer `AI_ROUTER_KNOWLEDGE_TOKEN`
+  besitzt, kommt damit **nicht** an `/api/v1/cc/*` — also nicht an Summary,
+  Snapshot, Status oder den zustandsändernden Reindex. „Darf das Vault
+  fragen" bleibt strikt schwächer als „ist das Command Center". Der Wert
+  steht wie die anderen Tokens **ausschließlich** in einer
+  Windows-Benutzer-Umgebungsvariablen, nie in Repo, Doku oder Vault.
+- **Read-only by construction:** kein Reindex, kein Vault-Schreibzugriff,
+  keine Aktion, kein Cloud-Provider. Die Engine pinnt `AI_ROUTER_TEXT_PROVIDER`
+  hart auf `ollama`, unabhängig vom gemeinsamen Provider-Schalter —
+  persönliche Wissensinhalte verlassen den Rechner nicht.
+- **Kein Browserzugriff:** wie bei `cc/knowledge` wird jede Anfrage mit
+  `Origin`-Header abgewiesen. Eine Oberfläche muss über einen serverseitigen
+  Proxy gehen, damit ein Token nie in eine Seite gelangt.
+- **Getrennte Limiter:** jeder Consumer baut seine eigene Service-Instanz und
+  damit seinen eigenen In-Memory-Limiter. Ein Consumer kann das Budget des
+  anderen nicht aufbrauchen.
+
+### Parität prüfen: `npm run knowledge:parity`
+
+Vergleicht beide Routen mit derselben Frage auf dem echten Index gegen das
+echte lokale Modell:
+
+```
+npm run knowledge:parity
+npm run knowledge:parity -- --runs=8 --question="..."
+```
+
+Wichtig zur Interpretation: Das Modell entscheidet selbst, **welche** der
+angebotenen Quellen `K1`–`K3` es zitiert, und diese Auswahl schwankt auch
+bei zwei Läufen auf **derselben** Route. Das Skript trennt das deshalb
+sauber: Es prüft, ob jede Quelle auf beiden Routen denselben
+Similarity-Wert auf volle Gleitkomma-Genauigkeit trägt (Retrieval ist
+deterministisch — eine Abweichung dort ist ein echter Unterschied), und
+wertet abweichende Zitatmengen nur dann als Rauschen, wenn sie auch
+innerhalb einer Route auftreten. Der **deterministische** Nachweis der
+Gleichheit ist `test/knowledge-parity.test.js`: dort ist der Adapter fixiert
+und die Payloads müssen byte-identisch sein.
+
 ### Lokaler post-commit-Hook: Contract-Test-Erinnerung
 
 Der Contract-Test `test/recommendation-contract.test.js` im Repo
@@ -383,6 +441,7 @@ Dauerhaft gesetzt sind (Stand 11.08.2026, im User-Scope, nicht Machine-Scope):
 | `AI_ROUTER_VAULT_ROOT` | read-only Pfad zum FELIX_SYSTEM-Checkout |
 | `AI_ROUTER_INTERNAL_TOKEN` | Secret für `/api/router/respond` |
 | `AI_ROUTER_CC_TOKEN` | Secret für alle `/api/v1/cc/*`-Endpunkte |
+| `AI_ROUTER_KNOWLEDGE_TOKEN` | Secret für den generischen, read-only Pfad `POST /api/v1/knowledge`. Bewusst **getrennt** von `AI_ROUTER_CC_TOKEN`: gewährt ausschließlich Fragen an den lokalen Index, keinen Zugriff auf `/api/v1/cc/*` |
 
 **Die beiden Tokenwerte stehen bewusst nirgends in diesem Repository, in der
 Dokumentation oder im Vault** — hier wird nur festgehalten, *dass* und *wo* sie

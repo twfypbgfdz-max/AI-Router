@@ -24,6 +24,7 @@ import { handleTextResponseRequest, handleProjectStatusRequest, handleGitChangeR
 import { handleCcStatusRequest } from "./cc-status-handler.js";
 import { handleCcSummaryRequest } from "./cc-summary-handler.js";
 import { handleCcKnowledgeRequest } from "./cc-knowledge-handler.js";
+import { handleKnowledgeRequest } from "./knowledge-handler.js";
 import { handleCcSnapshotRequest } from "./cc-snapshot-handler.js";
 import { handleCcReindexRequest } from "./cc-reindex-handler.js";
 import { handleRouterConsoleRespond } from "./router-console-proxy.js";
@@ -72,7 +73,7 @@ function safeFilterValue(value, allowed, maximum = 40) {
 
 function isoOrNull(value) { const parsed = Date.parse(value); return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null; }
 
-export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, ccKnowledgeHandler = handleCcKnowledgeRequest, ccSnapshotHandler = handleCcSnapshotRequest, ccReindexHandler = handleCcReindexRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, now = Date.now } = {}) {
+export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, ccKnowledgeHandler = handleCcKnowledgeRequest, knowledgeHandler = handleKnowledgeRequest, ccSnapshotHandler = handleCcSnapshotRequest, ccReindexHandler = handleCcReindexRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, now = Date.now } = {}) {
   const serverStartedAt = Date.now();
   const safeLog = (event, safeMetadata = {}) => {
     try { Promise.resolve(eventLogger?.log?.({ event, safeMetadata })).catch(() => {}); } catch { /* logging is non-critical */ }
@@ -105,6 +106,11 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
     if (pathname === "/api/v1/cc/summary") return ccSummaryHandler(request, response);
 
     if (pathname === "/api/v1/cc/knowledge") return ccKnowledgeHandler(request, response);
+
+    // Generic, read-only knowledge route. Same answering engine as the CC
+    // route above, but its own token and its own rate budget - the CC
+    // contract is deliberately left unmigrated and unchanged.
+    if (pathname === "/api/v1/knowledge") return knowledgeHandler(request, response);
 
     if (pathname === "/api/v1/cc/snapshot") return ccSnapshotHandler(request, response);
 

@@ -37,10 +37,10 @@ const TRANSPORT_SAFE_MESSAGES = Object.freeze({
   INTERNAL_ERROR: "The knowledge request could not be completed."
 });
 
-export function buildCcKnowledgeTransportFailure(error) {
+export function buildCcKnowledgeTransportFailure(error, { schemaVersion = CC_KNOWLEDGE_SCHEMA_VERSION } = {}) {
   const code = TRANSPORT_ERROR_CODES.has(error?.code) ? error.code : "INTERNAL_ERROR";
   return {
-    schemaVersion: CC_KNOWLEDGE_SCHEMA_VERSION,
+    schemaVersion,
     error: { code, message: TRANSPORT_SAFE_MESSAGES[code] }
   };
 }
@@ -67,6 +67,11 @@ function closedSource(source) {
 // answer is non-null exactly when state is "ok" or "partial", and null
 // exactly when state is "unavailable" - enforced here, not left to the
 // caller to get right.
+// schemaVersion is a parameter rather than a constant because this envelope
+// is now shared by two contracts: the Command Center's cc/knowledge and the
+// generic /api/v1/knowledge path. They start at the same value but are
+// separate contracts and may version independently later - at which point
+// this builder splits rather than growing a conditional.
 export function buildCcKnowledgeObservation({
   state,
   answer = null,
@@ -74,7 +79,8 @@ export function buildCcKnowledgeObservation({
   knowledgeState,
   sources = [],
   warnings = [],
-  now = () => new Date()
+  now = () => new Date(),
+  schemaVersion = CC_KNOWLEDGE_SCHEMA_VERSION
 } = {}) {
   const isUnavailable = state === "unavailable";
   if (isUnavailable && answer !== null) {
@@ -87,7 +93,7 @@ export function buildCcKnowledgeObservation({
   const closedWarnings = Object.freeze(warnings.slice(0, CC_KNOWLEDGE_MAX_WARNINGS));
 
   return Object.freeze({
-    schemaVersion: CC_KNOWLEDGE_SCHEMA_VERSION,
+    schemaVersion,
     state,
     answer,
     systemContextState,
