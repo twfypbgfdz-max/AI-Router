@@ -79,10 +79,62 @@ test("a prompt-injection-shaped snippet is inserted verbatim as data, not specia
   assert.ok(injectionIndex > knowledgeBlockStart && injectionIndex < rulesBlockStart);
 });
 
-test("the fixed answer rules mention [K#] sourcing and forbid claiming actions", () => {
-  const text = buildCcKnowledgePromptText({ question: "Q", context: null, results: [] });
+test("with at least one source, the answer rules mention [K#] sourcing and forbid claiming actions", () => {
+  const text = buildCcKnowledgePromptText({ question: "Q", context: null, results: [result()] });
   assert.ok(text.includes("[K1]"));
   assert.ok(/bereits ausgef/i.test(text));
+});
+
+test("action-claim and path/index rules stay present regardless of source count", () => {
+  for (const results of [[], [result()], [result(), result({ sourceDoc: "b.md" })]]) {
+    const text = buildCcKnowledgePromptText({ question: "Q", context: null, results });
+    assert.ok(/bereits ausgef/i.test(text), `results.length=${results.length}`);
+    assert.ok(text.includes("Indexinterna"), `results.length=${results.length}`);
+  }
+});
+
+// The regression this fix targets: a hard-coded "[K1], [K2] oder [K3]" rule
+// invited the model to cite a source that was never offered whenever fewer
+// than three results were retrieved. Observed 2026-08-12 against the real
+// index and model: exactly two DEC-006 sections were retrieved for "Welche
+// Komponente ist der einzige kontrollierte Schreibpfad zum Google Sheet der
+// KI-Projektsteuerung?", and the model twice cited the non-existent [K3],
+// correctly rejected fail-closed by validateCitedSources - but leaving two
+// real questions unanswered for a preventable reason.
+test("REGRESSION 2026-08-12: with exactly two sources, the rules never mention [K3] anywhere", () => {
+  const text = buildCcKnowledgePromptText({
+    question: "Welche Komponente ist der einzige kontrollierte Schreibpfad zum Google Sheet der KI-Projektsteuerung?",
+    context: null,
+    results: [result({ sourceDoc: "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md", section: "1. Rollen" }),
+      result({ sourceDoc: "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md", section: "2. Single-Source-of-Truth-Regel" })]
+  });
+  assert.ok(!text.includes("[K3]"), "the model must never be offered a citation id it was not actually given a source for");
+  const rulesBlock = text.slice(text.indexOf("ANTWORTREGELN"));
+  assert.ok(rulesBlock.includes("[K1] oder [K2]"), "the rule must name exactly the two ids that were actually offered");
+});
+
+test("with exactly one source, the rule names only [K1] and never offers [K2] or [K3]", () => {
+  const text = buildCcKnowledgePromptText({ question: "Q", context: null, results: [result()] });
+  const rulesBlock = text.slice(text.indexOf("ANTWORTREGELN"));
+  assert.ok(/Kennung \[K1\]\./.test(rulesBlock), "a single source must not be joined with 'oder'");
+  assert.ok(!text.includes("[K2]"));
+  assert.ok(!text.includes("[K3]"));
+});
+
+test("with exactly three sources, the rule still lists all three exactly as before", () => {
+  const text = buildCcKnowledgePromptText({
+    question: "Q", context: null,
+    results: [result({ sourceDoc: "a.md" }), result({ sourceDoc: "b.md" }), result({ sourceDoc: "c.md" })]
+  });
+  const rulesBlock = text.slice(text.indexOf("ANTWORTREGELN"));
+  assert.ok(rulesBlock.includes("[K1], [K2] oder [K3]"));
+});
+
+test("with zero sources, the answer rules name no citation id at all", () => {
+  const text = buildCcKnowledgePromptText({ question: "Q", context: null, results: [] });
+  const rulesBlock = text.slice(text.indexOf("ANTWORTREGELN"));
+  assert.ok(!/\[K\d\]/.test(rulesBlock), "no K-id may appear when nothing was retrieved");
+  assert.ok(/keine Kennung/.test(rulesBlock));
 });
 
 test("no result carries a missing section without a placeholder", () => {
