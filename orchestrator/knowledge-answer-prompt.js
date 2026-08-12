@@ -87,9 +87,9 @@ function joinGerman(items) {
 }
 
 // resultsCount is always the exact number of [K#] entries buildKnowledgeBlock
-// actually rendered above this rule - never CC_KNOWLEDGE_MAX_SOURCES, never
-// a caller-supplied value, so the rule can never name a K-id the model was
-// not actually shown.
+// actually rendered above this rule - never KNOWLEDGE_ANSWER_MAX_SOURCES,
+// never a caller-supplied value, so the rule can never name a K-id the
+// model was not actually shown.
 function citationRuleText(resultsCount) {
   if (resultsCount <= 0) {
     return "Im Abschnitt LANGFRISTIGES SYSTEMWISSEN steht keine Fundstelle. Zitiere keine Kennung [K#] - es gibt keine.";
@@ -103,7 +103,7 @@ function buildAnswerRules(resultsCount) {
   return rules.map((rule, index) => `${index + 1}. ${rule}`).join("\n");
 }
 
-export function buildCcKnowledgePromptText({ question, context, results }) {
+export function buildKnowledgeAnswerPromptText({ question, context, results }) {
   const resultsCount = Array.isArray(results) ? results.length : 0;
   return [
     "AUFGABE",

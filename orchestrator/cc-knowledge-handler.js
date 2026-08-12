@@ -3,15 +3,16 @@ import { authenticateInternalRequest } from "./internal-auth.js";
 import { CcKnowledgeError } from "./cc-knowledge-error.js";
 import { normalizeCcKnowledgeRequest } from "./cc-knowledge-contract.js";
 import {
-  buildCcKnowledgeTransportFailure,
-  ccKnowledgeObservationHttpStatus,
-  ccKnowledgeTransportHttpStatus
-} from "./cc-knowledge-response.js";
+  buildKnowledgeAnswerTransportFailure,
+  knowledgeAnswerObservationHttpStatus,
+  knowledgeAnswerTransportHttpStatus
+} from "./knowledge-answer-response.js";
 import {
   CC_KNOWLEDGE_ABSOLUTE_TIMEOUT_MS,
   CC_KNOWLEDGE_MAX_CONCURRENT_REQUESTS,
   CC_KNOWLEDGE_MAX_REQUEST_BYTES,
-  CC_KNOWLEDGE_MAX_REQUESTS_PER_WINDOW
+  CC_KNOWLEDGE_MAX_REQUESTS_PER_WINDOW,
+  CC_KNOWLEDGE_SCHEMA_VERSION
 } from "./cc-knowledge-config.js";
 import { createKnowledgeService, knowledgeServiceInternals } from "./knowledge-service.js";
 import { logger as defaultLogger } from "./logger.js";
@@ -72,21 +73,22 @@ export function createCcKnowledgeHandler({
     totalTimeoutMs,
     maxConcurrentRequests: CC_KNOWLEDGE_MAX_CONCURRENT_REQUESTS,
     maxRequestsPerWindow: CC_KNOWLEDGE_MAX_REQUESTS_PER_WINDOW,
+    schemaVersion: CC_KNOWLEDGE_SCHEMA_VERSION,
     requestIdPrefix: "cc-knowledge"
   });
 
   return async function handleCcKnowledge(request, response) {
     setHeaders(response);
     if (request.headers?.origin) {
-      const payload = buildCcKnowledgeTransportFailure({ code: "ORIGIN_NOT_ALLOWED" });
+      const payload = buildKnowledgeAnswerTransportFailure({ code: "ORIGIN_NOT_ALLOWED" });
       safeLog(eventLogger, "cc_knowledge_rejected", { safeMetadata: { errorCode: "ORIGIN_NOT_ALLOWED" } });
-      return sendJson(response, ccKnowledgeTransportHttpStatus(payload), payload);
+      return sendJson(response, knowledgeAnswerTransportHttpStatus(payload), payload);
     }
     if (request.method !== "POST") {
       response.setHeader("allow", "POST");
-      const payload = buildCcKnowledgeTransportFailure({ code: "METHOD_NOT_ALLOWED" });
+      const payload = buildKnowledgeAnswerTransportFailure({ code: "METHOD_NOT_ALLOWED" });
       safeLog(eventLogger, "cc_knowledge_rejected", { safeMetadata: { errorCode: "METHOD_NOT_ALLOWED" } });
-      return sendJson(response, ccKnowledgeTransportHttpStatus(payload), payload);
+      return sendJson(response, knowledgeAnswerTransportHttpStatus(payload), payload);
     }
     try {
       authenticateInternalRequest(request.headers?.authorization, {
@@ -94,14 +96,14 @@ export function createCcKnowledgeHandler({
         timingSafeEqualFn
       });
     } catch (authError) {
-      const payload = buildCcKnowledgeTransportFailure(authError);
+      const payload = buildKnowledgeAnswerTransportFailure(authError);
       safeLog(eventLogger, "cc_knowledge_rejected", { safeMetadata: { errorCode: payload.error.code } });
-      return sendJson(response, ccKnowledgeTransportHttpStatus(payload), payload);
+      return sendJson(response, knowledgeAnswerTransportHttpStatus(payload), payload);
     }
     if (!JSON_CONTENT_TYPE.test(String(request.headers?.["content-type"] || ""))) {
-      const payload = buildCcKnowledgeTransportFailure(new CcKnowledgeError("VALIDATION_FAILED", "Content-Type must be application/json."));
+      const payload = buildKnowledgeAnswerTransportFailure(new CcKnowledgeError("VALIDATION_FAILED", "Content-Type must be application/json."));
       safeLog(eventLogger, "cc_knowledge_rejected", { safeMetadata: { errorCode: "VALIDATION_FAILED" } });
-      return sendJson(response, ccKnowledgeTransportHttpStatus(payload), payload);
+      return sendJson(response, knowledgeAnswerTransportHttpStatus(payload), payload);
     }
 
     const startedAt = Date.now();
@@ -115,9 +117,9 @@ export function createCcKnowledgeHandler({
         : new CcKnowledgeError("VALIDATION_FAILED", "The knowledge request is invalid.", {
           safeDetails: { reason: requestError?.code === "PAYLOAD_TOO_LARGE" ? "request_too_large" : "invalid_request" }
         });
-      const payload = buildCcKnowledgeTransportFailure(error);
+      const payload = buildKnowledgeAnswerTransportFailure(error);
       safeLog(eventLogger, "cc_knowledge_rejected", { safeMetadata: { errorCode: payload.error.code } });
-      return sendJson(response, ccKnowledgeTransportHttpStatus(payload), payload);
+      return sendJson(response, knowledgeAnswerTransportHttpStatus(payload), payload);
     }
 
     const { payload, safeMetadata } = await answerKnowledgeQuestion({
@@ -130,7 +132,7 @@ export function createCcKnowledgeHandler({
       durationMs: Date.now() - startedAt,
       safeMetadata
     });
-    return sendJson(response, ccKnowledgeObservationHttpStatus(payload.warnings), payload);
+    return sendJson(response, knowledgeAnswerObservationHttpStatus(payload.warnings), payload);
   };
 }
 

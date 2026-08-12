@@ -1,16 +1,17 @@
 import crypto from "node:crypto";
-import { retrieveKnowledge } from "./cc-knowledge-rag-service.js";
-import { buildCcKnowledgePromptText } from "./cc-knowledge-prompt.js";
-import { buildCcKnowledgeObservation } from "./cc-knowledge-response.js";
-import { CC_KNOWLEDGE_MAX_ANSWER_BYTES } from "./cc-knowledge-config.js";
+import { retrieveKnowledge } from "./knowledge-answer-rag-service.js";
+import { buildKnowledgeAnswerPromptText } from "./knowledge-answer-prompt.js";
+import { buildKnowledgeAnswerObservation } from "./knowledge-answer-response.js";
+import { KNOWLEDGE_ANSWER_MAX_BYTES } from "./knowledge-answer-config.js";
 import { createTextResponseHandler } from "./text-response-handler.js";
 
 // The generic, read-only knowledge engine. Everything that turns an
 // already-validated question (plus an optional caller-supplied system
 // context) into a closed observation payload lives here, and nothing else:
 // no HTTP, no authentication, no request parsing, no route-specific
-// logging. This module was extracted verbatim out of cc-knowledge-handler.js
-// so that a second consumer (the local Jarvis dialogue surface) can reuse
+// logging. This module was extracted verbatim out of what was then
+// cc-knowledge-handler.js (2026-08-11) so that a second consumer (the local
+// Jarvis dialogue surface) can reuse
 // the exact same answering path instead of the Command Center contract
 // being quietly repurposed for it.
 //
@@ -146,7 +147,7 @@ export function createKnowledgeService({
   maxConcurrentRequests,
   maxRequestsPerWindow,
   totalTimeoutMs,
-  maxAnswerBytes = CC_KNOWLEDGE_MAX_ANSWER_BYTES,
+  maxAnswerBytes = KNOWLEDGE_ANSWER_MAX_BYTES,
   schemaVersion,
   requestIdPrefix = "knowledge",
   // Test-only seam: production never overrides this.
@@ -198,19 +199,19 @@ export function createKnowledgeService({
     // would mean either general knowledge (forbidden - no free chat) or
     // fabrication. No provider call is made.
     if (systemContextState === "unavailable" && results.length === 0) {
-      return finish(buildCcKnowledgeObservation({
+      return finish(buildKnowledgeAnswerObservation({
         state: "unavailable", systemContextState, knowledgeState, warnings: ["no_context_no_knowledge"], now, schemaVersion
       }));
     }
 
-    const promptText = buildCcKnowledgePromptText({ question, context, results });
+    const promptText = buildKnowledgeAnswerPromptText({ question, context, results });
     const internalRequest = buildInternalRequest(promptText, scopedEnv.AI_ROUTER_INTERNAL_TOKEN, requestIdPrefix);
     const internalResponse = captureResponse();
     const generationPayload = await textResponseHandler(internalRequest, internalResponse);
 
     if (generationPayload.status !== "answered") {
       const warning = mapGenerationFailureWarning(generationPayload);
-      return finish(buildCcKnowledgeObservation({
+      return finish(buildKnowledgeAnswerObservation({
         state: "unavailable", systemContextState, knowledgeState, warnings: [warning], now, schemaVersion
       }), { errorCode: warning });
     }
@@ -223,23 +224,23 @@ export function createKnowledgeService({
     const requireAtLeastOne = systemContextState === "unavailable" && results.length > 0;
     const sourceValidation = validateCitedSources(citedSources, results, { requireAtLeastOne });
     if (!sourceValidation.ok) {
-      return finish(buildCcKnowledgeObservation({
+      return finish(buildKnowledgeAnswerObservation({
         state: "unavailable", systemContextState, knowledgeState, warnings: ["model_source_validation_failed"], now, schemaVersion
       }), { errorCode: sourceValidation.internalReason });
     }
 
     if (Buffer.byteLength(rawAnswer, "utf8") > maxAnswerBytes) {
-      return finish(buildCcKnowledgeObservation({
+      return finish(buildKnowledgeAnswerObservation({
         state: "unavailable", systemContextState, knowledgeState, warnings: ["model_answer_too_large"], now, schemaVersion
       }));
     }
     if (containsActionClaim(rawAnswer)) {
-      return finish(buildCcKnowledgeObservation({
+      return finish(buildKnowledgeAnswerObservation({
         state: "unavailable", systemContextState, knowledgeState, warnings: ["model_action_claim_blocked"], now, schemaVersion
       }));
     }
     if (TOOL_CALL_TEXT_PATTERN.test(rawAnswer)) {
-      return finish(buildCcKnowledgeObservation({
+      return finish(buildKnowledgeAnswerObservation({
         state: "unavailable", systemContextState, knowledgeState, warnings: ["model_tool_call_output_blocked"], now, schemaVersion
       }));
     }
@@ -259,7 +260,7 @@ export function createKnowledgeService({
     // every case in the state matrix without a long if/else chain.
     const state = systemContextState === "available" && knowledgeState === "available" ? "ok" : "partial";
 
-    return finish(buildCcKnowledgeObservation({
+    return finish(buildKnowledgeAnswerObservation({
       state, answer: rawAnswer, systemContextState, knowledgeState, sources: sourceValidation.sources, warnings, now, schemaVersion
     }));
   };

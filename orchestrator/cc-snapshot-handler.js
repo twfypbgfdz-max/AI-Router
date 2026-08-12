@@ -5,7 +5,7 @@ import { CcSnapshotError } from "./cc-snapshot-error.js";
 import { normalizeCcSnapshotRequest } from "./cc-snapshot-contract.js";
 import { rankSnapshot } from "./cc-snapshot-ranking.js";
 import { buildCcSnapshotPromptText } from "./cc-snapshot-prompt.js";
-import { retrieveKnowledge } from "./cc-knowledge-rag-service.js";
+import { retrieveKnowledge } from "./knowledge-answer-rag-service.js";
 import {
   buildCcSnapshotResult,
   buildCcSnapshotTransportFailure,

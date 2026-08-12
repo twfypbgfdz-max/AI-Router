@@ -1,7 +1,7 @@
 import { CC_SNAPSHOT_MAX_KNOWLEDGE_HITS, CC_SNAPSHOT_SCHEMA_VERSION } from "./cc-snapshot-config.js";
 
 // Transport/auth/contract-layer failures (the request never reached ranking
-// at all): same closed shape as cc-summary-response.js/cc-knowledge-response.js.
+// at all): same closed shape as cc-summary-response.js/knowledge-answer-response.js.
 // VALIDATION_FAILED/SECURITY_BLOCKED are transport failures here too, same
 // reasoning as cc-knowledge: ranking cannot even be computed from an invalid
 // payload, so there is no partial "observation" to return.
@@ -46,7 +46,7 @@ export function ccSnapshotTransportHttpStatus(payload) {
 const KNOWLEDGE_HIT_FIELDS = ["sourceDoc", "section", "docStatus", "docVersion", "similarity", "freshness"];
 
 // Rebuilds each hit from only the fixed field list - same defensive close
-// cc-knowledge-response.js applies to its `sources`, reused verbatim: the
+// knowledge-answer-response.js applies to its `sources`, reused verbatim: the
 // results handed in already come from the server's own validated RAG search
 // (never from model text), but only these six fields can ever leave the
 // process regardless of what shape the caller passed in.

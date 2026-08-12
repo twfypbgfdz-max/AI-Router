@@ -1,8 +1,13 @@
-import {
-  CC_KNOWLEDGE_MAX_SOURCES,
-  CC_KNOWLEDGE_MAX_WARNINGS,
-  CC_KNOWLEDGE_SCHEMA_VERSION
-} from "./cc-knowledge-config.js";
+import { KNOWLEDGE_ANSWER_MAX_SOURCES, KNOWLEDGE_ANSWER_MAX_WARNINGS } from "./knowledge-answer-config.js";
+
+// This module deliberately imports NO route-specific config (neither
+// cc-knowledge-config.js nor knowledge-config.js): it is the shared
+// envelope builder for both cc/knowledge and v1/knowledge, and each
+// route's handler always passes its own contract's schemaVersion
+// explicitly (see the schemaVersion parameter below). The literal here is
+// only a defensive fallback for a caller that omits it entirely - every
+// production caller does not rely on it.
+const DEFAULT_KNOWLEDGE_ANSWER_SCHEMA_VERSION = "1.0";
 
 // Transport/auth/contract-layer failures (the request never reached the
 // knowledge-answering logic at all): a small, separate, closed shape - same
@@ -37,7 +42,7 @@ const TRANSPORT_SAFE_MESSAGES = Object.freeze({
   INTERNAL_ERROR: "The knowledge request could not be completed."
 });
 
-export function buildCcKnowledgeTransportFailure(error, { schemaVersion = CC_KNOWLEDGE_SCHEMA_VERSION } = {}) {
+export function buildKnowledgeAnswerTransportFailure(error, { schemaVersion = DEFAULT_KNOWLEDGE_ANSWER_SCHEMA_VERSION } = {}) {
   const code = TRANSPORT_ERROR_CODES.has(error?.code) ? error.code : "INTERNAL_ERROR";
   return {
     schemaVersion,
@@ -45,7 +50,7 @@ export function buildCcKnowledgeTransportFailure(error, { schemaVersion = CC_KNO
   };
 }
 
-export function ccKnowledgeTransportHttpStatus(payload) {
+export function knowledgeAnswerTransportHttpStatus(payload) {
   return TRANSPORT_HTTP_STATUS[payload?.error?.code] || 500;
 }
 
@@ -68,11 +73,11 @@ function closedSource(source) {
 // exactly when state is "unavailable" - enforced here, not left to the
 // caller to get right.
 // schemaVersion is a parameter rather than a constant because this envelope
-// is now shared by two contracts: the Command Center's cc/knowledge and the
+// is shared by two contracts: the Command Center's cc/knowledge and the
 // generic /api/v1/knowledge path. They start at the same value but are
 // separate contracts and may version independently later - at which point
 // this builder splits rather than growing a conditional.
-export function buildCcKnowledgeObservation({
+export function buildKnowledgeAnswerObservation({
   state,
   answer = null,
   systemContextState,
@@ -80,7 +85,7 @@ export function buildCcKnowledgeObservation({
   sources = [],
   warnings = [],
   now = () => new Date(),
-  schemaVersion = CC_KNOWLEDGE_SCHEMA_VERSION
+  schemaVersion = DEFAULT_KNOWLEDGE_ANSWER_SCHEMA_VERSION
 } = {}) {
   const isUnavailable = state === "unavailable";
   if (isUnavailable && answer !== null) {
@@ -89,8 +94,8 @@ export function buildCcKnowledgeObservation({
   if (!isUnavailable && (typeof answer !== "string" || !answer.trim())) {
     throw new Error("Internal error: a produced knowledge response must carry a non-empty answer.");
   }
-  const closedSources = sources.slice(0, CC_KNOWLEDGE_MAX_SOURCES).map(closedSource);
-  const closedWarnings = Object.freeze(warnings.slice(0, CC_KNOWLEDGE_MAX_WARNINGS));
+  const closedSources = sources.slice(0, KNOWLEDGE_ANSWER_MAX_SOURCES).map(closedSource);
+  const closedWarnings = Object.freeze(warnings.slice(0, KNOWLEDGE_ANSWER_MAX_WARNINGS));
 
   return Object.freeze({
     schemaVersion,
@@ -112,7 +117,7 @@ export function buildCcKnowledgeObservation({
 // real 429 for well-behaved retry clients, signaled here via warnings
 // rather than by adding a fourth state value to the fixed ok/partial/
 // unavailable enum.
-export function ccKnowledgeObservationHttpStatus(warnings = []) {
+export function knowledgeAnswerObservationHttpStatus(warnings = []) {
   if (warnings.includes("rate_limited") || warnings.includes("concurrency_limited")) return 429;
   return 200;
 }

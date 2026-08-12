@@ -73,12 +73,12 @@ test("a legitimate governance answer with Commit/Push/Shell terms is not blocked
 
 test("an answer over the 4 KiB limit is hard blocked (via the shared pipeline's tighter output-token ceiling)", async () => {
   // The shared text-response pipeline already caps every answer at ~2400
-  // bytes (TEXT_RESPONSE_MAX_OUTPUT_TOKENS=800), tighter than this
-  // endpoint's own 4 KiB constant - so an oversized answer is rejected
-  // earlier, as PROVIDER_RESPONSE_INVALID/output_limit_exceeded, before
-  // CC_KNOWLEDGE_MAX_ANSWER_BYTES is ever evaluated. Either way, the answer
-  // never reaches the caller - which is the actual safety property under
-  // test, not which specific warning code fires.
+  // bytes (TEXT_RESPONSE_MAX_OUTPUT_TOKENS=800), tighter than the shared
+  // knowledge engine's own 4 KiB constant - so an oversized answer is
+  // rejected earlier, as PROVIDER_RESPONSE_INVALID/output_limit_exceeded,
+  // before KNOWLEDGE_ANSWER_MAX_BYTES is ever evaluated. Either way, the
+  // answer never reaches the caller - which is the actual safety property
+  // under test, not which specific warning code fires.
   const { adapter } = structuredAdapter({ answer: "x".repeat(4200), citedSources: ["K1"] });
   const handler = handlerWith({ adapter });
   const { request, response } = fakeExchange(validKnowledgeBody({ context: knowledgeContext() }));
@@ -91,9 +91,9 @@ test("an answer over the 4 KiB limit is hard blocked (via the shared pipeline's 
 
 test("the 4 KiB answer-size check itself is defined and would trigger model_answer_too_large for an answer under the shared token ceiling but over the byte limit", () => {
   // Constructs a case that cannot occur via a real Ollama call (the shared
-  // pipeline's own limit is stricter) but proves the check in
-  // cc-knowledge-handler.js is real, reachable code, not dead logic: a
-  // multi-byte-per-character string can exceed CC_KNOWLEDGE_MAX_ANSWER_BYTES
+  // pipeline's own limit is stricter) but proves the check in the shared
+  // knowledge-service.js is real, reachable code, not dead logic: a
+  // multi-byte-per-character string can exceed KNOWLEDGE_ANSWER_MAX_BYTES
   // in UTF-8 byte length while staying under 800 estimated tokens.
   const overBudget = "ü".repeat(2100); // ~4200 UTF-8 bytes, ~2100 chars/tokens-ish
   assert.ok(Buffer.byteLength(overBudget, "utf8") > 4096);

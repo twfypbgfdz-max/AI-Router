@@ -1,7 +1,7 @@
 import { assertEmbeddingModelAvailable, embedText } from "./knowledge/embedding-client.js";
 import { readAllChunks, readIndexMeta } from "./knowledge/rag-index-store.js";
 import { searchKnowledgeChunks } from "./knowledge/rag-search.js";
-import { CC_KNOWLEDGE_INDEX_MAX_AGE_MS } from "./cc-knowledge-config.js";
+import { KNOWLEDGE_ANSWER_INDEX_MAX_AGE_MS } from "./knowledge-answer-config.js";
 import { loadOllamaEmbeddingProviderConfig } from "./knowledge/rag-config.js";
 
 // Everything this module is allowed to do: read the already-built local
@@ -15,7 +15,7 @@ import { loadOllamaEmbeddingProviderConfig } from "./knowledge/rag-config.js";
 function isIndexStale(meta, now) {
   const checkedAt = meta.lastRunAt || meta.lastFullReindexAt;
   if (!checkedAt || !Number.isFinite(Date.parse(checkedAt))) return true;
-  return now.getTime() - Date.parse(checkedAt) > CC_KNOWLEDGE_INDEX_MAX_AGE_MS;
+  return now.getTime() - Date.parse(checkedAt) > KNOWLEDGE_ANSWER_INDEX_MAX_AGE_MS;
 }
 
 // Staleness is evaluated before match state and, when true, always wins as

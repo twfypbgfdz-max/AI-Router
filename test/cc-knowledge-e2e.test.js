@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createCcKnowledgeHandler } from "../orchestrator/cc-knowledge-handler.js";
-import { retrieveKnowledge } from "../orchestrator/cc-knowledge-rag-service.js";
+import { retrieveKnowledge } from "../orchestrator/knowledge-answer-rag-service.js";
 import { searchKnowledgeChunks } from "../orchestrator/knowledge/rag-search.js";
 import {
   ccKnowledgeEnv,

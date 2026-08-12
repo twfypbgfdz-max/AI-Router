@@ -3,10 +3,10 @@ import { authenticateInternalRequest } from "./internal-auth.js";
 import { KnowledgeError } from "./knowledge-error.js";
 import { normalizeKnowledgeRequest } from "./knowledge-contract.js";
 import {
-  buildCcKnowledgeTransportFailure,
-  ccKnowledgeObservationHttpStatus,
-  ccKnowledgeTransportHttpStatus
-} from "./cc-knowledge-response.js";
+  buildKnowledgeAnswerTransportFailure,
+  knowledgeAnswerObservationHttpStatus,
+  knowledgeAnswerTransportHttpStatus
+} from "./knowledge-answer-response.js";
 import {
   KNOWLEDGE_ABSOLUTE_TIMEOUT_MS,
   KNOWLEDGE_MAX_CONCURRENT_REQUESTS,
@@ -63,7 +63,7 @@ function safeLog(eventLogger, event, { durationMs, safeMetadata = {} } = {}) {
   }
 }
 
-const transportFailure = (error) => buildCcKnowledgeTransportFailure(error, { schemaVersion: KNOWLEDGE_SCHEMA_VERSION });
+const transportFailure = (error) => buildKnowledgeAnswerTransportFailure(error, { schemaVersion: KNOWLEDGE_SCHEMA_VERSION });
 
 export function createKnowledgeHandler({
   env = process.env,
@@ -92,13 +92,13 @@ export function createKnowledgeHandler({
     if (request.headers?.origin) {
       const payload = transportFailure({ code: "ORIGIN_NOT_ALLOWED" });
       safeLog(eventLogger, "knowledge_rejected", { safeMetadata: { errorCode: "ORIGIN_NOT_ALLOWED" } });
-      return sendJson(response, ccKnowledgeTransportHttpStatus(payload), payload);
+      return sendJson(response, knowledgeAnswerTransportHttpStatus(payload), payload);
     }
     if (request.method !== "POST") {
       response.setHeader("allow", "POST");
       const payload = transportFailure({ code: "METHOD_NOT_ALLOWED" });
       safeLog(eventLogger, "knowledge_rejected", { safeMetadata: { errorCode: "METHOD_NOT_ALLOWED" } });
-      return sendJson(response, ccKnowledgeTransportHttpStatus(payload), payload);
+      return sendJson(response, knowledgeAnswerTransportHttpStatus(payload), payload);
     }
     try {
       authenticateInternalRequest(request.headers?.authorization, {
@@ -108,12 +108,12 @@ export function createKnowledgeHandler({
     } catch (authError) {
       const payload = transportFailure(authError);
       safeLog(eventLogger, "knowledge_rejected", { safeMetadata: { errorCode: payload.error.code } });
-      return sendJson(response, ccKnowledgeTransportHttpStatus(payload), payload);
+      return sendJson(response, knowledgeAnswerTransportHttpStatus(payload), payload);
     }
     if (!JSON_CONTENT_TYPE.test(String(request.headers?.["content-type"] || ""))) {
       const payload = transportFailure(new KnowledgeError("VALIDATION_FAILED", "Content-Type must be application/json."));
       safeLog(eventLogger, "knowledge_rejected", { safeMetadata: { errorCode: "VALIDATION_FAILED" } });
-      return sendJson(response, ccKnowledgeTransportHttpStatus(payload), payload);
+      return sendJson(response, knowledgeAnswerTransportHttpStatus(payload), payload);
     }
 
     const startedAt = Date.now();
@@ -129,7 +129,7 @@ export function createKnowledgeHandler({
         });
       const payload = transportFailure(error);
       safeLog(eventLogger, "knowledge_rejected", { safeMetadata: { errorCode: payload.error.code } });
-      return sendJson(response, ccKnowledgeTransportHttpStatus(payload), payload);
+      return sendJson(response, knowledgeAnswerTransportHttpStatus(payload), payload);
     }
 
     // No context is passed and none can be: this contract has no such field.
@@ -139,7 +139,7 @@ export function createKnowledgeHandler({
     const { payload, safeMetadata } = await answerKnowledgeQuestion({ question: normalized.question });
 
     safeLog(eventLogger, "knowledge_observed", { durationMs: Date.now() - startedAt, safeMetadata });
-    return sendJson(response, ccKnowledgeObservationHttpStatus(payload.warnings), payload);
+    return sendJson(response, knowledgeAnswerObservationHttpStatus(payload.warnings), payload);
   };
 }
 

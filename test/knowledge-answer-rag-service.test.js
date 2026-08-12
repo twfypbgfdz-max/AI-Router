@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { retrieveKnowledge } from "../orchestrator/cc-knowledge-rag-service.js";
+import { retrieveKnowledge } from "../orchestrator/knowledge-answer-rag-service.js";
 
 const BASE_ENV = { AI_ROUTER_OLLAMA_EMBEDDING_MODEL: "bge-m3:latest", AI_ROUTER_OLLAMA_BASE_URL: "http://localhost:11434" };
 

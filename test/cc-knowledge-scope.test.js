@@ -6,13 +6,15 @@ import { fileURLToPath } from "node:url";
 
 const ORCHESTRATOR_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "orchestrator");
 const API_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "api", "v1", "cc");
-// Covers both knowledge paths. The generic modules were extracted out of
-// the cc-knowledge ones and must obey the identical read-only guarantees -
-// listing them here is what stops the extraction from becoming a way to
-// acquire capabilities the Command Center path was never allowed.
+// Covers both knowledge paths. The shared engine modules
+// (knowledge-answer-*) and the generic route modules (knowledge-*) must
+// obey the identical read-only guarantees as the CC-specific ones
+// (cc-knowledge-*) - listing them all here is what stops either the
+// extraction or the 2026-08-12 rename from becoming a way to acquire
+// capabilities the Command Center path was never allowed.
 const CC_KNOWLEDGE_FILES = [
-  "cc-knowledge-config.js", "cc-knowledge-error.js", "cc-knowledge-contract.js",
-  "cc-knowledge-rag-service.js", "cc-knowledge-prompt.js", "cc-knowledge-response.js", "cc-knowledge-handler.js",
+  "cc-knowledge-config.js", "cc-knowledge-error.js", "cc-knowledge-contract.js", "cc-knowledge-handler.js",
+  "knowledge-answer-config.js", "knowledge-answer-rag-service.js", "knowledge-answer-prompt.js", "knowledge-answer-response.js",
   "knowledge-config.js", "knowledge-error.js", "knowledge-contract.js",
   "knowledge-service.js", "knowledge-handler.js"
 ];
@@ -55,8 +57,8 @@ test("the API route wrapper only forwards to the handler, no extra logic", () =>
   assert.ok(!/fs\.|child_process|fetch\(/.test(source));
 });
 
-test("cc-knowledge-rag-service.js never imports the vault document loader or the re-indexer", () => {
-  const source = readOrchestratorFile("cc-knowledge-rag-service.js");
+test("knowledge-answer-rag-service.js never imports the vault document loader or the re-indexer", () => {
+  const source = readOrchestratorFile("knowledge-answer-rag-service.js");
   // Checks actual import statements (quoted module specifiers), not prose
   // comments that merely mention these filenames to explain why they are
   // deliberately absent.
@@ -110,8 +112,8 @@ test("no cc-knowledge module defines an outgoing tool-calling structure", () => 
   assert.ok(!/\btools\s*:\s*\[/.test(serviceSource), "knowledge-service.js must never define an outgoing tools array");
 });
 
-test("cc-knowledge-rag-service.js calls the embedding client and search module, not a chat/answer adapter", () => {
-  const source = readOrchestratorFile("cc-knowledge-rag-service.js");
+test("knowledge-answer-rag-service.js calls the embedding client and search module, not a chat/answer adapter", () => {
+  const source = readOrchestratorFile("knowledge-answer-rag-service.js");
   assert.ok(source.includes("embedding-client.js"));
   assert.ok(source.includes("rag-search.js"));
   assert.ok(!source.includes("provider-adapters"));
