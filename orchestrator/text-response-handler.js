@@ -185,7 +185,7 @@ export function createTextResponseHandler({
     return protection;
   };
 
-  return async function handleTextResponse(request, response) {
+  return async function handleTextResponse(request, response, { executionRequestText } = {}) {
     const startedAt = now();
     let identity = { requestId: null, source: null };
     let serviceResult = null;
@@ -242,7 +242,10 @@ export function createTextResponseHandler({
         setTimer,
         clearTimer
       });
-      serviceResult = await service.respond(rawInput, { signal: abortChain.signal });
+      serviceResult = await service.respond(rawInput, {
+        signal: abortChain.signal,
+        executionRequestText
+      });
       const payload = buildTextResponseSuccess(serviceResult, {
         durationMs: Math.max(0, now() - startedAt)
       });

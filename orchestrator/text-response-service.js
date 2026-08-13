@@ -119,13 +119,17 @@ export function createTextResponseService({
   clearTimer = clearTimeout
 } = {}) {
   return Object.freeze({
-    async respond(rawInput, { signal } = {}) {
+    async respond(rawInput, { signal, executionRequestText } = {}) {
       if (!signal || typeof signal.addEventListener !== "function") {
         throw new TextResponseError("INTERNAL_ERROR", "A request abort signal is required.");
       }
       if (signal.aborted) throw abortError(signal, "request_aborted");
       const request = normalizeTextResponseRequest(rawInput, { now });
-      assertProviderEgressAllowed(request);
+      // Secret/privacy checks still inspect the complete normalized request.
+      // Only trusted internal callers may provide the original user text for
+      // execution-intent detection when input.content also contains retrieved
+      // evidence. Public callers omit this option and keep the strict default.
+      assertProviderEgressAllowed(request, { executionRequestText });
       const taskType = classifyTask(request.input.content);
       const route = routeName(taskType, request.intent);
       if (!SAFE_ROUTES.has(route)) {

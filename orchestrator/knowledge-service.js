@@ -207,7 +207,14 @@ export function createKnowledgeService({
     const promptText = buildKnowledgeAnswerPromptText({ question, context, results });
     const internalRequest = buildInternalRequest(promptText, scopedEnv.AI_ROUTER_INTERNAL_TOKEN, requestIdPrefix);
     const internalResponse = captureResponse();
-    const generationPayload = await textResponseHandler(internalRequest, internalResponse);
+    // The provider receives the full grounded prompt, but execution intent is
+    // evaluated only against the caller's already-validated question. This
+    // prevents command references inside retrieved evidence from being
+    // mistaken for a user instruction while preserving the same hard block
+    // for an actual execution request.
+    const generationPayload = await textResponseHandler(internalRequest, internalResponse, {
+      executionRequestText: question
+    });
 
     if (generationPayload.status !== "answered") {
       const warning = mapGenerationFailureWarning(generationPayload);

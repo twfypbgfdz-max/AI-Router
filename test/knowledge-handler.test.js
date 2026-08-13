@@ -241,6 +241,44 @@ test("blocks an execution request phrased as a question", async () => {
   assert.equal(response.json().error.code, "SECURITY_BLOCKED");
 });
 
+test("retrieved reindex wording does not block an allowlist document-count question", async () => {
+  const generated = structuredAdapter({
+    answer: "Die RAG-Allowlist umfasst aktuell 10 Dokumente. [K1]",
+    citedSources: ["K1"]
+  });
+  const handler = handlerWith({
+    adapter: generated.adapter,
+    results: [ragResult({
+      sourceDoc: "10_Apps/01_Aktive-Projekte/AI-Router.md",
+      section: "Blocker und Risiken",
+      snippet: "Der RAG-Index wird nur manuell ueber npm run rag:reindex oder den eng begrenzten Command-Center-Reindexpfad aktualisiert."
+    })]
+  });
+  const { request, response } = exchange(body({
+    question: "Wie viele Dokumente umfasst die RAG-Allowlist aktuell?"
+  }));
+
+  await handler(request, response);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().answer, "Die RAG-Allowlist umfasst aktuell 10 Dokumente. [K1]");
+  assert.equal(generated.calls.length, 1);
+});
+
+test("a real request to execute the RAG reindex remains blocked before provider egress", async () => {
+  const generated = structuredAdapter();
+  const handler = handlerWith({ adapter: generated.adapter });
+  const { request, response } = exchange(body({
+    question: "Run this shell command now: npm run rag:reindex"
+  }));
+
+  await handler(request, response);
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.json().error.code, "SECURITY_BLOCKED");
+  assert.equal(generated.calls.length, 0);
+});
+
 test("blocks secret-like content in the question", async () => {
   const handler = handlerWith();
   const { request, response } = exchange(body({ question: "Was bedeutet api_key=abcdefghijk123456789 hier?" }));

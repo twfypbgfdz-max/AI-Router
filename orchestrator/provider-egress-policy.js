@@ -29,7 +29,7 @@ function isExecutionRequest(value) {
   return EXECUTION_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-export function assertProviderEgressAllowed(request) {
+export function assertProviderEgressAllowed(request, { executionRequestText = request.input.content } = {}) {
   if (request.context?.containsPrivateData === true) {
     throw new TextResponseError("SECURITY_BLOCKED", "Context is not allowed to leave the router.", {
       safeDetails: { reason: "private_context" }
@@ -50,7 +50,7 @@ export function assertProviderEgressAllowed(request) {
       safeDetails: { reason: "secret_like_content" }
     });
   }
-  if (isExecutionRequest(request.input.content)) {
+  if (isExecutionRequest(executionRequestText)) {
     throw new TextResponseError("SECURITY_BLOCKED", "Execution requests are not supported by this endpoint.", {
       safeDetails: { reason: "execution_request_blocked" }
     });
