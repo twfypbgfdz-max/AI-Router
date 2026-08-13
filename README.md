@@ -240,15 +240,18 @@ oder `/api/v1/cc/summary`.
   ausschließlich die konkreten, in `config/rag-allowlist.json` freigegebenen
   Dateien. Es gibt keinen rekursiven Verzeichnis-Scan und keinen
   Schreib-/Lösch-/Umbenennungs-Zugriff auf `AI_ROUTER_VAULT_ROOT`.
-- **Allowlist (Stand 11.08.2026): 7 freigegebene Dokumente.**
+- **Allowlist (Stand 11.08.2026): 10 freigegebene Dokumente.**
   `config/rag-allowlist.json` listet ausschließlich einzeln von Felix
   freigegebene Dateien (`addedBy`/`addedAt` je Eintrag): DEC-001, DEC-002,
   DEC-003, `00_System/FELIX_SYSTEM_Architektur_Index.md`,
   `10_Apps/01_Aktive-Projekte/AI-Router.md`,
-  `10_Apps/01_Aktive-Projekte/Felix-Command-Center.md` sowie seit 11.08.
-  `90_System/Profil.md` (Personal-Context-Grundstand). Jede weitere Datei
-  — auch DEC-004/005/006 — erfordert einen eigenen, ausdrücklichen Auftrag;
-  die Liste wächst nicht automatisch mit dem Vault.
+  `10_Apps/01_Aktive-Projekte/Felix-Command-Center.md`, `90_System/Profil.md`
+  (Personal-Context-Grundstand), `10_Apps/00_Projektsteuerung.md`,
+  `10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md` und
+  `90_System/KI-Router-Regeln.md`. DEC-006 ist damit enthalten; DEC-004 und
+  DEC-005 sind weiterhin nicht freigegeben. Jede weitere Datei erfordert
+  einen eigenen, ausdrücklichen Auftrag; die Liste wächst nicht automatisch
+  mit dem Vault.
 - **Harte Denylist**, unabhängig vom Frontmatter-Typ und nicht durch die
   Allowlist überstimmbar: `60_Finanzen/`, `00_Inbox/`, `.obsidian/`,
   `.claudian/`, `.git/`, `.claude/` (siehe `orchestrator/knowledge/rag-config.js`).
@@ -400,8 +403,11 @@ Die kleinste lokale Jarvis-Oberfläche von Felix Core: **Textfrage → lokale
 RAG-Antwort → Quellenanzeige.** Sie liegt bewusst hier im AI-Router und
 **nicht** im Command Center (siehe DEC-006 Version 1.2).
 
-- **Keine Spracheingabe, keine Aktionen.** v1 ist reine Frage/Antwort. Die
-  Seite kann nichts auslösen — keinen Reindex, keinen Commit, nichts.
+- **Voice v1 vorhanden, weiterhin keine Aktionen.** Die Seite bietet lokale
+  Spracheingabe und lokale Sprachausgabe (Details unten). Das Transkript wird
+  nicht automatisch abgesendet und Antworten werden nicht automatisch
+  vorgelesen. Die Dialogfläche bleibt reine Frage/Antwort und kann keinen
+  Reindex, Commit oder eine andere Folgeaktion auslösen.
 - **Kein Token in der Seite.** Die Seite ruft `POST /api/jarvis/ask` auf;
   dieser serverseitige Proxy hängt `AI_ROUTER_KNOWLEDGE_TOKEN` aus der
   Serverumgebung an und ruft intern `POST /api/v1/knowledge` auf. Der
