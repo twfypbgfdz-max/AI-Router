@@ -423,6 +423,66 @@ Aufruf: Router starten (`npm start`), dann `http://127.0.0.1:8787/jarvis`.
 Ohne gesetztes `AI_ROUTER_KNOWLEDGE_TOKEN` meldet die Seite das ausdrücklich
 (`AUTH_NOT_CONFIGURED`) statt stumm zu bleiben.
 
+### Voice v1, Schritt 1: lokale Spracheingabe (`POST /api/jarvis/transcribe`)
+
+Ein Mikrofon-Knopf auf derselben `/jarvis`-Seite füllt das bestehende
+Fragefeld per Spracheingabe. Sonst ändert sich nichts: `POST /api/jarvis/ask`,
+Token-Handling, Rate-Limit und Quellenanzeige sind unverändert.
+
+- **Kein automatisches Absenden.** Das Transkript landet ausschließlich im
+  Textfeld — Felix prüft/korrigiert und klickt selbst auf „Fragen".
+- **Lokal aufgenommenes WAV, kein `MediaRecorder`.** Die Seite nimmt über
+  die Web-Audio-API rohe PCM-Samples auf und kodiert clientseitig eine
+  WAV-Datei, statt den Browser-eigenen komprimierten Recorder (webm/opus)
+  zu nutzen — dessen Ausgabe bräuchte auf dem whisper-server einen
+  `--convert`-Flag samt ffmpeg, was hier nicht vorausgesetzt werden kann.
+  Aufnahme ist automatisch nach 60 s begrenzt.
+- **Kein Cloud-STT, an keiner Stelle.** Die Seite nutzt weder
+  `SpeechRecognition` noch `webkitSpeechRecognition` (im Chrome-Fall ein
+  Cloud-Dienst) — nur `getUserMedia` plus lokale WAV-Kodierung.
+- **Der AI-Router startet, stoppt und verwaltet den whisper-server nicht.**
+  Erwartet wird ein bereits laufender lokaler whisper-server (whisper.cpp,
+  `--inference-path /inference`), dessen Basis-URL in
+  `AI_ROUTER_WHISPER_SERVER_URL` steht. Ohne gesetzte Variable meldet die
+  Route sauber `WHISPER_NOT_CONFIGURED`; ist der Server nicht erreichbar,
+  `WHISPER_UNAVAILABLE` — beides ohne stummes Hängen.
+- **`AI_ROUTER_WHISPER_SERVER_URL` hat bewusst keinen Default.** Ein
+  geratener Port könnte sonst still mit dem falschen Prozess sprechen.
+- **Deutsch, mit Vokabular-Prompt.** Sprache ist fest `de`; der an
+  whisper-server übergebene Prompt (`Felix Core, FELIX_SYSTEM, Vault,
+  Jarvis, AI-Router, Command Center, Plateau-Brecher, Obsidian.`) wurde am
+  13.08.2026 an einer echten lokalen Instanz verifiziert: er behob die
+  beiden beobachteten Fehlklassen des `small`-Modells bei deutscher Sprache
+  mit englischen Eigennamen („Core" → „Korn", „Vault" → „Volt") ohne
+  messbare Mehrkosten.
+- **Audio nie auf Platte.** Der Router verarbeitet die hochgeladene WAV-Datei
+  ausschließlich im Speicher (Byte-Obergrenze
+  `JARVIS_TRANSCRIBE_MAX_AUDIO_BYTES`, 8 MiB) und leitet sie unverändert an
+  whisper-server weiter — keine temporäre Datei, keine Persistenz.
+  Aufnahmen im Browser existieren nur bis zum Absenden.
+- **Strikt local-only**, dieselbe Same-Origin-Disziplin wie
+  `/api/jarvis/ask`: Anfragen mit fremdem `Origin`-Header werden mit 403
+  abgewiesen.
+- **Kein neues Token, kein Vault-/RAG-Zugriff.** Die Route berührt weder
+  `AI_ROUTER_KNOWLEDGE_TOKEN` noch den RAG-Index — sie transkribiert Audio
+  zu Text, sonst nichts.
+
+**Bekannte temporäre externe Abhängigkeit:** Als lokales Modell wird in
+diesem Schritt bewusst die bereits vorhandene, separat installierte
+OpenWhispr-App-Kopie in place verwendet
+(`~/.cache/openwhispr/whisper-models/ggml-small.bin`, ca. 488 MB, sowie
+`whisper-server-win32-x64.exe` aus deren Installationsordner) — nicht in
+dieses Repository kopiert. Das ist eine bewusste, dokumentierte
+Übergangslösung, keine Zielarchitektur: ein Update oder eine Deinstallation
+von OpenWhispr kann diese Dateien entfernen. Ein späterer Schritt sollte
+Modell und Binary in ein eigenes, von Felix Core verwaltetes Datenverzeichnis
+verschieben.
+
+Aufruf: whisper-server manuell starten, z. B.
+`whisper-server-win32-x64.exe -m <Pfad zu ggml-small.bin> -l de --host 127.0.0.1 --port 8399`,
+dann `AI_ROUTER_WHISPER_SERVER_URL=http://127.0.0.1:8399` setzen und den
+Router neu starten.
+
 ### Lokaler post-commit-Hook: Contract-Test-Erinnerung
 
 Der Contract-Test `test/recommendation-contract.test.js` im Repo

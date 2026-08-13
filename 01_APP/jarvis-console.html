@@ -122,9 +122,11 @@
   <textarea id="question" maxlength="500" placeholder="Zum Beispiel: Welche Komponente darf als Einzige ins Google Sheet schreiben?" aria-label="Frage an FELIX_SYSTEM"></textarea>
   <div class="row">
     <button id="ask-btn" type="button">Fragen</button>
+    <button id="mic-btn" type="button">Aufnahme starten</button>
     <span class="status" id="ask-status" role="status" aria-live="polite">Bereit.</span>
     <span class="counter" id="char-counter">0 / 500</span>
   </div>
+  <p class="card-hint" id="mic-hint" style="margin-top:10px;">Spracheingabe läuft vollständig lokal über einen manuell gestarteten whisper-server auf diesem Rechner. Das Transkript landet im Textfeld – nichts wird automatisch abgeschickt.</p>
 </section>
 
 <section class="card" id="result-card" hidden>
@@ -150,6 +152,7 @@
   var COOLDOWN_SECONDS = 60;
 
   var askBtn = document.getElementById("ask-btn");
+  var micBtn = document.getElementById("mic-btn");
   var statusEl = document.getElementById("ask-status");
   var questionEl = document.getElementById("question");
   var counterEl = document.getElementById("char-counter");
@@ -209,6 +212,19 @@
     ORIGIN_NOT_ALLOWED: "Direkter Browserzugriff auf den Wissenspfad ist nicht zulässig.",
     INVALID_REQUEST: "Die Anfrage konnte nicht gelesen werden.",
     INTERNAL_ERROR: "Interner Fehler."
+  };
+
+  // Every error the transcribe route can return, in plain German. Speech
+  // input is a convenience for filling the text field, not a separate
+  // channel that needs its own vocabulary of technical codes.
+  var TRANSCRIBE_ERROR_TEXT = {
+    WHISPER_NOT_CONFIGURED: "Auf dem Server ist kein lokaler whisper-server eingerichtet (AI_ROUTER_WHISPER_SERVER_URL fehlt).",
+    WHISPER_UNAVAILABLE: "Der lokale whisper-server ist nicht erreichbar. Läuft er?",
+    WHISPER_INVALID_RESPONSE: "Der lokale whisper-server hat eine unbrauchbare Antwort geliefert.",
+    PAYLOAD_TOO_LARGE: "Die Aufnahme war zu lang.",
+    INVALID_REQUEST: "Die Aufnahme konnte nicht gesendet werden.",
+    METHOD_NOT_ALLOWED: "Interner Fehler bei der Aufnahme.",
+    INTERNAL_ERROR: "Interner Fehler bei der Transkription."
   };
 
   var STATE_HINT = {
@@ -364,6 +380,174 @@
     } else {
       startCooldown(COOLDOWN_SECONDS, "Beantwortet.");
     }
+  });
+
+  // --- Spracheingabe (lokal) ---------------------------------------------
+  //
+  // Deliberately not the browser's built-in compressed-recording API (webm/
+  // opus output): whisper-server's /inference endpoint expects a format it
+  // can decode without ffmpeg unless started with --convert, which this
+  // page cannot assume Felix has enabled on his manually-started server.
+  // Recording raw PCM via Web Audio and encoding a WAV file client-side
+  // sidesteps that dependency entirely - this is exactly the file format
+  // verified against a real local whisper-server during the 2026-08-13
+  // architecture review.
+  //
+  // ScriptProcessorNode is deprecated in favour of AudioWorklet, but an
+  // AudioWorklet needs its own separate module file (or a Blob-URL module,
+  // adding real complexity) - not worth it for a single recording button on
+  // a single-file page. It still works in every browser Felix uses this
+  // page from.
+  var MAX_RECORD_SECONDS = 60;
+
+  var mediaStream = null;
+  var audioCtx = null;
+  var sourceNode = null;
+  var processorNode = null;
+  var recordedChunks = [];
+  var recordedSampleRate = 0;
+  var recording = false;
+  var transcribing = false;
+  var autoStopTimer = null;
+
+  function encodeWav(chunks, sampleRate) {
+    var length = 0;
+    for (var i = 0; i < chunks.length; i += 1) length += chunks[i].length;
+    var samples = new Int16Array(length);
+    var offset = 0;
+    for (var c = 0; c < chunks.length; c += 1) {
+      var chunk = chunks[c];
+      for (var j = 0; j < chunk.length; j += 1) {
+        var s = Math.max(-1, Math.min(1, chunk[j]));
+        samples[offset] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        offset += 1;
+      }
+    }
+
+    var byteRate = sampleRate * 2;
+    var buffer = new ArrayBuffer(44 + samples.length * 2);
+    var view = new DataView(buffer);
+    function writeString(pos, str) {
+      for (var k = 0; k < str.length; k += 1) view.setUint8(pos + k, str.charCodeAt(k));
+    }
+    writeString(0, "RIFF");
+    view.setUint32(4, 36 + samples.length * 2, true);
+    writeString(8, "WAVE");
+    writeString(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, "data");
+    view.setUint32(40, samples.length * 2, true);
+    for (var n = 0; n < samples.length; n += 1) view.setInt16(44 + n * 2, samples[n], true);
+    return new Blob([buffer], { type: "audio/wav" });
+  }
+
+  function stopTracks() {
+    if (mediaStream) { mediaStream.getTracks().forEach(function (t) { t.stop(); }); mediaStream = null; }
+    if (processorNode) { processorNode.disconnect(); processorNode.onaudioprocess = null; processorNode = null; }
+    if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+    if (audioCtx) { audioCtx.close().catch(function () {}); audioCtx = null; }
+    if (autoStopTimer) { clearTimeout(autoStopTimer); autoStopTimer = null; }
+  }
+
+  function setMicIdle(text) {
+    recording = false;
+    micBtn.disabled = false;
+    micBtn.textContent = "Aufnahme starten";
+    statusEl.textContent = text || "Bereit.";
+  }
+
+  async function stopRecordingAndTranscribe() {
+    if (!recording) return;
+    recording = false;
+    micBtn.disabled = true;
+    micBtn.textContent = "Aufnahme starten";
+    statusEl.textContent = "Transkribiere …";
+
+    var wavBlob = recordedChunks.length ? encodeWav(recordedChunks, recordedSampleRate) : null;
+    stopTracks();
+    recordedChunks = [];
+
+    if (!wavBlob) {
+      setMicIdle("Keine Aufnahme erfasst.");
+      return;
+    }
+
+    transcribing = true;
+    try {
+      var response = await fetch("/api/jarvis/transcribe", {
+        method: "POST",
+        headers: { "content-type": "audio/wav" },
+        body: wavBlob
+      });
+      var payload = null;
+      try { payload = await response.json(); } catch (e) { payload = null; }
+
+      if (!payload) {
+        setMicIdle("Unlesbare Antwort vom Server.");
+        return;
+      }
+      if (payload.error) {
+        setMicIdle(TRANSCRIBE_ERROR_TEXT[payload.error.code] || "Transkription fehlgeschlagen.");
+        return;
+      }
+
+      var text = typeof payload.text === "string" ? payload.text : "";
+      if (!text) {
+        setMicIdle("Keine Sprache erkannt.");
+        return;
+      }
+      var existing = questionEl.value;
+      var combined = existing ? (existing + " " + text) : text;
+      questionEl.value = combined.slice(0, 500);
+      counterEl.textContent = questionEl.value.length + " / 500";
+      setMicIdle("Transkript eingefügt – bitte prüfen und dann auf „Fragen“ klicken.");
+    } catch (e) {
+      setMicIdle("Übertragung der Aufnahme fehlgeschlagen – läuft der Router noch?");
+    } finally {
+      transcribing = false;
+    }
+  }
+
+  async function startRecording() {
+    if (recording || transcribing) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.AudioContext) {
+      statusEl.textContent = "Spracheingabe wird von diesem Browser nicht unterstützt.";
+      return;
+    }
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
+    } catch (e) {
+      statusEl.textContent = "Mikrofonzugriff verweigert oder nicht verfügbar.";
+      return;
+    }
+
+    audioCtx = new AudioContext();
+    recordedSampleRate = audioCtx.sampleRate;
+    recordedChunks = [];
+    sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+    processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
+    processorNode.onaudioprocess = function (event) {
+      recordedChunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+    };
+    sourceNode.connect(processorNode);
+    processorNode.connect(audioCtx.destination);
+
+    recording = true;
+    micBtn.textContent = "Aufnahme stoppen";
+    statusEl.textContent = "Aufnahme läuft … (max. " + MAX_RECORD_SECONDS + " s)";
+    autoStopTimer = setTimeout(stopRecordingAndTranscribe, MAX_RECORD_SECONDS * 1000);
+  }
+
+  micBtn.addEventListener("click", function () {
+    if (transcribing) return;
+    if (recording) stopRecordingAndTranscribe();
+    else startRecording();
   });
 })();
 </script>

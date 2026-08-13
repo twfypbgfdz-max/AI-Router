@@ -147,15 +147,36 @@ test("forwards an empty question rather than inventing its own validation", asyn
 
 // --- the page itself ----------------------------------------------------
 
-test("the page performs no action and offers no voice input", () => {
-  assert.ok(!/getUserMedia|SpeechRecognition|webkitSpeechRecognition|MediaRecorder/i.test(PAGE), "no voice input in v1");
+test("the page still performs no action beyond its own two local endpoints", () => {
   assert.ok(!/\/api\/v1\/cc\//.test(PAGE), "the page must never address a Command Center route");
   assert.ok(!/reindex/i.test(PAGE) || !/fetch\([^)]*reindex/i.test(PAGE), "the page must not trigger a reindex");
 });
 
-test("the page talks only to its own server-side bridge, never to the knowledge route directly", () => {
+// Voice v1, step 1: local speech-to-text is now allowed, but only via a
+// client-side WAV encoder over Web Audio - never the browser's built-in
+// SpeechRecognition (routed through a vendor cloud service in Chrome) and
+// never MediaRecorder (its webm/opus output needs ffmpeg on whisper-server
+// to decode, which this page cannot assume is enabled).
+test("voice input uses local WAV recording, never a browser cloud speech API", () => {
+  assert.ok(/getUserMedia/.test(PAGE), "the mic button must use getUserMedia");
+  assert.ok(!/SpeechRecognition|webkitSpeechRecognition/i.test(PAGE), "no browser cloud speech recognition API");
+  assert.ok(!/MediaRecorder/.test(PAGE), "no MediaRecorder - its compressed output needs ffmpeg on whisper-server");
+});
+
+test("the page talks only to its own two server-side bridges, never to a knowledge or STT backend directly", () => {
   const fetchTargets = [...PAGE.matchAll(/fetch\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(fetchTargets, ["/api/jarvis/ask"]);
+  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/transcribe"]);
+});
+
+test("a transcribed recording fills the question field but never auto-submits", () => {
+  assert.ok(/questionEl\.value\s*=/.test(PAGE), "the transcript must be written into the existing question field");
+  const transcribeBlockMatch = PAGE.match(/stopRecordingAndTranscribe[\s\S]*?\n {2}\}/);
+  assert.ok(transcribeBlockMatch, "the transcribe completion handler must exist");
+  assert.ok(!/fetch\(\s*"\/api\/jarvis\/ask"/.test(transcribeBlockMatch[0]), "transcription must never itself call /api/jarvis/ask");
+});
+
+test("the mic button sends audio/wav, not JSON", () => {
+  assert.ok(/"content-type":\s*"audio\/wav"/.test(PAGE));
 });
 
 test("the page carries no token and no authorization header", () => {
