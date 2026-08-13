@@ -494,11 +494,11 @@ Rate-Limit sind unverändert.
   Antwort mit Text vorliegt, und löst nur auf bewussten Klick eine Synthese
   aus. Kein Wakeword, keine Sprachschleife, kein Full-Duplex-Gespräch.
 - **Kein Dauerprozess, kein Port.** `piper.exe` wird **pro Anfrage einmal**
-  als Kindprozess gestartet, schreibt das WAV auf `stdout` (`-f -`) und
-  beendet sich danach von selbst. Verifiziert per `netstat` während der
-  Synthese: **kein einziger TCP/UDP-Socket** – weder beim Standalone-Binary
-  noch beim Python-Paket. Die Frage „127.0.0.1 statt 0.0.0.0" aus Schritt 1
-  stellt sich hier gar nicht, weil nichts gebunden wird.
+  als Kindprozess gestartet und beendet sich danach von selbst. Verifiziert
+  per `netstat` während der Synthese: **kein einziger TCP/UDP-Socket** –
+  weder beim Standalone-Binary noch beim Python-Paket. Die Frage
+  „127.0.0.1 statt 0.0.0.0" aus Schritt 1 stellt sich hier gar nicht, weil
+  nichts gebunden wird.
 - **Kein Cloud-TTS, an keiner Stelle.** Azure-TTS bleibt auf den festen
   Begrüßungstext im Command Center beschränkt (DEC-006 v1.2 §3 verbietet
   Cloud-Weiterleitung persönlicher Wissensinhalte); dieser Pfad ruft
@@ -506,11 +506,32 @@ Rate-Limit sind unverändert.
 - **`AI_ROUTER_PIPER_BINARY_PATH`/`AI_ROUTER_PIPER_VOICE_MODEL_PATH` haben
   bewusst keinen Default** – ohne beide meldet die Route sauber
   `PIPER_NOT_CONFIGURED` statt einen falschen Pfad zu erraten.
-- **Audio nie auf Platte.** Der Router liest `stdout` byte-begrenzt
-  (`JARVIS_SPEAK_MAX_AUDIO_BYTES`, 12 MiB) direkt in den Speicher und sendet
-  es unverändert als `audio/wav` – keine temporäre Datei, keine Persistenz.
-  Die Seite spielt die Antwort über einen `Blob`-Object-URL ab, den sie vor
-  jeder neuen Synthese wieder freigibt (`URL.revokeObjectURL`).
+- **Ausgabe über eine kurzlebige, pro Anfrage einmalige Datei, nicht
+  `stdout`.** Das war ursprünglich anders gebaut (`-f -`, WAV direkt auf
+  `stdout`) und dabei am 13.08.2026 im echten Hörtest als **lautes Rauschen**
+  aufgefallen. Isoliert und bestätigt über zwei unabhängige Erfassungswege
+  (Node-`child_process`-Pipe und ein natives `cmd.exe`-`>`-Redirect, die
+  keinen Code teilen): beide zeigten dieselbe Korruption – der WAV-Header
+  wich von der tatsächlichen Datengröße ab, und die PCM-Samples selbst
+  zeigten ~3-fache Amplitude und ~2,5-fache Nulldurchgangsrate gegenüber
+  einer sauberen Referenz, mit chaotischen statt glatten Werteverläufen.
+  `-f <Datei>` (echte, seekbare Datei statt `stdout`) war in dieser
+  Untersuchung durchgehend sauber, mit und ohne `-q`. Ursache: Dieses
+  2023er-Windows-Binary schreibt seinen `stdout`-Pfad offenbar nicht im
+  Binärmodus – ein Fehler *innerhalb* von `piper.exe`, den kein Node-seitiges
+  Stream-Handling reparieren kann, da die Bytes schon beim Verlassen des
+  Prozesses falsch sind. Die Route schreibt seitdem in eine eindeutig
+  benannte Datei unter `.ai-router-data/tts/tmp/`, liest sie einmalig
+  vollständig ein (Größe vorher per `fs.stat` gegen
+  `JARVIS_SPEAK_MAX_AUDIO_BYTES`, 12 MiB, geprüft) und löscht sie **in
+  einem `finally`-Block noch innerhalb derselben Anfrage** – auch bei
+  Fehlern. „Kein Audio auf Platte" gilt damit als „kein Audio überlebt
+  seine eigene Anfrage", nicht mehr als „nie eine Datei". Verifiziert:
+  `.ai-router-data/tts/tmp/` ist nach jeder Anfrage wieder leer.
+- **Audio wird byte-begrenzt gelesen** (`JARVIS_SPEAK_MAX_AUDIO_BYTES`,
+  12 MiB, geprüft vor dem Einlesen) und unverändert als `audio/wav`
+  gesendet. Die Seite spielt die Antwort über einen `Blob`-Object-URL ab,
+  den sie vor jeder neuen Synthese wieder freigibt (`URL.revokeObjectURL`).
 - **Eigenes, von Felix Core verwaltetes Verzeichnis** – anders als bei
   whisper-server in Schritt 1 lehnt sich dieser Schritt an **keine**
   Fremdinstallation an: Binary und Stimmmodell liegen unter

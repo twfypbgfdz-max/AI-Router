@@ -2,6 +2,9 @@
 // deliberate "Vorlesen" button on an already-displayed /jarvis answer. See
 // jarvis-speak-service.js for why this spawns a process per request instead
 // of running a daemon.
+import path from "node:path";
+import { DATA_DIR } from "./config.js";
+
 export const JARVIS_SPEAK_SCHEMA_VERSION = "1.0";
 
 // No defaults on either path, same reasoning as WHISPER_SERVER_URL_ENV_VAR
@@ -38,3 +41,24 @@ export const JARVIS_SPEAK_TIMEOUT_MS = 60_000;
 // answer to roughly 4.5 minutes, far beyond anything this route is meant
 // to read aloud, while still capping a pathological response.
 export const JARVIS_SPEAK_MAX_AUDIO_BYTES = 12 * 1024 * 1024;
+
+// BUGFIX 2026-08-13: piper.exe's own "-f -" (stdout) WAV output is corrupt
+// on this Windows binary - confirmed via two independent OS-level capture
+// paths (Node's child_process pipe AND a native cmd.exe `>` redirect, which
+// share no code with each other) both producing the identical corruption
+// signature (WAV header's declared data-chunk size short of the actual
+// byte count; PCM sample statistics showing ~3x amplitude and ~2.5x
+// zero-crossing rate versus a clean reference, with erratic sample-to-
+// sample jumps consistent with byte-level misalignment). "-f <file>"
+// (real file, not stdout) was verified clean in the same comparison,
+// including with -q. The corruption therefore lives inside piper.exe's own
+// stdout write path on Windows (most likely: that code path never switches
+// the stdout handle out of the OS's default CRT text mode before writing
+// binary data, unlike its file-write path) - nothing our own spawn/stream
+// handling could fix, since the bytes are already wrong before they leave
+// the process. jarvis-speak-service.js therefore has piper write to a
+// short-lived, per-request temp file instead of stdout, reads that file
+// into memory once, and deletes it in the same request before the HTTP
+// response is sent - "no audio persisted to disk" is preserved as "no
+// audio outlives its own request", not as "no file object is ever created".
+export const JARVIS_SPEAK_TMP_DIR = path.join(DATA_DIR, "tts", "tmp");
