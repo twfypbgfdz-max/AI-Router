@@ -163,9 +163,9 @@ test("voice input uses local WAV recording, never a browser cloud speech API", (
   assert.ok(!/MediaRecorder/.test(PAGE), "no MediaRecorder - its compressed output needs ffmpeg on whisper-server");
 });
 
-test("the page talks only to its own two server-side bridges, never to a knowledge or STT backend directly", () => {
+test("the page talks only to its own three server-side bridges, never to a knowledge, STT or TTS backend directly", () => {
   const fetchTargets = [...PAGE.matchAll(/fetch\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/transcribe"]);
+  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/speak", "/api/jarvis/transcribe"]);
 });
 
 test("a transcribed recording fills the question field but never auto-submits", () => {
@@ -177,6 +177,27 @@ test("a transcribed recording fills the question field but never auto-submits", 
 
 test("the mic button sends audio/wav, not JSON", () => {
   assert.ok(/"content-type":\s*"audio\/wav"/.test(PAGE));
+});
+
+// Voice v1, step 2: a manual "Vorlesen" button reads an already-displayed
+// answer back out loud, locally. Never automatic.
+test("the speak button sends JSON, never fires on its own, and only after an answer exists", () => {
+  assert.ok(/speakBtn\.addEventListener\("click"/.test(PAGE), "Vorlesen must be a manual click handler");
+  const speakBlockMatch = PAGE.match(/speakBtn\.addEventListener[\s\S]*?\n {2}\}\);/);
+  assert.ok(speakBlockMatch, "the speak click handler must exist");
+  assert.ok(/"content-type":\s*"application\/json"/.test(speakBlockMatch[0]), "speak must POST JSON, not audio");
+  assert.ok(/currentAnswerText/.test(speakBlockMatch[0]), "speak must send the already-displayed answer text");
+  assert.ok(!/setInterval|setTimeout/.test(speakBlockMatch[0]), "no automatic or looping playback trigger");
+});
+
+test("the speak row is hidden until an answer with text is rendered", () => {
+  assert.ok(/id="speak-row"[^>]*hidden/.test(PAGE), "the speak row must start hidden");
+  assert.ok(/speakRow\.hidden\s*=\s*!currentAnswerText/.test(PAGE), "the speak row is only shown once there is answer text");
+});
+
+test("audio playback never auto-plays outside the click handler", () => {
+  assert.equal((PAGE.match(/new Audio\(/g) || []).length, 1, "exactly one Audio() construction, inside the click handler");
+  assert.ok(!/autoplay/i.test(PAGE));
 });
 
 test("the page carries no token and no authorization header", () => {

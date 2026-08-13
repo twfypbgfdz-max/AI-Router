@@ -134,6 +134,10 @@
   <p class="card-hint" id="state-hint">–</p>
   <div id="notices"></div>
   <p class="answer" id="answer"></p>
+  <div class="row" id="speak-row" hidden>
+    <button id="speak-btn" type="button">Vorlesen</button>
+    <span class="status" id="speak-status" role="status" aria-live="polite"></span>
+  </div>
   <div id="sources"></div>
 </section>
 
@@ -162,10 +166,16 @@
   var noticesEl = document.getElementById("notices");
   var answerEl = document.getElementById("answer");
   var sourcesEl = document.getElementById("sources");
+  var speakRow = document.getElementById("speak-row");
+  var speakBtn = document.getElementById("speak-btn");
+  var speakStatusEl = document.getElementById("speak-status");
 
   var inFlight = false;
   var cooldownUntil = 0;
   var cooldownTimer = null;
+  var currentAnswerText = "";
+  var speaking = false;
+  var currentAudioUrl = null;
 
   function escapeHtml(value) {
     return String(value == null ? "" : value)
@@ -233,6 +243,20 @@
     unavailable: "Keine Antwort geliefert."
   };
 
+  // Every error the speak route can return, in plain German.
+  var SPEAK_ERROR_TEXT = {
+    PIPER_NOT_CONFIGURED: "Auf dem Server ist keine lokale Sprachausgabe eingerichtet (AI_ROUTER_PIPER_BINARY_PATH/AI_ROUTER_PIPER_VOICE_MODEL_PATH fehlt).",
+    PIPER_UNAVAILABLE: "Die lokale Sprachausgabe ist nicht verfügbar.",
+    PIPER_TIMEOUT: "Die lokale Sprachausgabe hat zu lange gebraucht.",
+    PIPER_OUTPUT_TOO_LARGE: "Die erzeugte Sprachausgabe war zu groß.",
+    PIPER_FAILED: "Die lokale Sprachausgabe ist fehlgeschlagen.",
+    PIPER_INVALID_OUTPUT: "Die lokale Sprachausgabe hat kein Audio erzeugt.",
+    PAYLOAD_TOO_LARGE: "Der Text war zu lang.",
+    INVALID_REQUEST: "Der Text konnte nicht gesendet werden.",
+    METHOD_NOT_ALLOWED: "Interner Fehler bei der Sprachausgabe.",
+    INTERNAL_ERROR: "Interner Fehler bei der Sprachausgabe."
+  };
+
   function setBadge(text, kind) {
     stateBadge.textContent = text;
     stateBadge.className = "badge " + kind;
@@ -281,6 +305,8 @@
     renderNotices([{ title: code, text: TRANSPORT_TEXT[code] || message || "Unbekannter Fehler." }], "fail");
     answerEl.textContent = "";
     sourcesEl.innerHTML = "";
+    currentAnswerText = "";
+    speakRow.hidden = true;
   }
 
   function render(payload) {
@@ -301,6 +327,13 @@
 
     answerEl.textContent = payload.answer || "";
     renderSources(payload.sources);
+
+    // Vorlesen only makes sense when there is text to read - an
+    // "unavailable" state has no answer, so the button stays hidden rather
+    // than offering to read nothing.
+    currentAnswerText = typeof payload.answer === "string" ? payload.answer : "";
+    speakRow.hidden = !currentAnswerText;
+    speakStatusEl.textContent = "";
   }
 
   function stopCooldown() {
@@ -380,6 +413,59 @@
     } else {
       startCooldown(COOLDOWN_SECONDS, "Beantwortet.");
     }
+  });
+
+  // --- Vorlesen (lokal) ---------------------------------------------------
+  //
+  // A deliberate, manually-triggered button - never automatic. Sends the
+  // already-displayed, already-read answer text back to the server, plays
+  // whatever audio/wav comes back. No auto-play, no speech loop, no polling.
+  speakBtn.addEventListener("click", async function () {
+    if (speaking || !currentAnswerText) return;
+    speaking = true;
+    speakBtn.disabled = true;
+    speakStatusEl.textContent = "Spreche …";
+
+    if (currentAudioUrl) { URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; }
+
+    var response;
+    try {
+      response = await fetch("/api/jarvis/speak", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: currentAnswerText })
+      });
+    } catch (e) {
+      speaking = false;
+      speakBtn.disabled = false;
+      speakStatusEl.textContent = "Übertragung fehlgeschlagen – läuft der Router noch?";
+      return;
+    }
+
+    var contentType = response.headers.get("content-type") || "";
+    if (!response.ok || contentType.indexOf("audio/") !== 0) {
+      var errorCode = "INTERNAL_ERROR";
+      try { var errPayload = await response.json(); errorCode = (errPayload.error && errPayload.error.code) || errorCode; } catch (e) { /* keep default */ }
+      speaking = false;
+      speakBtn.disabled = false;
+      speakStatusEl.textContent = SPEAK_ERROR_TEXT[errorCode] || "Sprachausgabe fehlgeschlagen.";
+      return;
+    }
+
+    var blob = await response.blob();
+    currentAudioUrl = URL.createObjectURL(blob);
+    var audio = new Audio(currentAudioUrl);
+    var stopSpeaking = function (text) {
+      speaking = false;
+      speakBtn.disabled = false;
+      speakStatusEl.textContent = text || "";
+    };
+    audio.addEventListener("ended", function () { stopSpeaking(""); });
+    audio.addEventListener("error", function () { stopSpeaking("Audio konnte nicht abgespielt werden."); });
+    speakStatusEl.textContent = "Wird abgespielt …";
+    audio.play().catch(function () {
+      stopSpeaking("Wiedergabe blockiert – bitte erneut klicken.");
+    });
   });
 
   // --- Spracheingabe (lokal) ---------------------------------------------

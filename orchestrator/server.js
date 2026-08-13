@@ -30,6 +30,7 @@ import { handleCcReindexRequest } from "./cc-reindex-handler.js";
 import { handleRouterConsoleRespond } from "./router-console-proxy.js";
 import { handleJarvisConsoleAsk } from "./jarvis-console-proxy.js";
 import { handleJarvisTranscribeRequest } from "./jarvis-transcribe-handler.js";
+import { handleJarvisSpeakRequest } from "./jarvis-speak-handler.js";
 
 const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_13-test.html");
 const routerConsoleUiFile = path.join(REPOSITORY_ROOT, "01_APP", "router-console.html");
@@ -84,7 +85,7 @@ function safeFilterValue(value, allowed, maximum = 40) {
 
 function isoOrNull(value) { const parsed = Date.parse(value); return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null; }
 
-export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, ccKnowledgeHandler = handleCcKnowledgeRequest, knowledgeHandler = handleKnowledgeRequest, ccSnapshotHandler = handleCcSnapshotRequest, ccReindexHandler = handleCcReindexRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, jarvisConsoleAskHandler = handleJarvisConsoleAsk, jarvisTranscribeHandler = handleJarvisTranscribeRequest, now = Date.now } = {}) {
+export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, ccKnowledgeHandler = handleCcKnowledgeRequest, knowledgeHandler = handleKnowledgeRequest, ccSnapshotHandler = handleCcSnapshotRequest, ccReindexHandler = handleCcReindexRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, jarvisConsoleAskHandler = handleJarvisConsoleAsk, jarvisTranscribeHandler = handleJarvisTranscribeRequest, jarvisSpeakHandler = handleJarvisSpeakRequest, now = Date.now } = {}) {
   const serverStartedAt = Date.now();
   const safeLog = (event, safeMetadata = {}) => {
     try { Promise.resolve(eventLogger?.log?.({ event, safeMetadata })).catch(() => {}); } catch { /* logging is non-critical */ }
@@ -159,6 +160,15 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
     if (request.method === "POST" && pathname === "/api/jarvis/transcribe") {
       if (!isTrustedAudioMutation(request)) return sendJson(response, 403, { code: "INVALID_REQUEST", message: "Untrusted local request." });
       return jarvisTranscribeHandler(request, response);
+    }
+
+    // Local-only text-to-speech for the /jarvis page's "Vorlesen" button.
+    // Same same-origin discipline as the other two /api/jarvis/* routes.
+    // JSON body ({text}), so the JSON-content-type guard applies here, not
+    // the audio one.
+    if (request.method === "POST" && pathname === "/api/jarvis/speak") {
+      if (!isTrustedMutation(request)) return sendJson(response, 403, { code: "INVALID_REQUEST", message: "Untrusted local request." });
+      return jarvisSpeakHandler(request, response);
     }
 
     if (request.method === "POST" && pathname === "/api/router-console/respond") {

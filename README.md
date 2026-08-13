@@ -483,6 +483,73 @@ Aufruf: whisper-server manuell starten, z. B.
 dann `AI_ROUTER_WHISPER_SERVER_URL=http://127.0.0.1:8399` setzen und den
 Router neu starten.
 
+### Voice v1, Schritt 2: lokale Sprachausgabe (`POST /api/jarvis/speak`)
+
+Ein „Vorlesen"-Knopf an der Antwortkarte derselben `/jarvis`-Seite liest den
+bereits angezeigten Antworttext laut vor. Sonst ändert sich nichts:
+`POST /api/jarvis/ask`, `POST /api/jarvis/transcribe`, Token-Handling und
+Rate-Limit sind unverändert.
+
+- **Kein automatisches Vorlesen.** Der Knopf erscheint erst, wenn eine
+  Antwort mit Text vorliegt, und löst nur auf bewussten Klick eine Synthese
+  aus. Kein Wakeword, keine Sprachschleife, kein Full-Duplex-Gespräch.
+- **Kein Dauerprozess, kein Port.** `piper.exe` wird **pro Anfrage einmal**
+  als Kindprozess gestartet, schreibt das WAV auf `stdout` (`-f -`) und
+  beendet sich danach von selbst. Verifiziert per `netstat` während der
+  Synthese: **kein einziger TCP/UDP-Socket** – weder beim Standalone-Binary
+  noch beim Python-Paket. Die Frage „127.0.0.1 statt 0.0.0.0" aus Schritt 1
+  stellt sich hier gar nicht, weil nichts gebunden wird.
+- **Kein Cloud-TTS, an keiner Stelle.** Azure-TTS bleibt auf den festen
+  Begrüßungstext im Command Center beschränkt (DEC-006 v1.2 §3 verbietet
+  Cloud-Weiterleitung persönlicher Wissensinhalte); dieser Pfad ruft
+  ausschließlich das lokal konfigurierte `piper.exe` auf.
+- **`AI_ROUTER_PIPER_BINARY_PATH`/`AI_ROUTER_PIPER_VOICE_MODEL_PATH` haben
+  bewusst keinen Default** – ohne beide meldet die Route sauber
+  `PIPER_NOT_CONFIGURED` statt einen falschen Pfad zu erraten.
+- **Audio nie auf Platte.** Der Router liest `stdout` byte-begrenzt
+  (`JARVIS_SPEAK_MAX_AUDIO_BYTES`, 12 MiB) direkt in den Speicher und sendet
+  es unverändert als `audio/wav` – keine temporäre Datei, keine Persistenz.
+  Die Seite spielt die Antwort über einen `Blob`-Object-URL ab, den sie vor
+  jeder neuen Synthese wieder freigibt (`URL.revokeObjectURL`).
+- **Eigenes, von Felix Core verwaltetes Verzeichnis** – anders als bei
+  whisper-server in Schritt 1 lehnt sich dieser Schritt an **keine**
+  Fremdinstallation an: Binary und Stimmmodell liegen unter
+  `.ai-router-data/tts/` (gitignored über `.ai-router-data/`).
+
+**Bewusste, dokumentierte Abhängigkeitsentscheidung – Standalone-Binary
+statt Python-Paket:** Die gepflegte Piper-Fortführung
+([OHF-Voice/piper1-gpl](https://github.com/OHF-Voice/piper1-gpl), GPL-3.0)
+gibt es nur als Python-Wheel; `rhasspy/piper` (MIT) ist seit Oktober 2025
+archiviert, sein letztes Release `2023.11.14-2` enthält aber weiterhin ein
+eigenständiges Windows-Binary ohne Python-Abhängigkeit. Am 13.08.2026 real
+gemessen, mit der letztlich gewählten Stimme `de_DE-thorsten-high`:
+
+| | Standalone (2023, MIT) | Python-Paket (2026, GPL-3.0) |
+|---|---|---|
+| Kaltstart | **4,2 s** | 6,6–7,0 s |
+| RAM-Spitze | **239 MB** | ~307 MB |
+| Python-Laufzeit nötig | nein | ja |
+| Wartungsstand | seit 11/2023 unverändert | aktiv gepflegt |
+
+Der Vorsprung des Standalone-Binaries hielt bei der leichteren Stimme
+`de_DE-thorsten-medium` in gleicher Größenordnung (1,15 s vs. 3,10 s). Für
+einen Node.js-Router ohne sonstige Python-Abhängigkeit und mit dem Ziel
+„ein Klick, eine Synthese, keine wartende Person" überwiegt der klare
+Latenz- und Ressourcenvorteil den fehlenden Wartungsstatus des Binaries –
+es hat keine Netzwerkfläche und ruft keine Bibliotheken mit bekannten
+offenen Sicherheitslücken auf. Wechsel auf das Python-Paket ist jederzeit
+möglich, indem `AI_ROUTER_PIPER_BINARY_PATH` auf einen `piper`-Python-
+Einstiegspunkt zeigt – die CLI-Argumente (`-m`, `-f -`, `-q`) sind identisch.
+
+**Geprüfte, aber nicht gewählte Stimmen:** `de_DE-thorsten-medium` (schneller,
+aber hörbar synthetischer) und `de_DE-kerstin-low` (16 kHz, zusätzlich ein
+Phonemtabellen-Defekt bei kombinierendem Cedilla `̧`) bleiben als
+Alternativen dokumentiert, ohne installiert zu sein.
+
+Aufruf: `piper.exe` und Stimmmodell liegen unter `.ai-router-data/tts/`,
+dann `AI_ROUTER_PIPER_BINARY_PATH` und `AI_ROUTER_PIPER_VOICE_MODEL_PATH`
+auf die tatsächlichen Pfade setzen und den Router neu starten.
+
 ### Lokaler post-commit-Hook: Contract-Test-Erinnerung
 
 Der Contract-Test `test/recommendation-contract.test.js` im Repo
