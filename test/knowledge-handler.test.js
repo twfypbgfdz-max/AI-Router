@@ -71,6 +71,22 @@ test("answers a question from the local index and cites a server-validated sourc
   assert.equal(payload.sources[0].sourceDoc, "10_Apps/90_Entscheidungen/DEC-001.md");
 });
 
+test("passes exactly the currently offered source ids into the native knowledge schema", async () => {
+  const generated = structuredAdapter({ citedSources: ["K1", "K2"] });
+  const handler = handlerWith({
+    results: [ragResult(), ragResult({ sourceDoc: "10_Apps/90_Entscheidungen/DEC-006.md", section: "4. AI-Router" })],
+    adapter: generated.adapter
+  });
+  const { request, response } = exchange(body());
+  await handler(request, response);
+  assert.notEqual(response.json().state, "unavailable");
+  assert.deepEqual(
+    generated.calls[0].structuredOutputSchema.properties.citedSources.items.enum,
+    ["K1", "K2"]
+  );
+  assert.equal(generated.calls[0].structuredOutputSchema.properties.citedSources.items.enum.includes("K3"), false);
+});
+
 // This route never carries a system context, so "ok" - which requires one -
 // is unreachable here by construction. Locking that in prevents a later
 // change from quietly presenting a knowledge-only answer as fully grounded.

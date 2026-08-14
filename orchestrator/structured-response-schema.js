@@ -41,6 +41,7 @@ const SCHEMAS = Object.freeze({
 
 const CITED_SOURCE_ID_PATTERN = /^K[1-3]$/;
 const MAX_CITED_SOURCES = 3;
+const DEFAULT_CITED_SOURCE_IDS = Object.freeze(["K1", "K2", "K3"]);
 // Mirrors cc-snapshot-contract.js's own ID_PATTERN exactly (the same shape
 // every alertId/serviceId/repoId/checkId/projectId must already satisfy) -
 // kept as its own literal here, same as CITED_SOURCE_ID_PATTERN above, since
@@ -78,6 +79,77 @@ function isValidCitedSourcesArray(value) {
 
 export function isStructuredReportIntent(intent) {
   return Object.hasOwn(SCHEMAS, intent);
+}
+
+function normalizeAllowedCitedSourceIds(value) {
+  if (value === undefined) return DEFAULT_CITED_SOURCE_IDS;
+  if (!Array.isArray(value) || value.length > MAX_CITED_SOURCES) {
+    throw new TextResponseError("INTERNAL_ERROR", "Structured-output source constraints are invalid.");
+  }
+  const seen = new Set();
+  for (const item of value) {
+    if (typeof item !== "string" || !CITED_SOURCE_ID_PATTERN.test(item) || seen.has(item)) {
+      throw new TextResponseError("INTERNAL_ERROR", "Structured-output source constraints are invalid.");
+    }
+    seen.add(item);
+  }
+  return Object.freeze([...value]);
+}
+
+function nonEmptyStringSchema() {
+  return { type: "string", minLength: 1 };
+}
+
+// The native Ollama format schema is generated from the same closed intent
+// descriptors the parser below validates. It constrains generation but does
+// not replace parseStructuredReport: provider output still passes through the
+// existing fail-closed parser after generation.
+export function buildStructuredOutputJsonSchema(intent, { allowedCitedSourceIds } = {}) {
+  const schema = SCHEMAS[intent];
+  if (!schema) return null;
+
+  const properties = {};
+  for (const field of schema.stringFields) properties[field] = nonEmptyStringSchema();
+  for (const field of schema.stringArrayFields || []) {
+    properties[field] = { type: "array", items: { type: "string" } };
+  }
+  if (schema.commitArrayField) {
+    properties[schema.commitArrayField] = {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { ref: { type: "string" }, description: { type: "string" } },
+        required: ["ref", "description"],
+        additionalProperties: false
+      }
+    };
+  }
+  if (schema.citedSourcesField) {
+    const sourceIds = normalizeAllowedCitedSourceIds(allowedCitedSourceIds);
+    properties[schema.citedSourcesField] = {
+      type: "array",
+      items: sourceIds.length > 0
+        ? { type: "string", enum: [...sourceIds] }
+        : { type: "string" },
+      maxItems: sourceIds.length,
+      uniqueItems: true
+    };
+  }
+  if (schema.nullableIdField) {
+    properties[schema.nullableIdField] = {
+      anyOf: [
+        { type: "string", pattern: NULLABLE_ID_FIELD_PATTERN.source },
+        { type: "null" }
+      ]
+    };
+  }
+
+  return Object.freeze({
+    type: "object",
+    properties: Object.freeze(properties),
+    required: Object.freeze([...schema.fields]),
+    additionalProperties: false
+  });
 }
 
 // Parses and strictly validates the provider's plain-text answer as a JSON

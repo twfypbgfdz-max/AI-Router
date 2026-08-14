@@ -1,10 +1,58 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isStructuredReportIntent, parseStructuredReport } from "../orchestrator/structured-response-schema.js";
+import {
+  buildStructuredOutputJsonSchema,
+  isStructuredReportIntent,
+  parseStructuredReport
+} from "../orchestrator/structured-response-schema.js";
 
 test("non-report intents are not structured and parsing returns null", () => {
   assert.equal(isStructuredReportIntent("general_question"), false);
   assert.equal(parseStructuredReport("general_question", "not json"), null);
+  assert.equal(buildStructuredOutputJsonSchema("general_question"), null);
+});
+
+test("native knowledge schema mirrors the closed contract and limits citations to offered source ids", () => {
+  const schema = buildStructuredOutputJsonSchema("knowledge_answer", {
+    allowedCitedSourceIds: ["K1", "K2"]
+  });
+  assert.equal(schema.type, "object");
+  assert.deepEqual(schema.required, ["answer", "citedSources"]);
+  assert.equal(schema.additionalProperties, false);
+  assert.deepEqual(schema.properties.answer, { type: "string", minLength: 1 });
+  assert.deepEqual(schema.properties.citedSources, {
+    type: "array",
+    items: { type: "string", enum: ["K1", "K2"] },
+    maxItems: 2,
+    uniqueItems: true
+  });
+  assert.equal(schema.properties.citedSources.items.enum.includes("[K1]"), false);
+  assert.equal(schema.properties.citedSources.items.enum.includes("K3"), false);
+});
+
+test("native knowledge schema permits only an empty citation array when no source was offered", () => {
+  const schema = buildStructuredOutputJsonSchema("knowledge_answer", { allowedCitedSourceIds: [] });
+  assert.equal(schema.properties.citedSources.maxItems, 0);
+  assert.equal(Object.hasOwn(schema.properties.citedSources.items, "enum"), false);
+});
+
+test("native schemas cover every existing structured intent with closed objects", () => {
+  for (const intent of ["project_status_report", "git_change_report", "knowledge_answer", "snapshot_briefing"]) {
+    const schema = buildStructuredOutputJsonSchema(intent);
+    assert.equal(schema.type, "object");
+    assert.equal(schema.additionalProperties, false);
+    assert.deepEqual(new Set(schema.required), new Set(Object.keys(schema.properties)));
+  }
+  assert.equal(buildStructuredOutputJsonSchema("git_change_report").properties.commits.items.additionalProperties, false);
+});
+
+test("invalid native knowledge source constraints fail closed internally", () => {
+  for (const allowedCitedSourceIds of [["K9"], ["[K1]"], ["K1", "K1"], "K1"]) {
+    assert.throws(
+      () => buildStructuredOutputJsonSchema("knowledge_answer", { allowedCitedSourceIds }),
+      { code: "INTERNAL_ERROR" }
+    );
+  }
 });
 
 test("a valid project status report parses and is deep-frozen plain data", () => {

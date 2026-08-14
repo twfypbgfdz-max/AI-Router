@@ -70,6 +70,29 @@ test("Ollama adapter uses one fixed chat request against the configured base URL
   });
 });
 
+test("Ollama adapter passes a native structured-output schema as format without changing generation options", async () => {
+  const calls = [];
+  const schema = {
+    type: "object",
+    properties: {
+      answer: { type: "string" },
+      citedSources: { type: "array", items: { type: "string", enum: ["K1"] }, maxItems: 1, uniqueItems: true }
+    },
+    required: ["answer", "citedSources"],
+    additionalProperties: false
+  };
+  const adapter = createOllamaTextAdapter({
+    model: "qwen2.5:7b-instruct",
+    fetchImpl: async (url, options) => { calls.push(options); return providerJsonResponse(ollamaPayload("{}")); }
+  });
+  await adapter.generateText(adapterInput({ structuredOutputSchema: schema }));
+  const body = JSON.parse(calls[0].body);
+  assert.deepEqual(body.format, schema);
+  assert.deepEqual(body.options, { num_predict: 800 });
+  assert.equal(Object.hasOwn(body.options, "temperature"), false);
+  assert.equal(Object.hasOwn(body.options, "seed"), false);
+});
+
 test("a custom base URL is respected and trailing slashes are stripped", async () => {
   const calls = [];
   const adapter = createOllamaTextAdapter({
@@ -90,6 +113,7 @@ test("no context omits the second user message", async () => {
   await adapter.generateText(adapterInput({ context: null }));
   const body = JSON.parse(calls[0].body);
   assert.deepEqual(body.messages.map((message) => message.role), ["system", "user"]);
+  assert.equal(Object.hasOwn(body, "format"), false);
 });
 
 test("an incomplete response (done: false) is rejected fail-closed", async () => {

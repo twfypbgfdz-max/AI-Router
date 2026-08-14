@@ -14,7 +14,11 @@ import { createOpenAITextAdapter } from "./provider-adapters/openai-text.js";
 import { createOllamaTextAdapter } from "./provider-adapters/ollama-text.js";
 import { TextResponseError } from "./text-response-error.js";
 import { buildTextResponsePrompt } from "./text-response-prompt.js";
-import { isStructuredReportIntent, parseStructuredReport } from "./structured-response-schema.js";
+import {
+  buildStructuredOutputJsonSchema,
+  isStructuredReportIntent,
+  parseStructuredReport
+} from "./structured-response-schema.js";
 
 const SAFE_ROUTES = new Set(["analysis", "content_generation", "general_chat", "knowledge_query", "planning"]);
 const ADAPTER_RESULT_FIELDS = new Set(["text", "usage"]);
@@ -119,7 +123,7 @@ export function createTextResponseService({
   clearTimer = clearTimeout
 } = {}) {
   return Object.freeze({
-    async respond(rawInput, { signal, executionRequestText } = {}) {
+    async respond(rawInput, { signal, executionRequestText, allowedCitedSourceIds } = {}) {
       if (!signal || typeof signal.addEventListener !== "function") {
         throw new TextResponseError("INTERNAL_ERROR", "A request abort signal is required.");
       }
@@ -166,13 +170,17 @@ export function createTextResponseService({
       }, providerConfig.timeoutMs);
       let rawResult;
       try {
-        const providerOperation = Promise.resolve(adapter.generateText({
+        const adapterInput = {
           instructions: prompt.instructions,
           question: prompt.question,
           context: prompt.context,
           maxOutputTokens: TEXT_RESPONSE_MAX_OUTPUT_TOKENS,
           signal: providerController.signal
-        }));
+        };
+        if (providerId === "ollama" && isStructuredReportIntent(request.intent)) {
+          adapterInput.structuredOutputSchema = buildStructuredOutputJsonSchema(request.intent, { allowedCitedSourceIds });
+        }
+        const providerOperation = Promise.resolve(adapter.generateText(adapterInput));
         const aborted = new Promise((resolve, reject) => {
           const onAbort = () => reject(abortError(providerController.signal, "provider_aborted"));
           providerController.signal.addEventListener("abort", onAbort, { once: true });

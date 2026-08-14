@@ -2,7 +2,7 @@ import { TextResponseError } from "../text-response-error.js";
 
 export const DEFAULT_BASE_URL = "http://localhost:11434";
 const MAX_PROVIDER_BODY_BYTES = 1_048_576;
-const ADAPTER_INPUT_FIELDS = new Set(["instructions", "question", "context", "maxOutputTokens", "signal"]);
+const ADAPTER_INPUT_FIELDS = new Set(["instructions", "question", "context", "maxOutputTokens", "signal", "structuredOutputSchema"]);
 const ADAPTER_RESULT_FIELDS = new Set(["text", "usage"]);
 const USAGE_FIELDS = new Set(["inputTokens", "outputTokens", "totalTokens"]);
 const MESSAGE_FIELDS = new Set(["role", "content"]);
@@ -130,6 +130,8 @@ export function createOllamaTextAdapter({ model, baseUrl = DEFAULT_BASE_URL, fet
       if (typeof input.instructions !== "string" || !input.instructions
         || typeof input.question !== "string" || !input.question
         || (input.context !== null && typeof input.context !== "string")
+        || (input.structuredOutputSchema !== undefined
+          && (!input.structuredOutputSchema || typeof input.structuredOutputSchema !== "object" || Array.isArray(input.structuredOutputSchema)))
         || !Number.isSafeInteger(input.maxOutputTokens) || input.maxOutputTokens < 1) {
         throw new TextResponseError("INTERNAL_ERROR", "Provider adapter input is invalid.");
       }
@@ -138,6 +140,7 @@ export function createOllamaTextAdapter({ model, baseUrl = DEFAULT_BASE_URL, fet
         model,
         messages: providerMessages(input.instructions, input.question, input.context),
         stream: false,
+        ...(input.structuredOutputSchema ? { format: input.structuredOutputSchema } : {}),
         options: { num_predict: input.maxOutputTokens }
       };
       try {

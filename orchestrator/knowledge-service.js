@@ -264,7 +264,8 @@ export function createKnowledgeService({
     // mistaken for a user instruction while preserving the same hard block
     // for an actual execution request.
     const generationPayload = await textResponseHandler(internalRequest, internalResponse, {
-      executionRequestText: question
+      executionRequestText: question,
+      allowedCitedSourceIds: results.map((_, index) => `K${index + 1}`)
     });
 
     if (generationPayload.status !== "answered") {

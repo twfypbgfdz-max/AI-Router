@@ -242,6 +242,65 @@ test("knowledge_answer classifies as route knowledge_query, not general_chat", a
   assert.equal(result.route.name, "knowledge_query");
 });
 
+test("structured Ollama calls receive the intent schema limited to currently offered knowledge sources", async () => {
+  const payload = { answer: "Belegt.", citedSources: ["K1"] };
+  const { adapter, calls } = successfulAdapter({ text: JSON.stringify(payload) });
+  const env = textProviderEnv({
+    AI_ROUTER_TEXT_PROVIDER: "ollama",
+    AI_ROUTER_OLLAMA_MODEL: "qwen2.5:7b-instruct",
+    AI_ROUTER_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+    AI_ROUTER_OLLAMA_TIMEOUT_MS: "1000"
+  });
+  const result = await serviceWith(adapter, env).respond(validTextResponseRequest({ intent: "knowledge_answer" }), {
+    signal: new AbortController().signal,
+    allowedCitedSourceIds: ["K1"]
+  });
+  assert.deepEqual(result.structured, payload);
+  assert.deepEqual(calls[0].structuredOutputSchema.properties.citedSources.items.enum, ["K1"]);
+  assert.equal(calls[0].structuredOutputSchema.additionalProperties, false);
+});
+
+test("unstructured Ollama and structured OpenAI adapter inputs remain unchanged", async () => {
+  const unstructured = successfulAdapter({ text: "Plain answer." });
+  const ollamaEnv = textProviderEnv({
+    AI_ROUTER_TEXT_PROVIDER: "ollama",
+    AI_ROUTER_OLLAMA_MODEL: "qwen2.5:7b-instruct",
+    AI_ROUTER_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+    AI_ROUTER_OLLAMA_TIMEOUT_MS: "1000"
+  });
+  await serviceWith(unstructured.adapter, ollamaEnv).respond(validTextResponseRequest(), {
+    signal: new AbortController().signal
+  });
+  assert.equal(Object.hasOwn(unstructured.calls[0], "structuredOutputSchema"), false);
+
+  const structured = successfulAdapter({
+    text: JSON.stringify({ answer: "Belegt.", citedSources: ["K1"] })
+  });
+  await serviceWith(structured.adapter).respond(validTextResponseRequest({ intent: "knowledge_answer" }), {
+    signal: new AbortController().signal
+  });
+  assert.equal(Object.hasOwn(structured.calls[0], "structuredOutputSchema"), false);
+});
+
+test("the existing parser remains the second fail-closed stage after native Ollama schema generation", async () => {
+  const { adapter } = successfulAdapter({
+    text: JSON.stringify({ answer: "Belegt.", citedSources: ["[K1]"] })
+  });
+  const env = textProviderEnv({
+    AI_ROUTER_TEXT_PROVIDER: "ollama",
+    AI_ROUTER_OLLAMA_MODEL: "qwen2.5:7b-instruct",
+    AI_ROUTER_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+    AI_ROUTER_OLLAMA_TIMEOUT_MS: "1000"
+  });
+  await assert.rejects(
+    serviceWith(adapter, env).respond(validTextResponseRequest({ intent: "knowledge_answer" }), {
+      signal: new AbortController().signal,
+      allowedCitedSourceIds: ["K1"]
+    }),
+    (error) => error.code === "PROVIDER_RESPONSE_INVALID" && error.safeDetails.reason === "structured_output_invalid"
+  );
+});
+
 test("a valid knowledge_answer output is validated and exposed as serviceResult.structured", async () => {
   const payload = { answer: "Der AI-Router empfiehlt, führt aber nicht autonom aus.", citedSources: ["K1", "K2"] };
   const { adapter } = successfulAdapter({ text: JSON.stringify(payload) });
