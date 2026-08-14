@@ -790,6 +790,54 @@ Das Ratelimit von `cc/knowledge` ist bewusst **eine Anfrage pro 60 Sekunden**
 aufeinanderfolgende Testfragen laufen deshalb planmäßig in `rate_limited` —
 das ist kein Fehler, sondern die konfigurierte Grenze.
 
+## Startbereitschaft und empfohlener Startweg (P2)
+
+**`GET /api/jarvis/ready`** ist ein read-only, tokenfreier Endpunkt (gleiche
+Vertrauensstufe wie `/api/health`), der vor einer echten Anfrage sagt, ob
+Jarvis nutzbar ist: `{ state, coreReady, voiceReady, reasons[] }` mit genau
+drei Zuständen.
+
+- **`ready`** — Core vollständig frisch (Ollama, Chat-Modell, Embedding-Modell,
+  aktueller RAG-Index) **und** Voice vollständig konfiguriert.
+- **`partial`** — Core nutzbar, aber Voice fehlt/unvollständig, **oder** Core
+  läuft mit einem inhaltlich veralteten, aber noch verwendbaren
+  Last-known-good-Index (`index_stale`). Voice-Ausfall macht Text-Jarvis nie
+  automatisch komplett unbrauchbar.
+- **`unavailable`** — Core kann nicht zuverlässig genutzt werden: Ollama,
+  Chat-Modell oder Embedding-Modell fehlt, oder der Index fehlt/ist
+  strukturell inkompatibel/beschädigt.
+
+`reasons[]` verwendet ausschließlich bereits bestehende, im Knowledge-Pfad
+etablierte Codes (`answer_model_unavailable`, `answer_provider_unavailable`,
+`embedding_model_unavailable`, `index_missing`/`index_stale`/
+`index_incompatible`/`index_error`, `WHISPER_NOT_CONFIGURED`,
+`PIPER_NOT_CONFIGURED`, `PIPER_UNAVAILABLE`) — keine neue Taxonomie. Kein
+Whisper-Netzwerk-Ping: Voice-Bereitschaft prüft nur Konfigurationspräsenz
+(Whisper) bzw. Konfiguration plus Dateiexistenz auf der Platte (Piper), nie
+einen echten Verbindungsaufbau oder Prozessstart.
+
+**`npm run jarvis:start`** ist der empfohlene, Jarvis-spezifische Startweg:
+er ruft `checkJarvisReadiness()` einmal auf (dieselbe Funktion, die auch
+`/api/jarvis/ready` beantwortet — keine zweite, abweichende Prüflogik),
+gibt eine kurze deutsche Zusammenfassung aus und startet den Router
+**nur**, wenn Core nutzbar ist:
+
+| Zustand | Ausgabe (Beispiel) | Router startet? | Exit-Code |
+|---|---|---|---|
+| `ready` | „Jarvis core ready. Voice: bereit." | ja | – (Prozess bleibt laufen) |
+| `partial` | „Jarvis partial:\n  - Sprachausgabe (Piper) ist nicht konfiguriert." | ja | – (Prozess bleibt laufen) |
+| `unavailable` | „Jarvis unavailable:\n  - Ollama ist nicht erreichbar." | **nein** | `1` |
+
+`npm run jarvis:start` prüft nur — es zieht nie automatisch ein Modell
+(`ollama pull`), stößt nie automatisch `npm run rag:reindex` an und
+startet/stoppt nie Ollama oder whisper-server. **`npm start` bleibt
+unverändert und ungated** verfügbar: für Command-Center-/Router-Funktionen,
+die nicht von Ollama oder dem RAG-Index abhängen (z. B.
+`/api/router/project-status`, `/api/router/git-changes`,
+`/api/v1/cc/status`), ist das weiterhin der richtige, unmittelbare Weg —
+absichtlich ohne `--force`-Flag an `jarvis:start`, das ist bereits die
+vorhandene Ausweichmöglichkeit.
+
 ## Git-Hooks: Agent-Lock-Absicherung
 
 Ergaenzend zum Claude-Code-eigenen PreToolUse-Hook (der nur Claude-Code-Bash-

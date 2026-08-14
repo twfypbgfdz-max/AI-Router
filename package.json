@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node orchestrator/server.js",
+    "jarvis:start": "node scripts/jarvis-start.js",
     "test": "node scripts/run-tests.js",
     "rag:reindex": "node scripts/rag-reindex.js",
     "rag:quality": "node scripts/rag-quality-eval.js",

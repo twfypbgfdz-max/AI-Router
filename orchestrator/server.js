@@ -353,10 +353,22 @@ export function attachServerErrorHandler(server, { port, host, exit = process.ex
   });
 }
 
-const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isDirectRun) {
+// The one canonical way this router process is actually brought up -
+// extracted (P2-B) so `npm start` (via the isDirectRun block below) and
+// `npm run jarvis:start` (scripts/jarvis-start.js, after its own readiness
+// gate) share the exact same bootstrap instead of two near-identical
+// copies. Behavior is unchanged from before the extraction: same port,
+// same host default, same error handler, same SIGINT shutdown.
+export function startRouterServer({ port = 8787, host = "127.0.0.1" } = {}) {
   const server = createRouterServer();
-  attachServerErrorHandler(server, { port: 8787, host: "127.0.0.1" });
-  server.listen(8787, "127.0.0.1", () => { logger.log({ event: "server_started", safeMetadata: { version: ROUTER_VERSION } }).catch(() => {}); console.log("AI Router local server: http://127.0.0.1:8787"); });
+  attachServerErrorHandler(server, { port, host });
+  server.listen(port, host, () => {
+    logger.log({ event: "server_started", safeMetadata: { version: ROUTER_VERSION } }).catch(() => {});
+    console.log(`AI Router local server: http://${host}:${port}`);
+  });
   process.once("SIGINT", () => { logger.log({ event: "server_stopped" }).catch(() => {}); server.close(() => process.exit(0)); });
+  return server;
 }
+
+const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirectRun) startRouterServer();
