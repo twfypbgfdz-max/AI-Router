@@ -163,9 +163,45 @@ test("voice input uses local WAV recording, never a browser cloud speech API", (
   assert.ok(!/MediaRecorder/.test(PAGE), "no MediaRecorder - its compressed output needs ffmpeg on whisper-server");
 });
 
-test("the page talks only to its own three server-side bridges, never to a knowledge, STT or TTS backend directly", () => {
+test("the page talks only to its own four server-side bridges, never to a knowledge, STT or TTS backend directly", () => {
   const fetchTargets = [...PAGE.matchAll(/fetch\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/speak", "/api/jarvis/transcribe"]);
+  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/ready", "/api/jarvis/speak", "/api/jarvis/transcribe"]);
+});
+
+// --- P2-C: readiness display --------------------------------------------
+
+test("the page fetches /api/jarvis/ready exactly once on load, not via polling or a socket", () => {
+  assert.equal((PAGE.match(/fetch\(\s*"\/api\/jarvis\/ready"/g) || []).length, 1);
+  assert.ok(!/setInterval|setTimeout/.test(PAGE.match(/Jarvis-Readiness[\s\S]*?\}\)\(\);/)?.[0] || ""), "no polling around the readiness fetch");
+  assert.ok(!/new WebSocket/.test(PAGE), "no WebSocket anywhere on the page");
+});
+
+test("the page renders all three readiness states in plain German using the existing badge/notice styling", () => {
+  assert.ok(PAGE.includes('"Jarvis bereit"'));
+  assert.ok(PAGE.includes('"Jarvis teilweise bereit"'));
+  assert.ok(PAGE.includes('"Jarvis nicht verfügbar"'));
+  assert.ok(/<span class="badge[^>]*id="jarvis-ready-badge"/.test(PAGE), "the readiness indicator reuses the existing .badge styling");
+});
+
+test("the page translates every readiness reason code the closed vocabulary can emit", () => {
+  for (const reason of [
+    "answer_provider_unavailable", "answer_model_unavailable", "embedding_model_unavailable",
+    "index_missing", "index_stale", "index_incompatible", "index_error",
+    "WHISPER_NOT_CONFIGURED", "PIPER_NOT_CONFIGURED", "PIPER_UNAVAILABLE"
+  ]) {
+    assert.ok(PAGE.includes(`${reason}:`), `readiness reason ${reason} needs a plain-language explanation`);
+  }
+});
+
+test("voice buttons are never disabled or hidden based on readiness", () => {
+  const readinessBlockMatch = PAGE.match(/Jarvis-Readiness[\s\S]*?\}\)\(\);/);
+  assert.ok(readinessBlockMatch, "the readiness block must exist");
+  assert.ok(!/micBtn\.(disabled|hidden)/.test(readinessBlockMatch[0]), "readiness must not disable/hide the mic button");
+  assert.ok(!/speakBtn\.(disabled|hidden)/.test(readinessBlockMatch[0]), "readiness must not disable/hide the speak button");
+});
+
+test("a failed readiness fetch is shown dezently and never throws or blocks the rest of the page", () => {
+  assert.ok(/\.catch\(function \(\) \{\s*setReadyBadge\("Jarvis-Status unbekannt", "pending"\);/.test(PAGE));
 });
 
 test("a transcribed recording fills the question field but never auto-submits", () => {
