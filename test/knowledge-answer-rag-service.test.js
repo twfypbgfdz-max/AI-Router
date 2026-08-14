@@ -238,6 +238,40 @@ test("searchFn is called without any caller-controllable threshold or top-k opti
   assert.equal(receivedArgs.length, 2);
 });
 
+test("the production retrieval path enforces the real 2000-character combined snippet budget", async () => {
+  const result = await retrieveKnowledge("Frage", {
+    env: BASE_ENV,
+    assertEmbeddingModelAvailableFn: noopAvailability,
+    readIndexMetaFn: freshMeta,
+    readAllChunksFn: () => [
+      chunk({ sourceDoc: "a.md", text: "a".repeat(1_200), embedding: [1, 0, 0] }),
+      chunk({ sourceDoc: "b.md", text: "b".repeat(1_200), embedding: [1, 0, 0] })
+    ],
+    embedTextFn: async () => [1, 0, 0]
+  });
+  assert.equal(result.knowledgeState, "available");
+  assert.equal(result.results.length, 1);
+  assert.ok(result.results.reduce((sum, entry) => sum + entry.snippet.length, 0) <= 2_000);
+});
+
+test("a manifest verification error returns old chunks only as stale knowledge", async () => {
+  const result = await retrieveKnowledge("Frage", {
+    env: BASE_ENV,
+    assertEmbeddingModelAvailableFn: noopAvailability,
+    readIndexMetaFn: freshMeta,
+    readAllChunksFn: () => [chunk()],
+    verifyIndexFreshnessFn: () => ({
+      state: "index_error", reasons: ["manifest_document_not_ok"], ageWarning: false,
+      allowedSourceDocs: ["10_Apps/x.md"], sourceMetadata: {}
+    }),
+    embedTextFn: async () => [1, 0, 0],
+    searchFn: () => ({ results: [{ sourceDoc: "10_Apps/x.md", section: "A", similarity: 0.9, snippet: "old", indexedAt: new Date().toISOString() }], truncated: false })
+  });
+  assert.equal(result.knowledgeState, "index_stale");
+  assert.equal(result.indexVerification.state, "index_error");
+  assert.equal(result.results[0].freshness, "stale");
+});
+
 // ---------------------------------------------------------------------------
 // P1-A3: authority metadata is joined onto the server-built results
 // ---------------------------------------------------------------------------

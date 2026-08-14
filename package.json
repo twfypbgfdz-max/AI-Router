@@ -8,6 +8,7 @@
     "test": "node scripts/run-tests.js",
     "rag:reindex": "node scripts/rag-reindex.js",
     "rag:quality": "node scripts/rag-quality-eval.js",
+    "rag:truth": "node scripts/rag-truth-eval.js",
     "knowledge:parity": "node scripts/knowledge-parity-check.js"
   }
 }

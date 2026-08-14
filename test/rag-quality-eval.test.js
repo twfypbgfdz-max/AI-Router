@@ -172,3 +172,13 @@ test("every expected document of the committed set is still in the committed all
   const allowedDocuments = new Set(loadAllowlist(RAG_ALLOWLIST_FILE).documents.map((entry) => entry.relativePath));
   assert.doesNotThrow(() => loadQualitySet(undefined, { allowedDocuments }));
 });
+
+test("Q18 remains unchanged in retrieval quality rather than moving into truth quality", () => {
+  const q18 = loadQualitySet().cases.find((entry) => entry.id === "Q18");
+  assert.deepEqual(q18, {
+    id: "Q18",
+    question: "Wie ist die Arbeitsteilung zwischen den verschiedenen KI-Werkzeugen geregelt?",
+    expectedDoc: "90_System/KI-Router-Regeln.md",
+    note: null
+  });
+});

@@ -314,6 +314,39 @@ npm run rag:quality -- --top-k=5 --json
   Antwortqualität des Modells — Letzteres wäre nicht deterministisch
   wiederholbar.
 
+- **Q18 bleibt im Retrieval-Set unverändert** als bekannter
+  Retrieval-/Ranking-Grenzfall. Er wird weder durch eine Schwellenänderung
+  noch durch das Truth-Eval künstlich grün gemacht.
+
+### Truth-/Antwortqualität messen: `npm run rag:truth`
+
+Das separate, ebenfalls read-only ausgelegte Truth-Eval prüft, ob der reale
+Knowledge-/Jarvis-Pfad bei Aktualität, Autorität, historischen Aussagen und
+fehlender Live-Evidenz korrekt begrenzt antwortet. Es nutzt bewusst denselben
+produktiven Retrieval-, Authority-, Prompt-, Ollama-Provider- und
+Source-Validation-Pfad wie `/api/v1/knowledge`; nur HTTP-Transport und
+Routen-Authentifizierung entfallen. Damit gilt auch dieselbe reale
+2.000-Zeichen-Grenze für den kombinierten RAG-Kontext.
+
+```
+npm run rag:truth -- --samples=1
+npm run rag:truth -- --samples=3
+npm run rag:truth -- --samples=3 --json
+```
+
+- **Fragenset:** `config/rag-truth-set.json`, getrennt von der reinen
+  Retrieval-Messung. Die zehn Fälle prüfen Antwortkonzepte, verbotene
+  Behauptungen, Response-State/Warnings und serverseitig validierte
+  Quellenklasse/Abschnitte, ohne einen exakten Modellwortlaut zu verlangen.
+- `--samples=1` ist eine schnelle Diagnose. Die Abnahme erfolgt mit
+  `--samples=3`: Nur **3/3** ist grün; **2/3** wird als `unstable` gewertet.
+- Pro Fall wird genau ein produktiver Retrieval-Snapshot erzeugt und für
+  alle Samples wiederverwendet. Unterschiede zwischen den Samples stammen
+  dadurch aus der Modellantwort, nicht aus wechselndem Retrieval.
+- Ein nicht inhaltsaktueller beziehungsweise inkompatibler Index macht den
+  Fall `not_evaluable`; der Runner nutzt dann keine alte Grundlage als
+  vermeintlichen Truth-Nachweis.
+
 ## Command-Center-Wissenskontext (v1)
 
 `POST /api/v1/cc/knowledge` ist ein separater, intern authentifizierter

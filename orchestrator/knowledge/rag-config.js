@@ -39,6 +39,16 @@ export const RAG_QUALITY_SET_FILE = process.env.AI_ROUTER_RAG_QUALITY_SET_FILE
 
 export const RAG_QUALITY_MAX_CASES = 200;
 
+// Answer-level truth/regression input for the explicit local-model eval.
+// Like the retrieval quality set, this is measurement-only: production
+// request handling never reads it. The runner itself deliberately invokes
+// the production knowledge service instead of rebuilding that pipeline.
+export const RAG_TRUTH_SET_FILE = process.env.AI_ROUTER_RAG_TRUTH_SET_FILE
+  ? path.resolve(process.env.AI_ROUTER_RAG_TRUTH_SET_FILE)
+  : path.join(REPOSITORY_ROOT, "config", "rag-truth-set.json");
+
+export const RAG_TRUTH_MAX_CASES = 50;
+
 export const RAG_MAX_ALLOWLIST_ENTRIES = 100;
 export const RAG_MAX_DOCUMENT_BYTES = 200_000;
 export const RAG_MAX_CHUNK_CHARS = 2_000;
