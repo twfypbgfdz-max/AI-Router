@@ -225,7 +225,7 @@ test("reads the pre-built chunks and delegates content verification to the fresh
   assert.equal(verifierCalled, true);
 });
 
-test("searchFn is called without any caller-controllable threshold or top-k options", async () => {
+test("searchFn receives only the validated query text, without caller-controllable threshold or top-k options", async () => {
   let receivedArgs = null;
   await retrieveKnowledge("Frage", {
     env: BASE_ENV,
@@ -235,7 +235,10 @@ test("searchFn is called without any caller-controllable threshold or top-k opti
     embedTextFn: async () => [1, 0, 0],
     searchFn: (...args) => { receivedArgs = args; return { results: [], truncated: false }; }
   });
-  assert.equal(receivedArgs.length, 2);
+  assert.equal(receivedArgs.length, 3);
+  assert.deepEqual(receivedArgs[2], { queryText: "Frage" });
+  assert.equal("minSimilarity" in receivedArgs[2], false);
+  assert.equal("topK" in receivedArgs[2], false);
 });
 
 test("the production retrieval path enforces the real 2000-character combined snippet budget", async () => {

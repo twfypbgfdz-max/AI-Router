@@ -111,7 +111,7 @@ export async function retrieveKnowledge(question, {
     const searchableChunks = allowedSourceDocs
       ? chunks.filter((chunk) => allowedSourceDocs.has(chunk.sourceDoc))
       : chunks;
-    searchResult = searchFn(embedding, searchableChunks);
+    searchResult = searchFn(embedding, searchableChunks, { queryText: question });
   } catch {
     return Object.freeze({ knowledgeState: "search_failed", results: Object.freeze([]), indexVerification });
   }

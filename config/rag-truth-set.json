@@ -43,10 +43,17 @@
         ],
         "answer": {
           "concepts": [
-            { "id": "dec006_is_included", "anyOf": ["dec-006 ist enthalten", "einschliesslich dec-006", "inklusive dec-006", "enthalt dec-006"] }
+            {
+              "id": "dec006_is_included",
+              "anyOf": [],
+              "patterns": ["(?=[^.!?\\n]*\\bdec-0*6\\b)(?=[^.!?\\n]*\\ballowlist\\b)[^.!?\\n]*\\b(?:enthalt\\w*|aufgenommen\\w*|bestandteil|teil)\\b"]
+            }
           ],
           "forbiddenPatterns": [
-            { "id": "dec006_affirmed_as_missing", "pattern": "\\bdec-006 (?:ist )?nicht enthalten\\b" }
+            {
+              "id": "dec006_not_clearly_included",
+              "pattern": "(?=[^.!?\\n]*\\bdec-0*6\\b)(?=[^.!?\\n]*\\ballowlist\\b)[^.!?\\n]*(?:\\bnicht\\b[^.!?\\n]{0,40}\\b(?:enthalt\\w*|aufgenommen\\w*|dokumentiert\\w*|belegt\\w*|bestandteil|teil)\\b|\\bkein\\w*\\s+(?:bestandteil|teil)\\b|\\b(?:unklar|unbekannt|offen|moglicherweise|vermutlich|wahrscheinlich|anscheinend)\\b)"
+            }
           ]
         }
       }

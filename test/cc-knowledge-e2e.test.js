@@ -109,6 +109,38 @@ test("context + RAG path, citing K2 then K1: sources[] reflects citation order",
   assert.notEqual(body.sources[0].sourceDoc, body.sources[1].sourceDoc);
 });
 
+test("a diversity sentence keeps its source metadata and is validated under its final positional K-id", async () => {
+  const { adapter } = structuredAdapter({ answer: "DEC-006 ist enthalten. [K2]", citedSources: ["K2"] });
+  const r1Text = "DEC-006 wurde beschlossen. ".padEnd(1_600, "x");
+  const handler = createCcKnowledgeHandler({
+    env: ccKnowledgeEnv(),
+    adapterFactory: () => adapter,
+    retrieveKnowledgeFn: realRag({
+      meta: freshMeta(),
+      chunks: [
+        chunk({ sourceDoc: "r1.md", section: "Verlauf", text: r1Text, embedding: [1, 0, 0] }),
+        chunk({ sourceDoc: "r2.md", section: "Übergabe", text: "Zu gross. ".padEnd(600, "y"), embedding: [0.99, 0.1, 0] }),
+        chunk({
+          sourceDoc: "r3.md", section: "Aktueller fachlicher Projektstand", docStatus: "Draft", docVersion: "2.0",
+          text: "Die Allowlist enthält **10 Dokumente einschließlich DEC-006**.", embedding: [0.98, 0.2, 0]
+        })
+      ]
+    }),
+    totalTimeoutMs: 2_000
+  });
+  const body = await run(handler, validKnowledgeBody({
+    question: "Ist DEC-006 in der RAG-Allowlist enthalten?",
+    context: knowledgeContext()
+  }));
+
+  assert.equal(body.state, "ok");
+  assert.equal(body.sources.length, 1);
+  assert.equal(body.sources[0].sourceDoc, "r3.md");
+  assert.equal(body.sources[0].section, "Aktueller fachlicher Projektstand");
+  assert.equal(body.sources[0].docStatus, "Draft");
+  assert.equal(body.sources[0].docVersion, "2.0");
+});
+
 test("a syntactically valid but out-of-range source id (K3, only one result offered) fails closed", async () => {
   // "K9" itself is already rejected one layer earlier, at the structured
   // JSON schema (only "K1"/"K2"/"K3" are valid tokens at all - see

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { normalizeKnowledgeRequest } from "../orchestrator/knowledge-contract.js";
 import { KNOWLEDGE_SCHEMA_VERSION } from "../orchestrator/knowledge-config.js";
 import { loadAllowlist } from "../orchestrator/knowledge/document-allowlist.js";
-import { RAG_ALLOWLIST_FILE } from "../orchestrator/knowledge/rag-config.js";
+import { RAG_ALLOWLIST_FILE, RAG_TRUTH_SET_FILE } from "../orchestrator/knowledge/rag-config.js";
 import {
   enrichCitedSources,
   evaluateCurrentCommitClaims,
@@ -85,6 +85,69 @@ test("a numeric truth concept can robustly accept a standalone markdown-formatte
     retrieval: retrieval()
   });
   assert.equal(evaluated.verdict, "pass");
+});
+
+function t02Fixture(answer, { sourceDoc = "10_Apps/01_Aktive-Projekte/AI-Router.md" } = {}) {
+  const allowedDocuments = new Set(loadAllowlist(RAG_ALLOWLIST_FILE).documents.map((entry) => entry.relativePath));
+  const testCase = loadTruthSet(RAG_TRUTH_SET_FILE, { allowedDocuments }).cases.find((entry) => entry.id === "T02");
+  const source = {
+    sourceDoc,
+    section: "AI-Router > Aktueller fachlicher Projektstand",
+    similarity: 0.7
+  };
+  return {
+    testCase,
+    payload: {
+      state: "partial",
+      knowledgeState: "available",
+      answer,
+      warnings: [],
+      sources: [source]
+    },
+    retrieval: {
+      knowledgeState: "available",
+      results: [{
+        ...source,
+        informationClass: "project_context",
+        sectionValidity: "current"
+      }]
+    }
+  };
+}
+
+test("T02 accepts grammatically unusual but unequivocal inclusion statements", () => {
+  const accepted = [
+    "Ja, DEC-006 in der RAG-Allowlist enthalten ist.",
+    "DEC-006 wurde in die RAG-Allowlist aufgenommen.",
+    "DEC-006 ist Bestandteil der RAG-Allowlist.",
+    "Zur RAG-Allowlist gehört DEC-006 als fester Teil."
+  ];
+  for (const answer of accepted) {
+    const fixture = t02Fixture(answer);
+    assert.equal(evaluateTruthSample(fixture.testCase, fixture).verdict, "pass", answer);
+  }
+});
+
+test("T02 still rejects negated, unclear or qualified inclusion statements", () => {
+  const rejected = [
+    "DEC-006 ist nicht in der RAG-Allowlist enthalten.",
+    "DEC-006 ist nicht als Bestandteil der RAG-Allowlist dokumentiert.",
+    "Ob DEC-006 in der RAG-Allowlist enthalten ist, ist unklar.",
+    "DEC-006 ist wahrscheinlich in der RAG-Allowlist enthalten."
+  ];
+  for (const answer of rejected) {
+    const fixture = t02Fixture(answer);
+    const evaluated = evaluateTruthSample(fixture.testCase, fixture);
+    assert.equal(evaluated.verdict, "fail", answer);
+    assert.ok(evaluated.failedAssertions.includes("forbidden:dec006_not_clearly_included"), answer);
+  }
+});
+
+test("T02 keeps requiring the server-validated AI-Router evidence source", () => {
+  const fixture = t02Fixture("Ja, DEC-006 in der RAG-Allowlist enthalten ist.", { sourceDoc: "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md" });
+  const evaluated = evaluateTruthSample(fixture.testCase, fixture);
+  assert.equal(evaluated.verdict, "fail");
+  assert.ok(evaluated.failedAssertions.includes("cited_evidence"));
 });
 
 test("source authority metadata is recovered only from the production retrieval snapshot", () => {
