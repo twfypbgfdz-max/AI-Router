@@ -31,6 +31,7 @@ import { handleRouterConsoleRespond } from "./router-console-proxy.js";
 import { handleJarvisConsoleAsk } from "./jarvis-console-proxy.js";
 import { handleJarvisTranscribeRequest } from "./jarvis-transcribe-handler.js";
 import { handleJarvisSpeakRequest } from "./jarvis-speak-handler.js";
+import { checkJarvisReadiness } from "./jarvis-readiness.js";
 
 const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_13-test.html");
 const routerConsoleUiFile = path.join(REPOSITORY_ROOT, "01_APP", "router-console.html");
@@ -180,6 +181,12 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
 
     if (request.method === "GET" && pathname === "/api/diagnostics") { safeLog("diagnostics_checked"); return sendJson(response, 200, await buildDiagnosticsPayload()); }
 
+    // Read-only, no token: same trust level as /api/health. Answers "can
+    // Jarvis actually be used right now" before a real request is made -
+    // see orchestrator/jarvis-readiness.js for what it does and does not
+    // check (P2-A).
+    if (request.method === "GET" && pathname === "/api/jarvis/ready") { safeLog("jarvis_ready_checked"); return sendJson(response, 200, await checkJarvisReadiness()); }
+
     if (request.method === "GET" && pathname === "/api/cockpit-status") return sendJson(response, 200, projectCockpitStatus(service.cockpitContext()));
 
     if (request.method === "GET" && pathname === "/api/router/status") return sendJson(response, 200, routerStatus());
@@ -326,9 +333,30 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
   return server;
 }
 
+// Only attached for the actual `node orchestrator/server.js` process, never
+// inside createRouterServer() itself: tests construct their own server
+// instances via createRouterServer() and .listen(0, ...) on an ephemeral
+// port, and must stay free to attach their own "error" listener (Node
+// allows multiple) without this one calling process.exit() underneath them.
+// Before this, a busy port 8787 (a second AI-Router instance, or anything
+// else already bound there) surfaced as an unhandled "error" event and a
+// raw Node stacktrace instead of a clear message - the EADDRINUSE case
+// P2-A's Phase 1 analysis flagged.
+export function attachServerErrorHandler(server, { port, host, exit = process.exit, logFn = console.error } = {}) {
+  server.on("error", (error) => {
+    if (error?.code === "EADDRINUSE") {
+      logFn(`AI Router: port ${port} on ${host} is already in use. Stop the other process (e.g. a previous AI-Router instance) and try again.`);
+    } else {
+      logFn(`AI Router: server error: ${error?.message || error}`);
+    }
+    exit(1);
+  });
+}
+
 const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isDirectRun) {
   const server = createRouterServer();
+  attachServerErrorHandler(server, { port: 8787, host: "127.0.0.1" });
   server.listen(8787, "127.0.0.1", () => { logger.log({ event: "server_started", safeMetadata: { version: ROUTER_VERSION } }).catch(() => {}); console.log("AI Router local server: http://127.0.0.1:8787"); });
   process.once("SIGINT", () => { logger.log({ event: "server_stopped" }).catch(() => {}); server.close(() => process.exit(0)); });
 }
