@@ -1,4 +1,5 @@
 import { KNOWLEDGE_ANSWER_MAX_SOURCES, KNOWLEDGE_ANSWER_MAX_WARNINGS } from "./knowledge-answer-config.js";
+import { orderWarnings } from "./knowledge-authority.js";
 
 // This module deliberately imports NO route-specific config (neither
 // cc-knowledge-config.js nor knowledge-config.js): it is the shared
@@ -95,7 +96,14 @@ export function buildKnowledgeAnswerObservation({
     throw new Error("Internal error: a produced knowledge response must carry a non-empty answer.");
   }
   const closedSources = sources.slice(0, KNOWLEDGE_ANSWER_MAX_SOURCES).map(closedSource);
-  const closedWarnings = Object.freeze(warnings.slice(0, KNOWLEDGE_ANSWER_MAX_WARNINGS));
+  // Ordering happens here, in the single place every path passes through,
+  // so no caller can forget it. The cap is a contract value (maxItems 5 in
+  // both response schemas) and is deliberately not raised; instead the
+  // array is ranked first, so truncation drops the least fundamental entry.
+  // Rate/concurrency warnings rank highest because
+  // knowledgeAnswerObservationHttpStatus reads them to produce a real 429 -
+  // losing one to truncation would turn a throttled request into a 200.
+  const closedWarnings = Object.freeze(orderWarnings(warnings).slice(0, KNOWLEDGE_ANSWER_MAX_WARNINGS));
 
   return Object.freeze({
     schemaVersion,

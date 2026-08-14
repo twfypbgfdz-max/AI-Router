@@ -16,7 +16,11 @@ const CC_KNOWLEDGE_FILES = [
   "cc-knowledge-config.js", "cc-knowledge-error.js", "cc-knowledge-contract.js", "cc-knowledge-handler.js",
   "knowledge-answer-config.js", "knowledge-answer-rag-service.js", "knowledge-answer-prompt.js", "knowledge-answer-response.js",
   "knowledge-config.js", "knowledge-error.js", "knowledge-contract.js",
-  "knowledge-service.js", "knowledge-handler.js"
+  "knowledge-service.js", "knowledge-handler.js",
+  // P1-A3: the authority/time model. Listed here so the new module inherits
+  // the same read-only guarantees as every other knowledge module rather
+  // than becoming a way to acquire capabilities around them.
+  "knowledge-authority.js"
 ];
 const WRITE_CALL_PATTERN = /\bfs\.(writeFile(?:Sync)?|appendFile(?:Sync)?|rename(?:Sync)?|rm(?:Sync)?|unlink(?:Sync)?|mkdir(?:Sync)?)\b/;
 

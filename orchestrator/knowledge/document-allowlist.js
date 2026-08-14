@@ -2,8 +2,21 @@ import fs from "node:fs";
 import { RagError } from "./rag-error.js";
 import { assertSafeRelativePath } from "./vault-path-guard.js";
 import { RAG_MAX_ALLOWLIST_ENTRIES } from "./rag-config.js";
+import { informationClassOf } from "../knowledge-authority.js";
 
 const ALLOWLIST_SCHEMA_VERSION = "1.0";
+
+// Plain calendar date, no time and no timezone: this is a review date a
+// human maintains, not a machine timestamp. A malformed or absent value
+// becomes null and is later rendered as "nicht datiert" - never guessed,
+// never silently replaced by today.
+const REVIEWED_AT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function normalizeReviewedAt(value) {
+  return typeof value === "string" && REVIEWED_AT_PATTERN.test(value.trim()) && Number.isFinite(Date.parse(value.trim()))
+    ? value.trim()
+    : null;
+}
 
 // Loads and validates config/rag-allowlist.json. Every entry is checked
 // against the safe-path and denylist rules before it is trusted - an
@@ -51,7 +64,18 @@ export function loadAllowlist(allowlistFilePath, { readFileSync = fs.readFileSyn
       }
       assertSafeRelativePath(relativePath);
       seen.add(relativePath);
-      accepted.push(Object.freeze({ relativePath, addedAt: typeof entry.addedAt === "string" ? entry.addedAt : null, addedBy: typeof entry.addedBy === "string" ? entry.addedBy : null }));
+      // informationClass is normalized rather than validated fail-loud on
+      // purpose: an unknown value falls back to the most restrictive class
+      // (project_context) instead of rejecting the entry. Rejecting would
+      // remove a reviewed document from the index over a typo, which is a
+      // worse failure than answering that document more cautiously.
+      accepted.push(Object.freeze({
+        relativePath,
+        addedAt: typeof entry.addedAt === "string" ? entry.addedAt : null,
+        addedBy: typeof entry.addedBy === "string" ? entry.addedBy : null,
+        informationClass: informationClassOf(entry.informationClass),
+        reviewedAt: normalizeReviewedAt(entry.reviewedAt)
+      }));
     } catch (error) {
       rejected.push(Object.freeze({ relativePath: relativePath ?? null, code: error instanceof RagError ? error.code : "ALLOWLIST_ENTRY_UNSAFE_PATH", message: error.message }));
     }

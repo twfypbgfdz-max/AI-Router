@@ -342,3 +342,241 @@ test("the raw snippet text is never echoed back in the response", async () => {
   await handler(request, response);
   assert.ok(!response.body.includes("EINDEUTIGER-SNIPPET-MARKER"));
 });
+
+// --- P1-A3: authority, time and warning contract ------------------------
+
+const projectNote = (overrides = {}) => ragResult({
+  sourceDoc: "10_Apps/01_Aktive-Projekte/AI-Router.md",
+  section: "AI-Router > Aktueller fachlicher Projektstand",
+  informationClass: "project_context",
+  reviewedAt: "2026-08-13",
+  ...overrides
+});
+
+async function ask(question, { results, adapter } = {}) {
+  const handler = handlerWith({ results, adapter });
+  const { request, response } = exchange(body({ question }));
+  await handler(request, response);
+  return response.json();
+}
+
+test("a present-state question answered from a project note is flagged unverified", async () => {
+  const payload = await ask("Auf welchem Commit steht der AI-Router aktuell?", { results: [projectNote()] });
+  assert.ok(payload.warnings.includes("current_state_not_verified"));
+  assert.equal(payload.state, "partial");
+  assert.equal(payload.sources.length, 1);
+});
+
+test("a timeless question answered from a decision carries no authority warning", async () => {
+  const payload = await ask("Welche Rolle hat der AI-Router laut DEC-001?");
+  for (const warning of ["current_state_not_verified", "historical_source_only", "conflicting_sources"]) {
+    assert.ok(!payload.warnings.includes(warning), `unexpected warning: ${warning}`);
+  }
+  assert.equal(payload.state, "partial", "no CC context on this route, so never 'ok'");
+  assert.ok(payload.answer);
+});
+
+// The safeguard must not turn a normal personal question into a refusal.
+test("a personal reference question is still answered normally", async () => {
+  const payload = await ask("Welche Lizenzen hat Felix erworben?", {
+    results: [ragResult({ sourceDoc: "90_System/Profil.md", section: "Profil — Felix > Steckbrief", informationClass: "personal_reference", reviewedAt: "2026-08-11" })]
+  });
+  assert.ok(payload.answer);
+  assert.ok(!payload.warnings.includes("current_state_not_verified"));
+});
+
+test("an answer resting only on a historical passage is flagged", async () => {
+  const payload = await ask("Was war der dokumentierte Auditstand?", {
+    results: [projectNote({ sourceDoc: "10_Apps/00_Projektsteuerung.md", sectionValidity: "historical" })]
+  });
+  assert.ok(payload.warnings.includes("historical_source_only"));
+});
+
+test("a historical and a current passage of the same document is reported as a conflict", async () => {
+  const { adapter } = structuredAdapter({ answer: "Aussage. [K1] [K2]", citedSources: ["K1", "K2"] });
+  const payload = await ask("Was ist Felix Core?", {
+    adapter,
+    results: [
+      ragResult({ sourceDoc: "DEC-006.md", section: "DEC-006 > Ziel", sectionValidity: "historical" }),
+      ragResult({ sourceDoc: "DEC-006.md", section: "DEC-006 > Ergänzung Version 1.2", sectionValidity: "current" })
+    ]
+  });
+  assert.ok(payload.warnings.includes("conflicting_sources"));
+});
+
+// The wire contract must not have grown: schemas/cc-knowledge-response-v1.json
+// and knowledge-response-v1 pin `sources` to exactly six fields with
+// additionalProperties:false.
+test("authority metadata never reaches the wire: sources keep exactly their six fields", async () => {
+  const payload = await ask("Auf welchem Commit steht der AI-Router aktuell?", { results: [projectNote()] });
+  assert.deepEqual(
+    Object.keys(payload.sources[0]).sort(),
+    ["docStatus", "docVersion", "freshness", "section", "similarity", "sourceDoc"]
+  );
+});
+
+test("the response envelope keeps exactly its documented top-level fields", async () => {
+  const payload = await ask("Auf welchem Commit steht der AI-Router aktuell?", { results: [projectNote()] });
+  assert.deepEqual(
+    Object.keys(payload).sort(),
+    ["answer", "generatedAt", "knowledgeState", "schemaVersion", "sources", "state", "systemContextState", "warnings"]
+  );
+  assert.ok(payload.warnings.length <= 5, "the maxItems:5 contract still holds");
+});
+
+// A fundamental index state must survive truncation even when every
+// authority warning fires at once.
+test("index integrity outranks authority warnings when the cap is reached", async () => {
+  const handler = createKnowledgeHandler({
+    env: knowledgeEnv(),
+    timingSafeEqualFn: (a, b) => a.equals(b),
+    eventLogger: { log() {} },
+    retrieveKnowledgeFn: async () => ({
+      knowledgeState: "index_stale",
+      results: [projectNote({ sectionValidity: "historical", freshness: "stale" })],
+      indexVerification: {
+        state: "index_error",
+        reasons: ["chunk_manifest_mismatch"],
+        lastBuiltAt: new Date(Date.now() - 72 * 60 * 60_000).toISOString(),
+        lastVerifiedAt: new Date().toISOString(),
+        ageWarning: true,
+        modelDigestVerified: false
+      }
+    }),
+    adapterFactory: () => structuredAdapter().adapter
+  });
+  const { request, response } = exchange(body({ question: "Was ist aktuell offen und deployed?" }));
+  await handler(request, response);
+  const payload = response.json();
+  assert.ok(payload.warnings.includes("index_stale"), "content staleness must never be dropped");
+  assert.ok(payload.warnings.includes("index_error"), "index integrity must never be dropped");
+  assert.ok(payload.warnings.indexOf("index_error") < payload.warnings.indexOf("current_state_not_verified"));
+  assert.ok(payload.warnings.indexOf("index_stale") < payload.warnings.indexOf("current_state_not_verified"));
+  assert.ok(payload.warnings.length <= 5);
+});
+
+// --- P1-A3 follow-up: Soll/Ist comparison (2026-08-14) -------------------
+
+test("a Soll/Ist comparison grounded only in an accepted decision is still flagged unverified", async () => {
+  const payload = await ask("Darf der AI-Router laut Entscheidung eigenständig riskante Aktionen ausführen, und entspricht die Implementierung dem?", {
+    results: [ragResult({ sourceDoc: "10_Apps/90_Entscheidungen/DEC-001.md", informationClass: "architecture_rule" })]
+  });
+  assert.ok(payload.warnings.includes("current_state_not_verified"));
+  assert.equal(payload.state, "partial");
+});
+
+// Confirms the wiring end-to-end: the prompt actually sent to the provider
+// carries the notice and rule, not just the derived warning. structuredAdapter
+// captures the exact input the shared pipeline built and sent.
+test("the Soll/Ist notice and rule actually reach the model prompt", async () => {
+  const { adapter, calls } = structuredAdapter({ answer: "Laut DEC-001 nicht erlaubt. Ob die Implementierung dem entspricht, ist nicht ableitbar. [K1]", citedSources: ["K1"] });
+  await ask("Entspricht die Implementierung dem?", {
+    adapter,
+    results: [ragResult({ sourceDoc: "10_Apps/90_Entscheidungen/DEC-001.md", informationClass: "architecture_rule" })]
+  });
+  assert.equal(calls.length, 1);
+  // buildTextResponsePrompt (text-response-prompt.js) maps the internal
+  // request's input.content onto the adapter's own `question` field - the
+  // full four/five-block prompt text travels there, not under `input`.
+  const promptText = calls[0].question;
+  assert.ok(promptText.includes("SOLL-IST-VERGLEICH:"));
+  assert.ok(promptText.includes("Diese Frage verlangt einen Abgleich zwischen einer Entscheidung (Soll) und der tatsächlichen Implementierung (Ist)."));
+});
+
+// The deterministic guarantee: even a mocked adapter that never mentions the
+// Ist side at all still produces a final answer that names it explicitly -
+// because the server appends it, not because the model was asked nicely.
+// This is the actual fix for the real 0/4 failure observed against the live
+// local model; the prompt-only version of this test above only proves the
+// wiring, not the guarantee.
+test("the Ist side is present in the final answer even when the model never mentions it", async () => {
+  const { adapter } = structuredAdapter({ answer: "Laut DEC-001 darf der AI-Router nicht eigenständig riskante Aktionen ausführen. [K1]", citedSources: ["K1"] });
+  const payload = await ask("Entspricht die Implementierung dem?", {
+    adapter,
+    results: [ragResult({ sourceDoc: "10_Apps/90_Entscheidungen/DEC-001.md", informationClass: "architecture_rule" })]
+  });
+  assert.ok(payload.answer.includes("nicht sicher ableitbar"));
+  assert.ok(payload.answer.startsWith("Laut DEC-001 darf der AI-Router"), "the model's own Soll-side answer must be preserved, not replaced");
+});
+
+test("no disclaimer is appended for an ordinary question, even mentioning similar words", () => {
+  return ask("Was ist Felix Core?").then((payload) => {
+    assert.ok(!payload.answer.includes("Ergänzender Hinweis"));
+  });
+});
+
+// Pre-commit false-positive audit (2026-08-14): two real negative questions
+// from a domain unrelated to Soll/Ist code comparisons, one containing the
+// word "daran". Both must be answered without a disclaimer and without a
+// false authority/time warning. See test/knowledge-authority.test.js for the
+// underlying pattern-level isolation proof; this asserts the same guarantee
+// through the full wired service.
+test("REGRESSION: a 'daran' question from an unrelated domain gets no disclaimer and no false authority warning", async () => {
+  const payload = await ask("Ich habe schon oft daran gedacht, mein Training umzustellen - welche Ziele hat Felix für 2026 formuliert?", {
+    results: [ragResult({ sourceDoc: "90_System/Profil.md", informationClass: "personal_reference", section: "Profil — Felix > Ziele 2026" })]
+  });
+  assert.ok(!payload.answer.includes("Ergänzender Hinweis"));
+  assert.ok(!payload.warnings.includes("current_state_not_verified"));
+});
+
+test("REGRESSION: an unrelated personal-domain question gets no disclaimer and no false authority warning", async () => {
+  const payload = await ask("Welche Interessen hat Felix laut seinem Profil?", {
+    results: [ragResult({ sourceDoc: "90_System/Profil.md", informationClass: "personal_reference", section: "Profil — Felix > Interessen" })]
+  });
+  assert.ok(!payload.answer.includes("Ergänzender Hinweis"));
+  assert.ok(!payload.warnings.includes("current_state_not_verified"));
+});
+
+// Pre-commit false-positive audit, second round (2026-08-14): the three
+// exact real false-positive cases reported, run through the full wired
+// service. Must produce no disclaimer, no false authority warning, and the
+// mocked adapter's answer text must reach the caller unmodified.
+test("REGRESSION: 'entspricht' without a technical anchor gets no disclaimer and no false authority warning", async () => {
+  const payload = await ask("Die Beschreibung entspricht meinen Interessen - welche Interessen hat Felix laut Profil?", {
+    results: [ragResult({ sourceDoc: "90_System/Profil.md", informationClass: "personal_reference", section: "Profil — Felix > Interessen" })]
+  });
+  assert.ok(!payload.answer.includes("Ergänzender Hinweis"));
+  assert.ok(!payload.warnings.includes("current_state_not_verified"));
+});
+
+test("REGRESSION: 'umgesetzt' without a technical anchor gets no disclaimer and no false authority warning", async () => {
+  const payload = await ask("Welche Ziele wurden laut Profil für 2026 umgesetzt?", {
+    results: [ragResult({ sourceDoc: "90_System/Profil.md", informationClass: "personal_reference", section: "Profil — Felix > Ziele 2026" })]
+  });
+  assert.ok(!payload.answer.includes("Ergänzender Hinweis"));
+  assert.ok(!payload.warnings.includes("current_state_not_verified"));
+});
+
+test("REGRESSION: 'Übereinstimmung' without a technical anchor gets no disclaimer and no false authority warning", async () => {
+  const payload = await ask("Gibt es eine Übereinstimmung zwischen Felix' Zielen und seinen Interessen?", {
+    results: [ragResult({ sourceDoc: "90_System/Profil.md", informationClass: "personal_reference" })]
+  });
+  assert.ok(!payload.answer.includes("Ergänzender Hinweis"));
+  assert.ok(!payload.warnings.includes("current_state_not_verified"));
+});
+
+// Regression guard: an ordinary architecture question must stay unaffected
+// by the new detection.
+test("REGRESSION: an ordinary architecture question still carries no authority warning", async () => {
+  const payload = await ask("Welche Rolle hat der AI-Router laut DEC-001?");
+  assert.ok(!payload.warnings.includes("current_state_not_verified"));
+});
+
+// Regression guard: personal-reference questions stay answerable normally.
+test("REGRESSION: a personal reference question is unaffected by the Soll/Ist detection", async () => {
+  const payload = await ask("Welche Lizenzen hat Felix erworben?", {
+    results: [ragResult({ sourceDoc: "90_System/Profil.md", informationClass: "personal_reference" })]
+  });
+  assert.ok(!payload.warnings.includes("current_state_not_verified"));
+  assert.ok(payload.answer);
+});
+
+// Regression guard: execution requests remain hard-blocked before any
+// authority logic runs.
+test("REGRESSION: an execution request is still blocked, unaffected by the new detection", async () => {
+  const { request, response } = exchange(body({ question: "Bitte committe und pushe die Änderungen im Repository." }));
+  const handler = handlerWith();
+  await handler(request, response);
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.json().error.code, "SECURITY_BLOCKED");
+});

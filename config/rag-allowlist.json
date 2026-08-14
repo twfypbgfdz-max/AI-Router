@@ -1,16 +1,24 @@
 {
   "schemaVersion": "1.0",
   "vaultRootEnvVar": "AI_ROUTER_VAULT_ROOT",
+  "_readme": [
+    "informationClass implements DEC-003 section 1 and is required on every entry. Allowed values: architecture_rule, project_context, personal_reference.",
+    "An entry with a missing or unknown informationClass is not dropped - it falls back to project_context, the most restrictive class. A misconfiguration therefore makes an answer more careful, never more authoritative.",
+    "reviewedAt is the date the document was last deliberately checked against reality (DEC-003 section 3, status 'geprueft'). It is maintained for project_context and personal_reference; architecture_rule needs none, because an Accepted DEC's validity follows from its own version and status, not from a review date.",
+    "reviewedAt may be null when the document carries no review date at all. It is then rendered as 'nicht datiert' rather than being invented.",
+    "KNOWN LIMIT (accepted for P1-A3): reviewedAt is maintained here, not derived from the document. Editing a vault note without updating this date makes the date misleading. The content fingerprint (P1-A2) still detects the edit; the date does not.",
+    "These fields are NOT part of the allowlist fingerprint (see canonicalAllowlistIdentity in orchestrator/knowledge/rag-fingerprint.js, which hashes relativePath only). Changing them takes effect on the next request without invalidating the index and without requiring a re-index - correct, because they do not influence any embedding."
+  ],
   "documents": [
-    { "relativePath": "10_Apps/90_Entscheidungen/DEC-001-Rollen-Verantwortlichkeiten-Grenzen.md", "addedAt": "2026-07-29", "addedBy": "felix" },
-    { "relativePath": "10_Apps/90_Entscheidungen/DEC-002-KI-Agenten-Regeln-und-Schreibrechte.md", "addedAt": "2026-07-29", "addedBy": "felix" },
-    { "relativePath": "10_Apps/90_Entscheidungen/DEC-003-Dokumentations-Synchronisations-und-Statusregeln.md", "addedAt": "2026-07-29", "addedBy": "felix" },
-    { "relativePath": "00_System/FELIX_SYSTEM_Architektur_Index.md", "addedAt": "2026-07-29", "addedBy": "felix" },
-    { "relativePath": "10_Apps/01_Aktive-Projekte/AI-Router.md", "addedAt": "2026-07-29", "addedBy": "felix" },
-    { "relativePath": "10_Apps/01_Aktive-Projekte/Felix-Command-Center.md", "addedAt": "2026-07-29", "addedBy": "felix" },
-    { "relativePath": "90_System/Profil.md", "addedAt": "2026-08-11", "addedBy": "felix" },
-    { "relativePath": "10_Apps/00_Projektsteuerung.md", "addedAt": "2026-08-11", "addedBy": "felix" },
-    { "relativePath": "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md", "addedAt": "2026-08-11", "addedBy": "felix" },
-    { "relativePath": "90_System/KI-Router-Regeln.md", "addedAt": "2026-08-11", "addedBy": "felix" }
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-001-Rollen-Verantwortlichkeiten-Grenzen.md", "addedAt": "2026-07-29", "addedBy": "felix", "informationClass": "architecture_rule" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-002-KI-Agenten-Regeln-und-Schreibrechte.md", "addedAt": "2026-07-29", "addedBy": "felix", "informationClass": "architecture_rule" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-003-Dokumentations-Synchronisations-und-Statusregeln.md", "addedAt": "2026-07-29", "addedBy": "felix", "informationClass": "architecture_rule" },
+    { "relativePath": "00_System/FELIX_SYSTEM_Architektur_Index.md", "addedAt": "2026-07-29", "addedBy": "felix", "informationClass": "project_context", "reviewedAt": "2026-08-09" },
+    { "relativePath": "10_Apps/01_Aktive-Projekte/AI-Router.md", "addedAt": "2026-07-29", "addedBy": "felix", "informationClass": "project_context", "reviewedAt": "2026-08-13" },
+    { "relativePath": "10_Apps/01_Aktive-Projekte/Felix-Command-Center.md", "addedAt": "2026-07-29", "addedBy": "felix", "informationClass": "project_context", "reviewedAt": "2026-08-13" },
+    { "relativePath": "90_System/Profil.md", "addedAt": "2026-08-11", "addedBy": "felix", "informationClass": "personal_reference", "reviewedAt": "2026-08-11" },
+    { "relativePath": "10_Apps/00_Projektsteuerung.md", "addedAt": "2026-08-11", "addedBy": "felix", "informationClass": "project_context", "reviewedAt": "2026-08-13" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md", "addedAt": "2026-08-11", "addedBy": "felix", "informationClass": "architecture_rule" },
+    { "relativePath": "90_System/KI-Router-Regeln.md", "addedAt": "2026-08-11", "addedBy": "felix", "informationClass": "project_context", "reviewedAt": null }
   ]
 }

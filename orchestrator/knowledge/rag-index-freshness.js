@@ -21,7 +21,8 @@ function result(state, {
   lastVerifiedAt,
   ageWarning = false,
   modelDigestVerified = false,
-  allowedSourceDocs = []
+  allowedSourceDocs = [],
+  sourceMetadata = {}
 } = {}) {
   if (!INDEX_STATES.has(state)) throw new Error(`Unknown index freshness state: ${state}`);
   return Object.freeze({
@@ -31,7 +32,14 @@ function result(state, {
     lastVerifiedAt,
     ageWarning,
     modelDigestVerified,
-    allowedSourceDocs: Object.freeze([...allowedSourceDocs])
+    allowedSourceDocs: Object.freeze([...allowedSourceDocs]),
+    // Per-document authority metadata for the answer path, read from the
+    // same already-loaded allowlist as allowedSourceDocs. It is deliberately
+    // resolved here rather than at index time: these values do not influence
+    // any embedding, so binding them to the request instead of to the index
+    // means a class or review-date correction takes effect immediately and
+    // never requires a re-index.
+    sourceMetadata: Object.freeze({ ...sourceMetadata })
   });
 }
 
@@ -126,6 +134,8 @@ export function verifyIndexFreshness({
     });
   }
   const allowedSourceDocs = allowlist.documents.map(({ relativePath }) => relativePath);
+  const sourceMetadata = Object.fromEntries(allowlist.documents.map(({ relativePath, informationClass, reviewedAt }) =>
+    [relativePath, Object.freeze({ informationClass, reviewedAt })]));
   if (allowlist.rejected.length > 0) errors.push("allowlist_entries_rejected");
   if (meta.fingerprint?.allowlistHash !== buildAllowlistHash(allowlist)) stale.push("allowlist_changed");
 
@@ -181,10 +191,10 @@ export function verifyIndexFreshness({
   }
 
   if (errors.length > 0) {
-    return result("index_error", { reasons: errors, lastBuiltAt, lastVerifiedAt, ageWarning, modelDigestVerified, allowedSourceDocs });
+    return result("index_error", { reasons: errors, lastBuiltAt, lastVerifiedAt, ageWarning, modelDigestVerified, allowedSourceDocs, sourceMetadata });
   }
   if (stale.length > 0) {
-    return result("content_stale", { reasons: stale, lastBuiltAt, lastVerifiedAt, ageWarning, modelDigestVerified, allowedSourceDocs });
+    return result("content_stale", { reasons: stale, lastBuiltAt, lastVerifiedAt, ageWarning, modelDigestVerified, allowedSourceDocs, sourceMetadata });
   }
   return result("content_current", {
     reasons: currentDigest ? [] : ["embedding_model_digest_unavailable"],
@@ -192,7 +202,8 @@ export function verifyIndexFreshness({
     lastVerifiedAt,
     ageWarning,
     modelDigestVerified,
-    allowedSourceDocs
+    allowedSourceDocs,
+    sourceMetadata
   });
 }
 

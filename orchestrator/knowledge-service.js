@@ -4,6 +4,14 @@ import { buildKnowledgeAnswerPromptText } from "./knowledge-answer-prompt.js";
 import { buildKnowledgeAnswerObservation } from "./knowledge-answer-response.js";
 import { KNOWLEDGE_ANSWER_MAX_BYTES } from "./knowledge-answer-config.js";
 import { createTextResponseHandler } from "./text-response-handler.js";
+// Ordering is not applied here: buildKnowledgeAnswerObservation is the one
+// place every path passes through, so it ranks the warnings itself.
+import {
+  deriveAuthorityWarnings,
+  isImplementationAlignmentQuestion,
+  isPresentStateQuestion,
+  withImplementationAlignmentDisclaimer
+} from "./knowledge-authority.js";
 
 // The generic, read-only knowledge engine. Everything that turns an
 // already-validated question (plus an optional caller-supplied system
@@ -85,7 +93,13 @@ function validateCitedSources(citedSources, results, { requireAtLeastOne }) {
       docStatus: result.docStatus,
       docVersion: result.docVersion,
       similarity: result.similarity,
-      freshness: result.freshness
+      freshness: result.freshness,
+      // Server-owned authority metadata, carried alongside the response
+      // fields for warning derivation only. buildKnowledgeAnswerObservation
+      // rebuilds each source from its own fixed six-field list, so these two
+      // never reach the wire and the response schema is unchanged.
+      informationClass: result.informationClass,
+      sectionValidity: result.sectionValidity
     };
   });
   return { ok: true, sources };
@@ -196,6 +210,14 @@ export function createKnowledgeService({
     const { knowledgeState, results, indexVerification = null } = knowledge;
     const freshnessWarnings = indexWarnings(knowledge);
     const systemContextState = context !== null ? "available" : "unavailable";
+    // Evaluated once, on the caller's already-validated question only -
+    // never on the retrieved evidence, so a snippet containing the word
+    // "aktuell" cannot make an unrelated question look time-dependent.
+    const presentStateQuestion = isPresentStateQuestion(question);
+    // A distinct signal (see knowledge-authority.js): "entspricht die
+    // Implementierung dem?" carries none of the present-state keywords, so
+    // it needs its own detection and its own unconditional hedge.
+    const implementationAlignmentQuestion = isImplementationAlignmentQuestion(question);
 
     const finish = (payload, extraMeta = {}) => Object.freeze({
       payload,
@@ -212,6 +234,8 @@ export function createKnowledgeService({
         indexAgeWarning: indexVerification?.ageWarning === true,
         indexLastBuiltAt: indexVerification?.lastBuiltAt || null,
         indexLastVerifiedAt: indexVerification?.lastVerifiedAt || null,
+        presentStateQuestion,
+        implementationAlignmentQuestion,
         ...extraMeta
       })
     });
@@ -222,11 +246,16 @@ export function createKnowledgeService({
     if (systemContextState === "unavailable" && results.length === 0) {
       return finish(buildKnowledgeAnswerObservation({
         state: "unavailable", systemContextState, knowledgeState,
-        warnings: ["no_context_no_knowledge", ...freshnessWarnings], now, schemaVersion
+        warnings: [
+          "no_context_no_knowledge",
+          ...freshnessWarnings,
+          ...deriveAuthorityWarnings({ presentStateQuestion, implementationAlignmentQuestion, sources: [] })
+        ],
+        now, schemaVersion
       }));
     }
 
-    const promptText = buildKnowledgeAnswerPromptText({ question, context, results });
+    const promptText = buildKnowledgeAnswerPromptText({ question, context, results, presentStateQuestion, implementationAlignmentQuestion });
     const internalRequest = buildInternalRequest(promptText, scopedEnv.AI_ROUTER_INTERNAL_TOKEN, requestIdPrefix);
     const internalResponse = captureResponse();
     // The provider receives the full grounded prompt, but execution intent is
@@ -275,7 +304,13 @@ export function createKnowledgeService({
       }));
     }
 
-    const warnings = [...freshnessWarnings];
+    // Derived from the sources the server validated as actually cited, not
+    // from the answer prose: these say what the answer is allowed to rest
+    // on, which is a server fact, while what it claims is not.
+    const warnings = [
+      ...freshnessWarnings,
+      ...deriveAuthorityWarnings({ presentStateQuestion, implementationAlignmentQuestion, sources: sourceValidation.sources })
+    ];
     if (URL_PATTERN.test(rawAnswer) || ABSOLUTE_PATH_PATTERN.test(rawAnswer)) warnings.push("model_output_contains_path_or_url");
     if (COMMAND_REFERENCE_PATTERN.test(rawAnswer)) warnings.push("model_output_contains_command_reference");
 
@@ -286,8 +321,15 @@ export function createKnowledgeService({
     // every case in the state matrix without a long if/else chain.
     const state = systemContextState === "available" && knowledgeState === "available" ? "ok" : "partial";
 
+    // Measured 2026-08-14: the prompt notice and rule alone did not
+    // reliably make the model name the Ist side as unverifiable (see
+    // knowledge-authority.js). This appends a fixed, server-authored
+    // sentence unconditionally on top of the already-validated rawAnswer -
+    // a deterministic guarantee, not a further prompting attempt.
+    const finalAnswer = withImplementationAlignmentDisclaimer(rawAnswer, implementationAlignmentQuestion);
+
     return finish(buildKnowledgeAnswerObservation({
-      state, answer: rawAnswer, systemContextState, knowledgeState, sources: sourceValidation.sources, warnings, now, schemaVersion
+      state, answer: finalAnswer, systemContextState, knowledgeState, sources: sourceValidation.sources, warnings, now, schemaVersion
     }));
   };
 }

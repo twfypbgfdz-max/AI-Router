@@ -27,6 +27,9 @@ export function knowledgeContext(overrides = {}) {
   return { projectId: "ai-router", projectName: "AI-Router", branch: "dev", clean: true, ...overrides };
 }
 
+// Mirrors the shape retrieveKnowledge actually produces, including the
+// authority metadata joined on there (P1-A3). Defaults describe a current
+// passage of an Accepted decision, matching the sourceDoc below.
 export function ragResult(overrides = {}) {
   return {
     sourceDoc: "10_Apps/90_Entscheidungen/DEC-001.md",
@@ -35,6 +38,9 @@ export function ragResult(overrides = {}) {
     docVersion: "1.1",
     similarity: 0.9,
     freshness: "fresh",
+    informationClass: "architecture_rule",
+    reviewedAt: null,
+    sectionValidity: "current",
     snippet: "Der AI-Router empfiehlt und vermittelt, führt aber keine folgenreichen Aktionen autonom aus.",
     ...overrides
   };

@@ -67,6 +67,24 @@ test("the model cannot manipulate sourceDoc, section, similarity, freshness, doc
   const tampered = ["K1"];
   const { sources } = validateCitedSources(tampered, threeResults, { requireAtLeastOne: false });
   assert.deepEqual(sources[0], {
-    sourceDoc: "a.md", section: "A", docStatus: "Accepted", docVersion: "1.1", similarity: 0.9, freshness: "fresh"
+    sourceDoc: "a.md", section: "A", docStatus: "Accepted", docVersion: "1.1", similarity: 0.9, freshness: "fresh",
+    // P1-A3: two further server-owned fields. They come from the same
+    // `results` array as every other field and exist only so the service can
+    // derive its authority warnings - closedSource() in
+    // knowledge-answer-response.js rebuilds each wire source from its own
+    // fixed six-field list, so neither of these ever leaves the process.
+    informationClass: "architecture_rule", sectionValidity: "current"
   });
+});
+
+// The model supplies an id array and nothing else, so authority metadata is
+// as unreachable for it as sourceDoc always was. Asserted explicitly because
+// these two fields now steer whether an answer gets hedged.
+test("the model cannot influence the authority class or the historical marking of a source", () => {
+  const results = [ragResult({
+    sourceDoc: "a.md", informationClass: "project_context", sectionValidity: "historical"
+  })];
+  const { sources } = validateCitedSources(["K1"], results, { requireAtLeastOne: true });
+  assert.equal(sources[0].informationClass, "project_context");
+  assert.equal(sources[0].sectionValidity, "historical");
 });

@@ -237,3 +237,75 @@ test("searchFn is called without any caller-controllable threshold or top-k opti
   });
   assert.equal(receivedArgs.length, 2);
 });
+
+// ---------------------------------------------------------------------------
+// P1-A3: authority metadata is joined onto the server-built results
+// ---------------------------------------------------------------------------
+
+function withMetadata(sourceMetadata, searchResults) {
+  return {
+    env: BASE_ENV,
+    assertEmbeddingModelAvailableFn: noopAvailability,
+    readIndexMetaFn: freshMeta,
+    readAllChunksFn: () => [chunk()],
+    embedTextFn: async () => [1, 0, 0],
+    searchFn: () => ({ results: searchResults, truncated: false }),
+    verifyIndexFreshnessFn: ({ meta }) => Object.freeze({
+      state: "content_current",
+      reasons: Object.freeze([]),
+      lastBuiltAt: meta.lastRunAt,
+      lastVerifiedAt: new Date().toISOString(),
+      ageWarning: false,
+      modelDigestVerified: true,
+      allowedSourceDocs: Object.freeze(Object.keys(sourceMetadata)),
+      sourceMetadata: Object.freeze(sourceMetadata)
+    })
+  };
+}
+
+test("the allowlist class and review date are joined onto each result", async () => {
+  const result = await retrieveKnowledgeProduction("Frage", withMetadata(
+    { "90_System/Profil.md": { informationClass: "personal_reference", reviewedAt: "2026-08-11" } },
+    [{ sourceDoc: "90_System/Profil.md", section: "Steckbrief", similarity: 0.7, snippet: "Name: Felix", indexedAt: new Date().toISOString(), freshness: "fresh" }]
+  ));
+  assert.equal(result.results[0].informationClass, "personal_reference");
+  assert.equal(result.results[0].reviewedAt, "2026-08-11");
+  assert.equal(result.results[0].sectionValidity, "current");
+});
+
+// Only reachable if the index still holds a chunk the allowlist no longer
+// describes. It must degrade to the most restrictive class, not to none.
+test("a result without allowlist metadata falls back to the most restrictive class", async () => {
+  const result = await retrieveKnowledgeProduction("Frage", withMetadata(
+    {},
+    [{ sourceDoc: "10_Apps/unknown.md", section: "A", similarity: 0.7, snippet: "text", indexedAt: new Date().toISOString(), freshness: "fresh" }]
+  ));
+  assert.equal(result.results[0].informationClass, "project_context");
+  assert.equal(result.results[0].reviewedAt, null);
+});
+
+test("a historical section is marked historical on the result itself", async () => {
+  const result = await retrieveKnowledgeProduction("Frage", withMetadata(
+    { "10_Apps/00_Projektsteuerung.md": { informationClass: "project_context", reviewedAt: "2026-08-13" } },
+    [{
+      sourceDoc: "10_Apps/00_Projektsteuerung.md",
+      section: "Projektsteuerung > Historisch dokumentierte Fortschritte (Stand 08.08.; kein heutiger Status)",
+      similarity: 0.7, snippet: "Damals dokumentiert.", indexedAt: new Date().toISOString(), freshness: "fresh"
+    }]
+  ));
+  assert.equal(result.results[0].sectionValidity, "historical");
+});
+
+// A verifier that predates the metadata field must not crash retrieval.
+test("a freshness result without sourceMetadata still yields usable results", async () => {
+  const result = await retrieveKnowledge("Frage", {
+    env: BASE_ENV,
+    assertEmbeddingModelAvailableFn: noopAvailability,
+    readIndexMetaFn: freshMeta,
+    readAllChunksFn: () => [chunk()],
+    embedTextFn: async () => [1, 0, 0],
+    searchFn: () => ({ results: [{ sourceDoc: "10_Apps/x.md", section: "A", similarity: 0.9, snippet: "text", indexedAt: new Date().toISOString(), freshness: "fresh" }], truncated: false })
+  });
+  assert.equal(result.knowledgeState, "available");
+  assert.equal(result.results[0].informationClass, "project_context");
+});

@@ -359,6 +359,91 @@ beantwortet.
   read-only gegen deren gespeicherte Hashes; `npm run rag:reindex` bleibt ein
   separater, manueller Schritt.
 
+## Autoritäts- und Zeitregeln für Wissensantworten (P1-A3)
+
+Beide Wissenspfade (`cc/knowledge` und `v1/knowledge`) verwenden dieselbe
+Autoritätslogik. Sie setzt DEC-003 Abschnitt 1 („Informationsklassen") und
+Abschnitt 4 („Konfliktregeln") im Retrieval-/Antwortpfad um und erfindet
+keine eigene Taxonomie. Der gesamte Mechanismus besteht aus drei Teilen:
+einem `informationClass`-String pro freigegebenem Dokument, einer
+eingefrorenen Tabelle in `orchestrator/knowledge-authority.js` und einem
+Zeitflag pro Frage. Es gibt bewusst **keine** Regeldatei, keine numerische
+Autoritätsskala und keinen Regelinterpreter.
+
+**Informationsklassen** (gepflegt in `config/rag-allowlist.json`):
+
+| Klasse | Autoritativ für | Nicht autoritativ für |
+|---|---|---|
+| `architecture_rule` (Accepted DECs) | Soll-Zustand, Architektur, Rollen, Zuständigkeiten, heute geltende Regeln | Commit, HEAD, laufende Prozesse, Deployment, tatsächliche Implementierung |
+| `project_context` (Projekt-/Indexnotizen) | Zweck, langfristigen Kontext, dokumentierten Stand **zum genannten Datum** | jede Aussage über heute |
+| `personal_reference` (`Profil.md`) | langfristige persönliche Fakten und Ziele | Tagesplanung, technische Zustände |
+
+Zwei weitere Klassen existieren nur als Zielbereich, weil der Wissenspfad
+ihre Primärquelle nicht besitzt und P1-A3 sie bewusst nicht anbindet:
+`technical_state` (Repository, Laufzeit, Deployment-Provider) und
+`operational_live` (Tagessteuerung). Sie werden im Prompt benannt, damit eine
+Antwort sagen kann, *wer* zuständig wäre, statt auf die semantisch ähnlichste
+statische Fundstelle auszuweichen.
+
+- **Metadatenpflege:** ausschließlich zentral in `config/rag-allowlist.json`.
+  Keine Frontmatter-Pflicht, keine Vault-Änderung. `informationClass` ist
+  Pflicht; ein unbekannter Wert fällt fail-closed auf `project_context`
+  zurück (die restriktivste Klasse), der Eintrag wird nicht verworfen.
+  `reviewedAt` wird für `project_context` und `personal_reference` gepflegt
+  und ist `null`, wenn das Dokument kein Prüfdatum trägt — ein Datum wird nie
+  erfunden.
+- **Kein Reindex nötig:** Die Felder liegen außerhalb des
+  Allowlist-Fingerprints (`canonicalAllowlistIdentity` hasht nur
+  `relativePath`) und werden pro Request aufgelöst. Eine Klassen- oder
+  Datumskorrektur wirkt sofort, ohne ein einziges Embedding zu invalidieren.
+- **Zeitabhängige Fragen:** ein festes Musterset über die normalisierte Frage
+  (gleiche Bauform wie die bestehenden `EXECUTION_PATTERNS`), kein zweiter
+  Modellaufruf. Die Fehlermodi sind asymmetrisch: ein False Positive macht
+  die Antwort nur vorsichtiger, ein False Negative entspricht dem Verhalten
+  vor P1-A3.
+- **Wirkung:** Verlangt eine Frage den gegenwärtigen Zustand und ist mindestens
+  eine Fundstelle `project_context`, darf daraus kein heutiger Fakt formuliert
+  werden. Antworten, die ausschließlich auf Accepted DECs oder auf
+  langfristigen persönlichen Fakten beruhen, bleiben unverändert normale
+  Antworten — die Absicherung blockiert eindeutig belegte Fragen nicht.
+- **Historische Abschnitte:** Passagen, die sich selbst als überholt
+  kennzeichnen (Überschriften wie „Historisch …", „… heute zu prüfen", oder
+  ein editorischer Marker wie „**Historischer Wortlaut aus Version 1.0.**"
+  am Anfang eines DEC-Abschnitts), werden als `Gültigkeit: historisch`
+  etikettiert und gewinnen nie gegen eine aktuelle Passage. Nichts wird aus
+  Index oder Vault entfernt.
+- **Neue Warnungen** (kein Schemabruch, `warnings` bleibt `maxItems: 5`):
+  `current_state_not_verified`, `historical_source_only`,
+  `conflicting_sources`. Vor der Kürzung werden alle Warnungen priorisiert:
+  Rate-/Concurrency-Warnungen (sie steuern den 429) → Indexintegrität →
+  Inhaltsabweichung → Autoritäts-/Zeitwarnungen → reine Hinweise. Ein
+  fundamentaler Indexzustand kann daher nie von einer Autoritätswarnung
+  verdrängt werden.
+- **Vertrag unverändert:** `sources[]` trägt weiterhin exakt seine sechs
+  Felder. Klasse und Historisch-Markierung sind prozessintern und erreichen
+  die Leitung nie.
+
+**Bekannte Grenze:** `reviewedAt` wird hier gepflegt, nicht aus dem Dokument
+abgeleitet. Wird eine Vault-Notiz geändert, ohne das Datum nachzuziehen, ist
+das Datum irreführend. Die Inhaltsprüfung aus P1-A2 erkennt die Änderung
+weiterhin, das Datum nicht.
+
+**Soll-/Ist-Vergleich (2026-08-14 Nachtrag):** Fragen, die eine Entscheidung
+mit der tatsächlichen Implementierung vergleichen (z. B. „Entspricht die
+Implementierung dem?", „Ist das im Code umgesetzt?", „Hält sich der Code
+daran?"), werden über ein eigenes, von der Zeitfrage-Erkennung getrenntes
+Musterset in `orchestrator/knowledge-authority.js` erkannt. Der Unterschied
+zur Zeitfrage-Absicherung: eine Accepted DEC ist zwar für „was gilt heute"
+autoritativ, beweist aber nie, ob der Code der Entscheidung tatsächlich
+entspricht — die Absicherung greift deshalb unbedingt, unabhängig von der
+Quellenklasse.
+
+Eine reine Prompt-Anweisung erwies sich hier als nicht robust genug: vier
+reale Läufe des lokalen Modells gegen den Realindex ließen die Ist-Seite
+trotz salient platzierter Anweisung durchgehend weg. Die Antwort erhält
+deshalb zusätzlich einen festen, serverseitig angehängten Hinweissatz —
+deterministisch, unabhängig vom Modelltext, kein weiterer Modellaufruf.
+
 ## Generischer Wissenskontext (read-only, mehrere Consumer)
 
 `POST /api/v1/knowledge` ist der **generische, read-only Knowledge-Pfad**. Er

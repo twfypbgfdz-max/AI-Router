@@ -3,6 +3,7 @@ import { readAllChunks, readIndexMeta, readManifest } from "./knowledge/rag-inde
 import { searchKnowledgeChunks } from "./knowledge/rag-search.js";
 import { loadOllamaEmbeddingProviderConfig } from "./knowledge/rag-config.js";
 import { verifyIndexFreshness } from "./knowledge/rag-index-freshness.js";
+import { classifyChunkValidity, informationClassOf } from "./knowledge-authority.js";
 
 // Everything this module is allowed to do: read the already-built local
 // index, verify its fingerprint read-only against the effective allowlist
@@ -115,10 +116,20 @@ export async function retrieveKnowledge(question, {
     return Object.freeze({ knowledgeState: "search_failed", results: Object.freeze([]), indexVerification });
   }
 
+  // Authority metadata is joined onto the server-built search results here,
+  // exactly like freshness already was: it comes from the allowlist the
+  // freshness verifier just read, never from the chunk, never from the
+  // caller and never from the model. A document without metadata (only
+  // possible if the index still holds a chunk the allowlist no longer
+  // describes) falls back to the most restrictive class rather than to none.
   const sourceFreshness = indexVerification.state === "content_current" ? "fresh" : "stale";
+  const sourceMetadata = indexVerification.sourceMetadata || {};
   const results = Object.freeze(searchResult.results.map((entry) => Object.freeze({
     ...entry,
-    freshness: sourceFreshness
+    freshness: sourceFreshness,
+    informationClass: informationClassOf(sourceMetadata[entry.sourceDoc]?.informationClass),
+    reviewedAt: sourceMetadata[entry.sourceDoc]?.reviewedAt ?? null,
+    sectionValidity: classifyChunkValidity(entry)
   })));
   if (indexVerification.state === "content_stale" || indexVerification.state === "index_error") {
     return Object.freeze({ knowledgeState: "index_stale", results, indexVerification });

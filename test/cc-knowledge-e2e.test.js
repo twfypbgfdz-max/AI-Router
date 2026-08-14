@@ -190,6 +190,9 @@ test("no data basis at all: unavailable, and the mock adapter is never invoked",
   });
   const body = await run(handler, validKnowledgeBody());
   assert.equal(body.state, "unavailable");
-  assert.deepEqual(body.warnings, ["no_context_no_knowledge", "index_missing"]);
+  // Order changed with P1-A3: warnings are ranked before the maxItems:5
+  // truncation, and a fundamental index state outranks the "nothing to
+  // answer from" note. Same two warnings, most fundamental one first.
+  assert.deepEqual(body.warnings, ["index_missing", "no_context_no_knowledge"]);
   assert.equal(invoked, false);
 });
