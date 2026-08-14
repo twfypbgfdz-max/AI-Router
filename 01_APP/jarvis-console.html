@@ -193,7 +193,11 @@
   // would be worse than an ugly string.
   var WARNING_TEXT = {
     no_context_no_knowledge: "Zu dieser Frage gibt es keine Fundstelle in den freigegebenen Dokumenten. Es wurde bewusst nicht geantwortet, statt zu raten.",
-    index_stale: "Der lokale Index ist älter als 24 Stunden. Die Antwort kann veraltet sein – ein Reindex bringt ihn auf Stand.",
+    index_stale: "Die Wissensbasis hat sich seit dem letzten Indexaufbau geändert oder enthält nur einen letzten bekannten Stand. Die Antwort kann veraltet sein.",
+    index_age_warning: "Der Index ist älter als 24 Stunden, wurde aber inhaltlich gegen die aktuellen freigegebenen Dokumente verifiziert.",
+    index_incompatible: "Der Index passt technisch nicht zur aktuellen Index-, Chunking- oder Embedding-Konfiguration und muss neu aufgebaut werden.",
+    index_error: "Der Index oder sein Manifest enthält einen Dokument- oder Prüfungsfehler. Alte Fundstellen gelten nicht als aktuell.",
+    embedding_model_identity_unverified: "Das konfigurierte Embedding-Modell ist vorhanden, aber Ollama lieferte keinen stabilen Modelldigest zur vollständigen Identitätsprüfung.",
     index_missing: "Es existiert noch kein lokaler Index. Zuerst einen Reindex ausführen.",
     embedding_model_unavailable: "Das Embedding-Modell ist nicht verfügbar. Läuft Ollama, und ist das Modell geladen?",
     search_failed: "Die Suche im lokalen Index ist fehlgeschlagen.",

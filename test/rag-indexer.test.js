@@ -8,9 +8,11 @@ import { fileURLToPath } from "node:url";
 process.env.AI_ROUTER_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "rag-indexer-"));
 
 const { runRagReindex } = await import("../orchestrator/knowledge/rag-indexer.js");
+const { verifyIndexFreshness } = await import("../orchestrator/knowledge/rag-index-freshness.js");
+const { loadVaultDocument } = await import("../orchestrator/knowledge/document-loader.js");
 const { acquireIndexLock, releaseIndexLock, readManifest, readAllChunks, readIndexMeta, writeIndexMeta } = await import("../orchestrator/knowledge/rag-index-store.js");
 const { RagError } = await import("../orchestrator/knowledge/rag-error.js");
-const { RAG_CHUNKING_VERSION } = await import("../orchestrator/knowledge/rag-config.js");
+const { RAG_CHUNKING_VERSION, RAG_FINGERPRINT_VERSION, RAG_INDEX_SCHEMA_VERSION } = await import("../orchestrator/knowledge/rag-config.js");
 
 const FIXTURES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "rag-vault");
 
@@ -49,10 +51,32 @@ test("fresh run indexes allowlisted documents and calls the embedder", async () 
   assert.ok(calls.length > 0);
   assert.equal(result.documentsProcessed, 2);
   const manifest = readManifest();
+  const meta = readIndexMeta();
+  assert.equal(manifest.schemaVersion, RAG_INDEX_SCHEMA_VERSION);
+  assert.equal(meta.schemaVersion, RAG_INDEX_SCHEMA_VERSION);
+  assert.equal(meta.fingerprint.version, RAG_FINGERPRINT_VERSION);
+  assert.equal(meta.fingerprint.chunkCount, result.chunkCount);
+  assert.equal(meta.buildStatus, "complete");
+  assert.equal(result.indexState, "content_current");
+  assert.deepEqual(result.documentErrors, []);
   assert.equal(manifest.documents["10_Apps/decision-doc.md"].status, "ok");
   assert.equal(manifest.documents["10_Apps/second-doc.md"].status, "ok");
   const chunks = readAllChunks();
   assert.ok(chunks.every((c) => c.section !== undefined));
+
+  const verification = verifyIndexFreshness({
+    env: baseEnv(),
+    meta,
+    manifest,
+    chunks,
+    modelIdentity: { model: "bge-m3", digest: null },
+    loadAllowlistFn: () => ({
+      schemaVersion: "1.0",
+      documents: ["10_Apps/decision-doc.md", "10_Apps/second-doc.md"].map((relativePath) => ({ relativePath })),
+      rejected: []
+    })
+  });
+  assert.equal(verification.state, "content_current");
 });
 
 test("unchanged documents are skipped on a second run - no new embedding calls", async () => {
@@ -115,7 +139,7 @@ test("a model change forces a full re-index of every allowlisted document", asyn
 
 test("secret-like content blocks that document's chunk without aborting the run", async () => {
   const { embedTextFn, calls } = countingEmbedder();
-  await runRagReindex({
+  const result = await runRagReindex({
     env: baseEnv(),
     loadAllowlistFn: fixtureAllowlist(["10_Apps/secret-content.md", "10_Apps/decision-doc.md"]),
     embedTextFn,
@@ -128,6 +152,50 @@ test("secret-like content blocks that document's chunk without aborting the run"
   const chunks = readAllChunks();
   assert.ok(!chunks.some((c) => c.sourceDoc === "10_Apps/secret-content.md"));
   assert.ok(calls.length > 0);
+  assert.equal(readIndexMeta().buildStatus, "partial");
+  assert.equal(result.indexState, "index_error");
+  assert.ok(result.documentErrors.some((entry) => entry.relativePath === "10_Apps/secret-content.md"));
+});
+
+test("an incremental document failure keeps old chunks only as explicit last-known-good", async () => {
+  const first = countingEmbedder();
+  await runRagReindex({
+    env: baseEnv(),
+    loadAllowlistFn: fixtureAllowlist(["10_Apps/decision-doc.md"]),
+    embedTextFn: first.embedTextFn,
+    assertEmbeddingModelAvailableFn: noopAvailability
+  });
+  const oldChunks = readAllChunks();
+
+  const result = await runRagReindex({
+    env: baseEnv(),
+    loadAllowlistFn: fixtureAllowlist(["10_Apps/decision-doc.md"]),
+    loadVaultDocumentFn: () => { throw new Error("simulated read failure"); },
+    embedTextFn: async () => { throw new Error("must not embed"); },
+    assertEmbeddingModelAvailableFn: noopAvailability
+  });
+
+  const manifest = readManifest();
+  const chunks = readAllChunks();
+  assert.equal(result.indexState, "index_error");
+  assert.equal(manifest.documents["10_Apps/decision-doc.md"].status, "error");
+  assert.deepEqual(chunks, oldChunks);
+
+  const verification = verifyIndexFreshness({
+    env: baseEnv(),
+    meta: readIndexMeta(),
+    manifest,
+    chunks,
+    modelIdentity: { model: "bge-m3", digest: null },
+    loadAllowlistFn: () => ({
+      schemaVersion: "1.0",
+      documents: [{ relativePath: "10_Apps/decision-doc.md" }],
+      rejected: []
+    }),
+    loadVaultDocumentFn: loadVaultDocument
+  });
+  assert.equal(verification.state, "index_error");
+  assert.ok(verification.reasons.includes("manifest_document_not_ok"));
 });
 
 test("a denied-folder entry injected into the allowlist is still rejected at the loader level", async () => {
@@ -147,7 +215,7 @@ test("a denied-folder entry injected into the allowlist is still rejected at the
 
 test("a missing allowlisted document is marked removed, not crashed", async () => {
   const { embedTextFn } = countingEmbedder();
-  await runRagReindex({
+  const result = await runRagReindex({
     env: baseEnv(),
     loadAllowlistFn: fixtureAllowlist(["10_Apps/does-not-exist.md"]),
     embedTextFn,
@@ -155,6 +223,8 @@ test("a missing allowlisted document is marked removed, not crashed", async () =
   });
   const manifest = readManifest();
   assert.equal(manifest.documents["10_Apps/does-not-exist.md"].status, "removed");
+  assert.equal(result.indexState, "index_error");
+  assert.deepEqual(result.documentErrors, [{ relativePath: "10_Apps/does-not-exist.md", code: "DOCUMENT_UNREADABLE" }]);
 });
 
 test("a second concurrent run is blocked while a lock is held", async () => {

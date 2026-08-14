@@ -1,72 +1,130 @@
 import { assertEmbeddingModelAvailable, embedText } from "./knowledge/embedding-client.js";
-import { readAllChunks, readIndexMeta } from "./knowledge/rag-index-store.js";
+import { readAllChunks, readIndexMeta, readManifest } from "./knowledge/rag-index-store.js";
 import { searchKnowledgeChunks } from "./knowledge/rag-search.js";
-import { KNOWLEDGE_ANSWER_INDEX_MAX_AGE_MS } from "./knowledge-answer-config.js";
 import { loadOllamaEmbeddingProviderConfig } from "./knowledge/rag-config.js";
+import { verifyIndexFreshness } from "./knowledge/rag-index-freshness.js";
 
 // Everything this module is allowed to do: read the already-built local
-// index (chunks.jsonl / index-meta.json), check the embedding model is
-// installed, embed the already-validated question, and search. It never
-// opens a vault document (document-loader.js is not imported here), never
-// triggers orchestrator/knowledge/rag-indexer.js, and never accepts a
+// index, verify its fingerprint read-only against the effective allowlist
+// and allowlisted vault documents, check the embedding model, embed the
+// already-validated question, and search. It never triggers
+// orchestrator/knowledge/rag-indexer.js, writes to the vault/index, or accepts a
 // caller-supplied similarity threshold or top-k - searchKnowledgeChunks is
 // always called with its own built-in defaults (RAG_DEFAULT_MIN_SIMILARITY,
 // RAG_DEFAULT_TOP_K from rag-config.js), never with request-derived values.
-function isIndexStale(meta, now) {
-  const checkedAt = meta.lastRunAt || meta.lastFullReindexAt;
-  if (!checkedAt || !Number.isFinite(Date.parse(checkedAt))) return true;
-  return now.getTime() - Date.parse(checkedAt) > KNOWLEDGE_ANSWER_INDEX_MAX_AGE_MS;
-}
-
-// Staleness is evaluated before match state and, when true, always wins as
-// the reported knowledgeState - "index_stale" - even if matches were found,
-// so a caller always sees a single, unambiguous signal that the underlying
-// index may be outdated. results (if any) are still returned alongside it;
-// staleness is a transparency flag, not a reason to withhold otherwise-valid
-// matches (DEC-003: the last known-good state stays visible, but marked).
+// Content identity is evaluated before match state. A changed or partially
+// failed index may still return last-known-good chunks, but all such sources
+// are marked stale. Pure age never changes content identity by itself.
 export async function retrieveKnowledge(question, {
   env = process.env,
   now = () => new Date(),
   readIndexMetaFn = readIndexMeta,
+  readManifestFn = readManifest,
   readAllChunksFn = readAllChunks,
   assertEmbeddingModelAvailableFn = assertEmbeddingModelAvailable,
   embedTextFn = embedText,
-  searchFn = searchKnowledgeChunks
+  searchFn = searchKnowledgeChunks,
+  verifyIndexFreshnessFn = verifyIndexFreshness
 } = {}) {
   let embeddingConfig;
+  let modelIdentity;
   try {
     embeddingConfig = loadOllamaEmbeddingProviderConfig(env);
-    await assertEmbeddingModelAvailableFn(embeddingConfig);
+    modelIdentity = await assertEmbeddingModelAvailableFn(embeddingConfig);
+    if (!modelIdentity) modelIdentity = Object.freeze({ model: embeddingConfig.model, digest: null });
   } catch {
     return Object.freeze({ knowledgeState: "embedding_model_unavailable", results: Object.freeze([]) });
   }
 
-  const meta = readIndexMetaFn();
-  const chunks = readAllChunksFn();
-  if (!meta || chunks.length === 0) {
-    return Object.freeze({ knowledgeState: "index_missing", results: Object.freeze([]) });
+  let meta;
+  let manifest;
+  let chunks;
+  try {
+    meta = readIndexMetaFn();
+    manifest = readManifestFn();
+    chunks = readAllChunksFn();
+  } catch {
+    return Object.freeze({
+      knowledgeState: "search_failed",
+      results: Object.freeze([]),
+      indexVerification: Object.freeze({
+        state: "index_error",
+        reasons: Object.freeze(["index_files_unreadable"]),
+        lastBuiltAt: null,
+        lastVerifiedAt: now().toISOString(),
+        ageWarning: false,
+        modelDigestVerified: false
+      })
+    });
   }
-  const stale = isIndexStale(meta, now());
+  if (!meta || chunks.length === 0) {
+    return Object.freeze({
+      knowledgeState: "index_missing",
+      results: Object.freeze([]),
+      indexVerification: Object.freeze({
+        state: "index_error",
+        reasons: Object.freeze(["index_missing"]),
+        lastBuiltAt: null,
+        lastVerifiedAt: now().toISOString(),
+        ageWarning: false,
+        modelDigestVerified: false
+      })
+    });
+  }
+
+  const indexVerification = await verifyIndexFreshnessFn({
+    env,
+    now,
+    meta,
+    manifest,
+    chunks,
+    modelIdentity
+  });
+  if (indexVerification.state === "index_incompatible") {
+    return Object.freeze({ knowledgeState: "search_failed", results: Object.freeze([]), indexVerification });
+  }
 
   let embedding;
   try {
     embedding = await embedTextFn(question, embeddingConfig);
   } catch {
-    return Object.freeze({ knowledgeState: "search_failed", results: Object.freeze([]) });
+    return Object.freeze({ knowledgeState: "search_failed", results: Object.freeze([]), indexVerification });
+  }
+  if (embedding.length !== meta.embeddingDimensions) {
+    return Object.freeze({
+      knowledgeState: "search_failed",
+      results: Object.freeze([]),
+      indexVerification: Object.freeze({
+        ...indexVerification,
+        state: "index_incompatible",
+        reasons: Object.freeze([...indexVerification.reasons, "query_embedding_dimensions_mismatch"])
+      })
+    });
   }
 
   let searchResult;
   try {
-    searchResult = searchFn(embedding, chunks);
+    const allowedSourceDocs = Array.isArray(indexVerification.allowedSourceDocs)
+      ? new Set(indexVerification.allowedSourceDocs)
+      : null;
+    const searchableChunks = allowedSourceDocs
+      ? chunks.filter((chunk) => allowedSourceDocs.has(chunk.sourceDoc))
+      : chunks;
+    searchResult = searchFn(embedding, searchableChunks);
   } catch {
-    return Object.freeze({ knowledgeState: "search_failed", results: Object.freeze([]) });
+    return Object.freeze({ knowledgeState: "search_failed", results: Object.freeze([]), indexVerification });
   }
 
-  if (stale) {
-    return Object.freeze({ knowledgeState: "index_stale", results: searchResult.results });
+  const sourceFreshness = indexVerification.state === "content_current" ? "fresh" : "stale";
+  const results = Object.freeze(searchResult.results.map((entry) => Object.freeze({
+    ...entry,
+    freshness: sourceFreshness
+  })));
+  if (indexVerification.state === "content_stale" || indexVerification.state === "index_error") {
+    return Object.freeze({ knowledgeState: "index_stale", results, indexVerification });
   }
-  if (searchResult.results.length === 0) {
-    return Object.freeze({ knowledgeState: "no_match", results: Object.freeze([]) });
+  if (results.length === 0) {
+    return Object.freeze({ knowledgeState: "no_match", results, indexVerification });
   }
-  return Object.freeze({ knowledgeState: "available", results: searchResult.results });
+  return Object.freeze({ knowledgeState: "available", results, indexVerification });
 }

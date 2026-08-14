@@ -6,7 +6,8 @@ import { RagError } from "./rag-error.js";
 // Independent schema/version counter for the RAG index - never compared to
 // the router API, recommendation or cc-summary schema versions (same
 // principle as cc-summary-config.js: separate contracts, separate counters).
-export const RAG_INDEX_SCHEMA_VERSION = "1.0";
+export const RAG_INDEX_SCHEMA_VERSION = "2.0";
+export const RAG_FINGERPRINT_VERSION = "1";
 
 // Bumped whenever the shape of the text actually sent to the embedding
 // model changes (e.g. adding the "Dokument: ... / Abschnitt: ..." prefix in
@@ -42,6 +43,7 @@ export const RAG_MAX_ALLOWLIST_ENTRIES = 100;
 export const RAG_MAX_DOCUMENT_BYTES = 200_000;
 export const RAG_MAX_CHUNK_CHARS = 2_000;
 export const RAG_TARGET_CHUNK_CHARS = 1_200;
+export const RAG_MIN_MERGE_CHARS = 200;
 export const RAG_MAX_CHUNKS_PER_DOCUMENT = 200;
 
 // Recalibrated 2026-08-11 after the allowlist grew from 6 to 10 documents

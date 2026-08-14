@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkOllamaModelAvailable } from "../orchestrator/ollama-availability.js";
+import { checkOllamaModelAvailable, getOllamaModelIdentity } from "../orchestrator/ollama-availability.js";
 import { providerJsonResponse } from "./text-response-helpers.js";
 
 const BASE_URL = "http://127.0.0.1:11434";
@@ -17,6 +17,25 @@ test("model present in /api/tags is reported available", async () => {
     fetchImpl: async () => providerJsonResponse(tagsPayload([{ name: MODEL, model: MODEL }]), { headers: { "content-type": "application/json" } })
   });
   assert.equal(available, true);
+});
+
+test("model identity exposes a stable digest when Ollama provides one", async () => {
+  const digest = "a".repeat(64);
+  const identity = await getOllamaModelIdentity({
+    baseUrl: BASE_URL,
+    model: MODEL,
+    fetchImpl: async () => providerJsonResponse(tagsPayload([{ name: MODEL, digest }]), { headers: { "content-type": "application/json" } })
+  });
+  assert.deepEqual(identity, { model: MODEL, digest: `sha256:${digest}` });
+});
+
+test("model identity remains usable but marks an unavailable digest as null", async () => {
+  const identity = await getOllamaModelIdentity({
+    baseUrl: BASE_URL,
+    model: MODEL,
+    fetchImpl: async () => providerJsonResponse(tagsPayload([{ name: MODEL }]), { headers: { "content-type": "application/json" } })
+  });
+  assert.deepEqual(identity, { model: MODEL, digest: null });
 });
 
 test("model absent from /api/tags is reported unavailable, not an error", async () => {

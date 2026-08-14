@@ -35,11 +35,12 @@ const SAFE_MESSAGES = Object.freeze({
 // a vault-relative path (from Felix's own reviewed allowlist file) and a
 // closed RagError code - never a message built from external input.
 export function buildCcReindexSuccess(result, { generatedAt }) {
+  const visibleDocumentErrors = result.documentErrors || result.documentsRejectedFromAllowlist;
   return {
     schemaVersion: CC_REINDEX_SCHEMA_VERSION,
     generatedAt,
     documentsProcessed: result.documentsProcessed,
-    documentsRejectedFromAllowlist: result.documentsRejectedFromAllowlist.map((entry) => ({
+    documentsRejectedFromAllowlist: visibleDocumentErrors.map((entry) => ({
       relativePath: entry.relativePath,
       code: entry.code
     })),

@@ -19,14 +19,16 @@ import {
 // just a hand-built {knowledgeState, results} stub. Only the embedding call
 // and the Ollama adapter are mocked - nothing real is written or read from
 // disk, no real network call is made.
-function realRag({ meta, chunks, embedding = [1, 0, 0] }) {
+function realRag({ meta, chunks, embedding = [1, 0, 0], indexState = "content_current", ageWarning = false }) {
   return (question, opts) => retrieveKnowledge(question, {
     ...opts,
     readIndexMetaFn: () => meta,
+    readManifestFn: () => ({ schemaVersion: "2.0", documents: {} }),
     readAllChunksFn: () => chunks,
     assertEmbeddingModelAvailableFn: async () => {},
     embedTextFn: async () => embedding,
-    searchFn: searchKnowledgeChunks
+    searchFn: searchKnowledgeChunks,
+    verifyIndexFreshnessFn: () => ({ state: indexState, reasons: [], ageWarning, modelDigestVerified: true })
   });
 }
 
@@ -38,8 +40,8 @@ function chunk(overrides) {
   };
 }
 
-function freshMeta() { return { lastRunAt: new Date().toISOString() }; }
-function staleMeta() { return { lastRunAt: new Date(Date.now() - 48 * 60 * 60_000).toISOString() }; }
+function freshMeta() { return { lastRunAt: new Date().toISOString(), embeddingDimensions: 3 }; }
+function staleMeta() { return { lastRunAt: new Date(Date.now() - 48 * 60 * 60_000).toISOString(), embeddingDimensions: 3 }; }
 
 async function run(handler, body) {
   const { request, response } = fakeExchange(body);
@@ -150,12 +152,12 @@ test("invalid JSON from the model fails closed as model_response_invalid", async
   assert.ok(body.warnings.includes("model_response_invalid"));
 });
 
-test("a stale index still answers, but the response is downgraded to partial with an explicit warning", async () => {
+test("a content-stale index still answers, but the response is downgraded to partial with an explicit warning", async () => {
   const { adapter } = structuredAdapter();
   const handler = createCcKnowledgeHandler({
     env: ccKnowledgeEnv(),
     adapterFactory: () => adapter,
-    retrieveKnowledgeFn: realRag({ meta: staleMeta(), chunks: [chunk()] }),
+    retrieveKnowledgeFn: realRag({ meta: staleMeta(), chunks: [chunk()], indexState: "content_stale", ageWarning: true }),
     totalTimeoutMs: 2_000
   });
   const body = await run(handler, validKnowledgeBody({ context: knowledgeContext() }));
@@ -188,6 +190,6 @@ test("no data basis at all: unavailable, and the mock adapter is never invoked",
   });
   const body = await run(handler, validKnowledgeBody());
   assert.equal(body.state, "unavailable");
-  assert.deepEqual(body.warnings, ["no_context_no_knowledge"]);
+  assert.deepEqual(body.warnings, ["no_context_no_knowledge", "index_missing"]);
   assert.equal(invoked, false);
 });

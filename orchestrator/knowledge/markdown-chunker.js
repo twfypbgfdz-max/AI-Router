@@ -1,8 +1,12 @@
-import { RAG_MAX_CHUNK_CHARS, RAG_MAX_CHUNKS_PER_DOCUMENT, RAG_TARGET_CHUNK_CHARS } from "./rag-config.js";
+import {
+  RAG_MAX_CHUNK_CHARS,
+  RAG_MAX_CHUNKS_PER_DOCUMENT,
+  RAG_MIN_MERGE_CHARS,
+  RAG_TARGET_CHUNK_CHARS
+} from "./rag-config.js";
 import { RagError } from "./rag-error.js";
 
 const HEADING_PATTERN = /^(#{1,6})\s+(.*)$/;
-const MIN_MERGE_CHARS = 200;
 
 function isFenceLine(line) {
   return /^```/.test(line.trim());
@@ -79,7 +83,7 @@ export function chunkMarkdownBody(body, { relativePath } = {}) {
   const merged = [];
   for (const chunk of rawChunks) {
     const previous = merged[merged.length - 1];
-    if (previous && previous.section === chunk.section && previous.text.length < MIN_MERGE_CHARS && previous.text.length + chunk.text.length + 2 <= RAG_MAX_CHUNK_CHARS) {
+    if (previous && previous.section === chunk.section && previous.text.length < RAG_MIN_MERGE_CHARS && previous.text.length + chunk.text.length + 2 <= RAG_MAX_CHUNK_CHARS) {
       previous.text = `${previous.text}\n\n${chunk.text}`;
     } else {
       merged.push({ ...chunk });

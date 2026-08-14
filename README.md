@@ -264,10 +264,27 @@ oder `/api/v1/cc/summary`.
 - **Indexspeicher:** ausschließlich unter `.ai-router-data/rag-index/`
   (`chunks.jsonl`, `manifest.json`, `index-meta.json`, Lock-Datei) — durch
   den bestehenden `.gitignore`-Eintrag `.ai-router-data/` nicht versioniert.
+  `index-meta.json` trägt seit Schema `2.0` den kanonischen Content-Fingerprint
+  für Allowlist, Dokumentzustände und Build-Konfiguration. `manifest.json`
+  hält zusätzlich pro freigegebenem Dokument SHA-256 und Status fest.
 - **Manueller Ablauf:** `npm run rag:reindex`. Kein Scheduler, kein
   Filesystem-Watcher, kein automatischer Start mit `npm start`.
+- **Inhaltliche Frischeprüfung:** Jede normale Wissensanfrage prüft die
+  effektive Allowlist und die zehn freigegebenen Dokumente read-only gegen
+  den gespeicherten Fingerprint. Dafür werden keine Embeddings neu erzeugt.
+  Ein unveränderter, älterer Index bleibt `content_current` und erhält nur
+  `index_age_warning`; eine noch junge Dateiänderung wird sofort
+  `content_stale`. Änderungen an Indexschema, Chunking-/Buildparametern,
+  Dimension oder verifizierbarem Modelldigest ergeben
+  `index_incompatible`. Lese-/Manifestfehler ergeben `index_error`.
+  Nach einer Allowlist-Entfernung werden Chunks des entfernten Dokuments
+  bereits bei der Anfrage ausgeschlossen, auch bevor der manuelle Reindex
+  sie physisch aus dem Index entfernt.
 - Änderungsprüfung erfolgt über SHA-256 des Dokumentinhalts; `mtime` ist rein
-  ergänzendes Metadatum und begründet allein weder Re-Index noch Skip.
+  ergänzendes Metadatum und begründet allein weder Re-Index noch Skip. Bei
+  Modellnamen wie `:latest` wird der von Ollama gemeldete Digest gespeichert
+  und geprüft. Falls Ollama keinen belastbaren Digest liefert, bleibt diese
+  Restunsicherheit als `embedding_model_identity_unverified` sichtbar.
 
 ### Retrieval-Qualität messen: `npm run rag:quality`
 
@@ -320,11 +337,13 @@ beantwortet.
 - **States:** `state` (`ok` | `partial` | `unavailable`),
   `systemContextState` (`available` | `unavailable`), `knowledgeState`
   (`available` | `no_match` | `index_missing` | `index_stale` |
-  `embedding_model_unavailable` | `search_failed`). Ein veralteter Index
-  (Staleness-Schwelle aktuell **24 Stunden** — bewusst konservativer
-  Startwert, nicht empirisch kalibriert) blockiert die Antwort nicht,
-  senkt das Gesamtergebnis aber mindestens auf `partial` und erzwingt die
-  Warnung `index_stale`.
+  `embedding_model_unavailable` | `search_failed`). Der bestehende öffentliche
+  Vertrag bleibt dabei unverändert: `index_stale` bezeichnet jetzt eine
+  nachgewiesene Inhaltsabweichung oder einen fehlerhaften Last-known-good-
+  Stand, nicht bloß ein hohes Alter. Die genauere Ursache erscheint in
+  `warnings` als `index_stale`, `index_incompatible` oder `index_error`.
+  Ein inhaltlich unveränderter älterer Index bleibt verwendbar und trägt nur
+  `index_age_warning`.
 - **Quellenformat:** RAG-Fundstellen werden serverseitig `[K1]`–`[K3]`
   zugeordnet. Das Modell darf nur diese Kennungen zitieren; `sources[]` im
   Response wird ausschließlich aus den tatsächlich zitierten, serverseitig
@@ -335,16 +354,18 @@ beantwortet.
   eindeutige Ich-Form-Aktionsbehauptungen ("Ich habe den Commit erstellt.")
   werden hart blockiert.
 - **Keine automatische Re-Indexierung, keine Cloud, keine Vault-Schreibzugriffe:**
-  Der Endpunkt liest ausschließlich den bereits vorhandenen lokalen Index
-  (`npm run rag:reindex` bleibt ein separater, manueller Schritt) und öffnet
-  FELIX_SYSTEM nie direkt.
+  Der Endpunkt verändert weder Index noch Vault. Er liest den vorhandenen
+  lokalen Index und prüft die ausdrücklich freigegebenen Vault-Dokumente
+  read-only gegen deren gespeicherte Hashes; `npm run rag:reindex` bleibt ein
+  separater, manueller Schritt.
 
 ## Generischer Wissenskontext (read-only, mehrere Consumer)
 
 `POST /api/v1/knowledge` ist der **generische, read-only Knowledge-Pfad**. Er
-beantwortet eine Frage ausschließlich aus dem bereits gebauten lokalen
-RAG-Index und existiert, damit ein zweiter Consumer (die lokale
-Jarvis-Dialogoberfläche) nicht den Command-Center-Vertrag mitbenutzen muss.
+beantwortet eine Frage aus dem bereits gebauten lokalen RAG-Index und prüft
+dessen Fingerprint dabei gegen die freigegebenen Vault-Dokumente. Er
+existiert, damit ein zweiter Consumer (die lokale Jarvis-Dialogoberfläche)
+nicht den Command-Center-Vertrag mitbenutzen muss.
 
 **Verhältnis zu `cc/knowledge`:** Beide Routen benutzen dieselbe Engine
 (`orchestrator/knowledge-service.js`). `POST /api/v1/cc/knowledge` bleibt
@@ -639,7 +660,9 @@ Lokaler Betriebsweg für den vollständigen Knowledge-Pfad:
 2. `npm run rag:reindex` erzeugt/aktualisiert den Index. Er läuft **nie**
    automatisch: kein Scheduler, kein Watcher, kein Start mit `npm start`.
    Nach jeder Allowlist-Änderung und nach relevanten Vault-Änderungen ist er
-   manuell nötig, sonst meldet `cc/knowledge` `index_stale` (Schwelle 24 h).
+   manuell nötig. Bis dahin erkennt der Knowledge-Pfad die konkrete
+   Fingerprint-Abweichung als `index_stale`; reines Alter erzeugt nur
+   `index_age_warning`.
 3. `npm start` startet den Router auf `http://127.0.0.1:8787`.
 4. Das Command Center konsumiert `POST /api/v1/cc/knowledge` server-zu-server
    mit `AI_ROUTER_CC_TOKEN`; der Browser spricht den Router nie direkt an.

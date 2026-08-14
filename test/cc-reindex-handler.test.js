@@ -91,6 +91,22 @@ test("2. rejected allowlist entries pass through only relativePath and code, nev
   assert.equal(exchange.response.body.includes("internal detail"), false);
 });
 
+test("2b. per-document indexing errors are visible in the compatible success payload", async () => {
+  const { handler } = handlerWith({
+    runRagReindexFn: async () => successfulReindex({
+      documentsRejectedFromAllowlist: [],
+      documentErrors: [{ relativePath: "10_Apps/broken.md", code: "DOCUMENT_UNREADABLE" }],
+      indexState: "index_error"
+    })
+  });
+  const exchange = ccExchange();
+  await handler(exchange.request, exchange.response);
+  assert.equal(exchange.response.statusCode, 200);
+  assert.deepEqual(exchange.response.json().documentsRejectedFromAllowlist, [
+    { relativePath: "10_Apps/broken.md", code: "DOCUMENT_UNREADABLE" }
+  ]);
+});
+
 test("3. a valid bearer token uses the timing-safe comparison path and succeeds", async () => {
   let comparisons = 0;
   const timingSafeEqualFn = (actual, expected) => { comparisons += 1; return actual.equals(expected); };

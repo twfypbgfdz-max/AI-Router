@@ -1,6 +1,6 @@
 import { RagError } from "./rag-error.js";
 import { RAG_EMBEDDING_MAX_BODY_BYTES } from "./rag-config.js";
-import { checkOllamaModelAvailable } from "../ollama-availability.js";
+import { getOllamaModelIdentity } from "../ollama-availability.js";
 
 // Read-only availability probe, reusing the exact same /api/tags check the
 // chat provider uses. Never triggers a pull, never accepts a client-chosen
@@ -8,7 +8,7 @@ import { checkOllamaModelAvailable } from "../ollama-availability.js";
 export async function assertEmbeddingModelAvailable({ baseUrl, model, fetchImpl = globalThis.fetch } = {}) {
   let available;
   try {
-    available = await checkOllamaModelAvailable({ baseUrl, model, fetchImpl });
+    available = await getOllamaModelIdentity({ baseUrl, model, fetchImpl });
   } catch {
     throw new RagError("EMBEDDING_PROVIDER_UNAVAILABLE", "Ollama is not reachable for embeddings.", { safeDetails: { reason: "provider_unreachable" } });
   }
@@ -17,6 +17,7 @@ export async function assertEmbeddingModelAvailable({ baseUrl, model, fetchImpl 
       safeDetails: { reason: "model_not_pulled", hint: "Requires a manual 'ollama pull' - never pulled automatically." }
     });
   }
+  return available;
 }
 
 async function readBoundedJson(response, maxBodyBytes) {

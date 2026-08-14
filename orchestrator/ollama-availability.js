@@ -57,7 +57,7 @@ function normalizeTagsFetchError(error, signal) {
 // configured model present? Never mutates anything, never triggers a model
 // pull, never accepts a client-chosen model or base URL - both come only
 // from the server's own already-validated (loopback-only) configuration.
-export async function checkOllamaModelAvailable({
+export async function getOllamaModelIdentity({
   baseUrl,
   model,
   fetchImpl = globalThis.fetch,
@@ -98,11 +98,20 @@ export async function checkOllamaModelAvailable({
         safeDetails: { reason: "provider_response_invalid" }
       });
     }
-    const modelAvailable = payload.models.slice(0, MAX_MODEL_ENTRIES_CHECKED).some((entry) =>
+    const matchingEntry = payload.models.slice(0, MAX_MODEL_ENTRIES_CHECKED).find((entry) =>
       entry && typeof entry === "object" && !Array.isArray(entry)
       && (entry.name === model || entry.model === model));
-    return modelAvailable;
+    if (!matchingEntry) return null;
+    const rawDigest = typeof matchingEntry.digest === "string" ? matchingEntry.digest.trim().toLowerCase() : "";
+    const digest = /^(?:sha256:)?[a-f0-9]{64}$/.test(rawDigest)
+      ? (rawDigest.startsWith("sha256:") ? rawDigest : `sha256:${rawDigest}`)
+      : null;
+    return Object.freeze({ model, digest });
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function checkOllamaModelAvailable(options = {}) {
+  return (await getOllamaModelIdentity(options)) !== null;
 }

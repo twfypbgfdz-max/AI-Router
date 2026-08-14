@@ -216,7 +216,8 @@ test("the page surfaces the rate limit explicitly with a countdown", () => {
 
 test("the page explains every warning the knowledge contract can emit", () => {
   for (const warning of [
-    "no_context_no_knowledge", "index_stale", "index_missing", "embedding_model_unavailable",
+    "no_context_no_knowledge", "index_stale", "index_age_warning", "index_incompatible",
+    "index_error", "embedding_model_identity_unverified", "index_missing", "embedding_model_unavailable",
     "search_failed", "rate_limited", "concurrency_limited", "answer_provider_unavailable",
     "answer_model_unavailable", "model_response_invalid", "prompt_budget_exceeded",
     "model_source_validation_failed", "model_answer_too_large", "model_action_claim_blocked",

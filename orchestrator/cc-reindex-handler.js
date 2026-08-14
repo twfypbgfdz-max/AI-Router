@@ -161,7 +161,8 @@ export function createCcReindexHandler({
         documentsProcessed: payload.documentsProcessed,
         documentsRejected: payload.documentsRejectedFromAllowlist.length,
         chunkCount: payload.chunkCount,
-        forceFullReindex: payload.forceFullReindex
+        forceFullReindex: payload.forceFullReindex,
+        indexState: result.indexState || null
       });
       sendJson(response, 200, payload);
       return payload;

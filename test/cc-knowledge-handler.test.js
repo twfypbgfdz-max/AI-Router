@@ -182,6 +182,58 @@ test("stale index with context and a match: at least partial, index_stale warnin
   });
 });
 
+test("old but content-current index stays available and carries only an age warning", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await post(baseUrl, validKnowledgeBody({ context: knowledgeContext() }));
+    const body = await response.json();
+    assert.equal(body.state, "ok");
+    assert.equal(body.knowledgeState, "available");
+    assert.ok(body.warnings.includes("index_age_warning"));
+    assert.ok(!body.warnings.includes("index_stale"));
+  }, {
+    handlerOptions: {
+      adapterFactory: () => structuredAdapter().adapter,
+      retrieveKnowledgeFn: async () => ({
+        knowledgeState: "available",
+        results: [ragResult()],
+        indexVerification: {
+          state: "content_current",
+          ageWarning: true,
+          modelDigestVerified: true
+        }
+      })
+    }
+  });
+});
+
+test("incompatible index remains inside the compatible response contract and is explicit", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await post(baseUrl, validKnowledgeBody({ context: knowledgeContext() }));
+    const body = await response.json();
+    assert.equal(body.state, "partial");
+    assert.equal(body.knowledgeState, "search_failed");
+    assert.ok(body.warnings.includes("search_failed"));
+    assert.ok(body.warnings.includes("index_incompatible"));
+    assert.deepEqual(Object.keys(body).sort(), [
+      "answer", "generatedAt", "knowledgeState", "schemaVersion", "sources",
+      "state", "systemContextState", "warnings"
+    ].sort());
+  }, {
+    handlerOptions: {
+      adapterFactory: () => structuredAdapter({ citedSources: [] }).adapter,
+      retrieveKnowledgeFn: async () => ({
+        knowledgeState: "search_failed",
+        results: [],
+        indexVerification: {
+          state: "index_incompatible",
+          ageWarning: false,
+          modelDigestVerified: false
+        }
+      })
+    }
+  });
+});
+
 test("index missing but context present: context-only partial answer allowed", async () => {
   await withServer(async (baseUrl) => {
     const response = await post(baseUrl, validKnowledgeBody({ context: knowledgeContext() }));

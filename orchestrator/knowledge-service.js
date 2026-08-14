@@ -16,9 +16,10 @@ import { createTextResponseHandler } from "./text-response-handler.js";
 // being quietly repurposed for it.
 //
 // Read-only by construction: it retrieves from the already-built local
-// index, never opens a vault document, never triggers an index run and
-// never writes anything. It performs no action and returns no tool call -
-// the only thing it produces is text plus server-validated sources.
+// index and the retrieval layer verifies allowlisted vault documents by
+// hash. It never triggers an index run and never writes anything. It
+// performs no action and returns no tool call - the only thing it produces
+// is text plus server-validated sources.
 //
 // Deliberately NOT here (and therefore per-consumer):
 // - authentication and which token guards a route
@@ -45,6 +46,21 @@ function mapGenerationFailureWarning(generationPayload) {
   if (code === "PROVIDER_RESPONSE_INVALID") return "model_response_invalid";
   if (code === "TOKEN_LIMIT_EXCEEDED" || code === "INPUT_TOO_LARGE") return "prompt_budget_exceeded";
   return "internal_error";
+}
+
+function indexWarnings({ knowledgeState, indexVerification }) {
+  const warnings = [];
+  if (knowledgeState === "index_stale") warnings.push("index_stale");
+  if (knowledgeState === "index_missing") warnings.push("index_missing");
+  if (knowledgeState === "embedding_model_unavailable") warnings.push("embedding_model_unavailable");
+  if (knowledgeState === "search_failed") warnings.push("search_failed");
+  if (indexVerification?.state === "index_incompatible") warnings.push("index_incompatible");
+  if (indexVerification?.state === "index_error" && knowledgeState !== "index_missing") warnings.push("index_error");
+  if (indexVerification?.ageWarning === true) warnings.push("index_age_warning");
+  if (indexVerification?.state === "content_current" && indexVerification?.modelDigestVerified === false) {
+    warnings.push("embedding_model_identity_unverified");
+  }
+  return [...new Set(warnings)];
 }
 
 // Server is the sole authority over source identity: K1..K3 map to
@@ -177,7 +193,8 @@ export function createKnowledgeService({
   // raw request data.
   return async function answerKnowledgeQuestion({ question, context = null }) {
     const knowledge = await retrieveKnowledgeFn(question, { env: scopedEnv });
-    const { knowledgeState, results } = knowledge;
+    const { knowledgeState, results, indexVerification = null } = knowledge;
+    const freshnessWarnings = indexWarnings(knowledge);
     const systemContextState = context !== null ? "available" : "unavailable";
 
     const finish = (payload, extraMeta = {}) => Object.freeze({
@@ -191,6 +208,10 @@ export function createKnowledgeService({
         sourceCount: payload.sources.length,
         citedSourceIds: payload.sources.length ? "present" : "none",
         answerLength: payload.answer ? payload.answer.length : 0,
+        indexState: indexVerification?.state || null,
+        indexAgeWarning: indexVerification?.ageWarning === true,
+        indexLastBuiltAt: indexVerification?.lastBuiltAt || null,
+        indexLastVerifiedAt: indexVerification?.lastVerifiedAt || null,
         ...extraMeta
       })
     });
@@ -200,7 +221,8 @@ export function createKnowledgeService({
     // fabrication. No provider call is made.
     if (systemContextState === "unavailable" && results.length === 0) {
       return finish(buildKnowledgeAnswerObservation({
-        state: "unavailable", systemContextState, knowledgeState, warnings: ["no_context_no_knowledge"], now, schemaVersion
+        state: "unavailable", systemContextState, knowledgeState,
+        warnings: ["no_context_no_knowledge", ...freshnessWarnings], now, schemaVersion
       }));
     }
 
@@ -219,7 +241,8 @@ export function createKnowledgeService({
     if (generationPayload.status !== "answered") {
       const warning = mapGenerationFailureWarning(generationPayload);
       return finish(buildKnowledgeAnswerObservation({
-        state: "unavailable", systemContextState, knowledgeState, warnings: [warning], now, schemaVersion
+        state: "unavailable", systemContextState, knowledgeState,
+        warnings: [warning, ...freshnessWarnings], now, schemaVersion
       }), { errorCode: warning });
     }
 
@@ -252,11 +275,7 @@ export function createKnowledgeService({
       }));
     }
 
-    const warnings = [];
-    if (knowledgeState === "index_stale") warnings.push("index_stale");
-    if (knowledgeState === "index_missing") warnings.push("index_missing");
-    if (knowledgeState === "embedding_model_unavailable") warnings.push("embedding_model_unavailable");
-    if (knowledgeState === "search_failed") warnings.push("search_failed");
+    const warnings = [...freshnessWarnings];
     if (URL_PATTERN.test(rawAnswer) || ABSOLUTE_PATH_PATTERN.test(rawAnswer)) warnings.push("model_output_contains_path_or_url");
     if (COMMAND_REFERENCE_PATTERN.test(rawAnswer)) warnings.push("model_output_contains_command_reference");
 
@@ -275,6 +294,7 @@ export function createKnowledgeService({
 
 export const knowledgeServiceInternals = Object.freeze({
   mapGenerationFailureWarning,
+  indexWarnings,
   validateCitedSources,
   containsActionClaim
 });

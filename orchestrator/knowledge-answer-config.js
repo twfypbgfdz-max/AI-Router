@@ -9,10 +9,9 @@
 // length, rate/concurrency budget, request size) remain in
 // cc-knowledge-config.js.
 
-// A local index older than this is still used (DEC-003: last known-good
-// state stays visible), but flagged with knowledgeState "index_stale"
-// rather than silently treated as current. 24h matches a "re-index at most
-// daily" operating rhythm for a manually-triggered, small allowlist.
+// Age is an operational warning only. Content identity is verified
+// separately against the allowlist, document hashes and build fingerprint;
+// an unchanged index older than this remains content_current.
 export const KNOWLEDGE_ANSWER_INDEX_MAX_AGE_MS = 24 * 60 * 60_000;
 
 // NOTE (discovered while testing): the shared text-response pipeline
