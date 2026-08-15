@@ -132,7 +132,13 @@
     border-radius: 50%;
     background: radial-gradient(circle at 34% 28%, var(--accent), var(--surface-2) 72%);
     box-shadow: 0 0 16px 1px color-mix(in srgb, var(--accent) 35%, transparent);
-    transition: background 0.4s ease, box-shadow 0.4s ease;
+    /* transform is part of this transition only for the benefit of
+       data-state="listening" below, which sets it from --orb-audio-level
+       instead of an @keyframes animation - every other state still fully
+       overrides transform via its own animation each frame, so this has no
+       effect there (an active CSS animation always wins over a transition
+       on the same property). */
+    transition: background 0.4s ease, box-shadow 0.4s ease, transform 0.12s ease-out;
   }
   #orb .orb-spin {
     position: absolute; inset: 8px;
@@ -157,10 +163,19 @@
   /* idle: dezente Atembewegung */
   #orb[data-state="idle"] .orb-core { animation: orb-breathe 4.2s ease-in-out infinite; }
 
-  /* listening: aktives Pulsieren, zeigt Aufnahme an */
+  /* listening: Groesse und Glow folgen dem echten Mikrofonpegel
+     (--orb-audio-level, 0..1, siehe jarvisState.setAudioLevel). Bewusst
+     keine @keyframes-Animation hier - die wuerde transform/box-shadow jede
+     Bildwiederholung ueberschreiben und die Pegelwerte damit wirkungslos
+     machen. Die kurze transform-Transition oben glaettet stattdessen
+     zwischen den ca. 4 Pegel-Updates/Sekunde. calc()-Bereiche sind absichtlich
+     eng begrenzt (Skalierung max. +0.26, Glow max. +26px), damit auch ein
+     Ausreisserwert nie eine extreme Reaktion erzeugt. */
   #orb[data-state="listening"] .orb-core {
     background: radial-gradient(circle at 34% 28%, var(--ok-fg), var(--surface-2) 72%);
-    animation: orb-pulse 1.1s ease-in-out infinite;
+    transform: scale(calc(0.92 + var(--orb-audio-level, 0) * 0.26));
+    box-shadow: 0 0 calc(12px + var(--orb-audio-level, 0) * 26px) calc(1px + var(--orb-audio-level, 0) * 3px)
+      color-mix(in srgb, var(--ok-fg) calc(28% + var(--orb-audio-level, 0) * 42%), transparent);
   }
 
   /* transcribing: schneller Verarbeitungszustand */
@@ -300,6 +315,14 @@
   var orbEl = document.getElementById("orb");
   var orbCooldownEl = document.getElementById("orb-cooldown");
 
+  // A snapshot, not a live subscription: the rest of the page already
+  // treats prefers-reduced-motion purely through CSS (see the @media block
+  // in <style>), and freezing this once at load matches that - the audio
+  // meter simply never starts feeding --orb-audio-level for a session that
+  // opened with the preference set, instead of jumping between animated
+  // and frozen mid-recording if the OS setting changed underneath it.
+  var prefersReducedMotion = Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
   var currentAnswerText = "";
   var speaking = false;
   var currentAudioUrl = null;
@@ -339,6 +362,22 @@
     var cooldownTotalMs = 0;
     var cooldownTimer = null;
     var cooldownLabel = "";
+    var audioLevel = 0;
+
+    // Raw mic peaks on real hardware sit far below 1.0 (measured ~0.057 on
+    // a HATOR HYPERPUNK 3, see the WAV normalization comment near
+    // encodeWav below) - a meter driven by the raw sample value alone
+    // would look almost dead even while talking. This applies the same
+    // order-of-magnitude gain as that WAV normalization step, but as its
+    // own constant: the WAV encoder (recording correctness) and this live
+    // meter (an on-screen approximation) are separate concerns and must be
+    // free to diverge later without silently affecting each other.
+    var ORB_LEVEL_GAIN = 20;
+
+    // Exponential smoothing, not the raw instantaneous peak: a single loud
+    // or near-silent audio callback must never snap the orb to an extreme
+    // size by itself - "bei Stille darf der Orb nicht extrem reagieren".
+    var AUDIO_LEVEL_SMOOTHING = 0.35;
 
     function isCoolingDown() {
       return Date.now() < cooldownUntil;
@@ -378,6 +417,11 @@
       if (!orbEl) return;
       var state = computeState();
       orbEl.dataset.state = state;
+      if (state === "listening") {
+        orbEl.style.setProperty("--orb-audio-level", audioLevel.toFixed(4));
+      } else {
+        orbEl.style.removeProperty("--orb-audio-level");
+      }
       if (state === "cooldown" && cooldownTotalMs > 0) {
         var remaining = Math.max(0, cooldownUntil - Date.now());
         orbEl.style.setProperty("--orb-cooldown-progress", (remaining / cooldownTotalMs).toFixed(4));
@@ -387,12 +431,29 @@
       }
     }
 
+    // Audio Sample -> jarvisState -> renderOrb() -> CSS-Variable: the only
+    // path an audio value takes to reach the page. rawPeak comes straight
+    // from the existing recording callback (see startRecording below) -
+    // this function owns turning that single number into something safe to
+    // show: clamp to [0,1] after gain, then smooth against the previous
+    // value so neither a loud transient nor a silent gap moves the orb by
+    // more than a fraction of the distance to the new reading. A stale
+    // level from a previous recording can never leak into the display -
+    // renderOrb() only reads it while state is exactly "listening", and
+    // enter() below resets it to 0 the moment that state is left.
+    function setAudioLevel(rawPeak) {
+      var target = Math.max(0, Math.min(1, (rawPeak || 0) * ORB_LEVEL_GAIN));
+      audioLevel = audioLevel + (target - audioLevel) * AUDIO_LEVEL_SMOOTHING;
+      if (computeState() === "listening") renderOrb();
+    }
+
     function enter(next, text) {
       if (next === "cooldown" || next === "speaking" || JARVIS_STATES.indexOf(next) === -1) {
         throw new Error("jarvisState.enter: \"" + next + "\" is not enterable directly.");
       }
       activity = next;
       activityText = text || "";
+      if (next !== "listening") audioLevel = 0;
       renderStatus();
     }
 
@@ -427,6 +488,7 @@
       stopCooldown: stopCooldown,
       isCoolingDown: isCoolingDown,
       renderOrb: renderOrb,
+      setAudioLevel: setAudioLevel,
       get state() {
         return computeState();
       }
@@ -813,6 +875,21 @@
     return new Blob([buffer], { type: "audio/wav" });
   }
 
+  // Single-chunk peak for the live orb meter - deliberately not the
+  // multi-chunk gain scan encodeWav uses above (that one needs the whole
+  // recording in hand to pick one gain for the final file; this one only
+  // ever sees the ~4096 samples of the current callback and hands the raw
+  // peak straight to jarvisState.setAudioLevel, which owns the gain/
+  // smoothing/clamping for display).
+  function computeChunkPeak(samples) {
+    var peak = 0;
+    for (var i = 0; i < samples.length; i += 1) {
+      var abs = Math.abs(samples[i]);
+      if (abs > peak) peak = abs;
+    }
+    return peak;
+  }
+
   function stopTracks() {
     if (mediaStream) { mediaStream.getTracks().forEach(function (t) { t.stop(); }); mediaStream = null; }
     if (processorNode) { processorNode.disconnect(); processorNode.onaudioprocess = null; processorNode = null; }
@@ -916,7 +993,15 @@
     sourceNode = audioCtx.createMediaStreamSource(mediaStream);
     processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
     processorNode.onaudioprocess = function (event) {
-      recordedChunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+      var channelData = event.inputBuffer.getChannelData(0);
+      recordedChunks.push(new Float32Array(channelData));
+      // Existing recording path, no new mic system: the same buffer this
+      // callback already captures for the WAV file also feeds the orb -
+      // Audio Sample -> jarvisState -> renderOrb() -> CSS-Variable. Skipped
+      // entirely under prefers-reduced-motion, so --orb-audio-level simply
+      // never gets set (see the CSS fallback) instead of updating without
+      // the transition that would otherwise smooth it.
+      if (!prefersReducedMotion) jarvisState.setAudioLevel(computeChunkPeak(channelData));
     };
     sourceNode.connect(processorNode);
     processorNode.connect(audioCtx.destination);
