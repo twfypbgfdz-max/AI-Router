@@ -52,10 +52,19 @@ function applyRouterCors(request, response, allowedOrigins) {
   }
 }
 
+// Both hostnames resolve to the same loopback server on the same machine -
+// "localhost" and "127.0.0.1" are not different origins in any security
+// sense here, only two names a browser can load this same local page from.
+// Fixed 2026-08-15: the page is opened at http://localhost:8787/jarvis,
+// which the browser's fetch() then sends as Origin on every mutation
+// (including same-origin POSTs, standard fetch behaviour) - the previous
+// 127.0.0.1-only check rejected that with a 403 on every voice endpoint.
+const LOCAL_TRUSTED_ORIGINS = new Set(["http://127.0.0.1:8787", "http://localhost:8787"]);
+
 function isTrustedMutation(request) {
   const origin = request.headers.origin;
   const contentType = request.headers["content-type"] || "";
-  return (!origin || origin === "http://127.0.0.1:8787") && contentType.toLowerCase().startsWith("application/json");
+  return (!origin || LOCAL_TRUSTED_ORIGINS.has(origin)) && contentType.toLowerCase().startsWith("application/json");
 }
 
 // Same same-origin rule as isTrustedMutation, but for the audio body the
@@ -63,7 +72,7 @@ function isTrustedMutation(request) {
 function isTrustedAudioMutation(request) {
   const origin = request.headers.origin;
   const contentType = request.headers["content-type"] || "";
-  return (!origin || origin === "http://127.0.0.1:8787") && contentType.toLowerCase().startsWith("audio/");
+  return (!origin || LOCAL_TRUSTED_ORIGINS.has(origin)) && contentType.toLowerCase().startsWith("audio/");
 }
 
 function isTrustedRouterRequest(request, allowedOrigins) {

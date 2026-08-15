@@ -523,15 +523,38 @@
   var transcribing = false;
   var autoStopTimer = null;
 
+  // Peak-normalization target/ceiling for encodeWav's gain step below.
+  // Measured 2026-08-15 with a HATOR HYPERPUNK 3 microphone: raw capture
+  // peak ~0.057 (RMS ~0.0047), roughly 16x quieter than Piper's own output
+  // (~0.15 RMS) - quiet enough that whisper-server's VAD read it as silence
+  // ("keine Sprache erkannt") even though the recording itself was clean.
+  // TARGET_PEAK leaves headroom below full scale (1.0) so occasional
+  // louder syllables don't clip; MAX_GAIN bounds how hard a near-silent
+  // (mic muted/disconnected) buffer gets amplified, so that case still
+  // sounds like near-silence, not amplified noise.
+  var WAV_NORMALIZE_TARGET_PEAK = 0.9;
+  var WAV_NORMALIZE_MAX_GAIN = 20;
+
   function encodeWav(chunks, sampleRate) {
     var length = 0;
     for (var i = 0; i < chunks.length; i += 1) length += chunks[i].length;
+
+    var peak = 0;
+    for (var p = 0; p < chunks.length; p += 1) {
+      var pchunk = chunks[p];
+      for (var q = 0; q < pchunk.length; q += 1) {
+        var abs = Math.abs(pchunk[q]);
+        if (abs > peak) peak = abs;
+      }
+    }
+    var gain = peak > 0 ? Math.min(WAV_NORMALIZE_MAX_GAIN, WAV_NORMALIZE_TARGET_PEAK / peak) : 1;
+
     var samples = new Int16Array(length);
     var offset = 0;
     for (var c = 0; c < chunks.length; c += 1) {
       var chunk = chunks[c];
       for (var j = 0; j < chunk.length; j += 1) {
-        var s = Math.max(-1, Math.min(1, chunk[j]));
+        var s = Math.max(-1, Math.min(1, chunk[j] * gain));
         samples[offset] = s < 0 ? s * 0x8000 : s * 0x7fff;
         offset += 1;
       }
@@ -640,7 +663,18 @@
       return;
     }
 
-    audioCtx = new AudioContext();
+    // whisper-server (whisper.cpp) expects 16 kHz mono PCM and does not
+    // resample - requesting that rate here (supported in Chromium/Edge
+    // since v74, Firefox since v76) means the browser/OS resamples for us
+    // instead of handing over the hardware's native 44.1/48 kHz. A browser
+    // that rejects the option (old/unsupported) falls back to the default
+    // context; recordedSampleRate below always reflects what was actually
+    // granted, so the WAV header stays correct either way.
+    try {
+      audioCtx = new AudioContext({ sampleRate: 16000 });
+    } catch (e) {
+      audioCtx = new AudioContext();
+    }
     recordedSampleRate = audioCtx.sampleRate;
     recordedChunks = [];
     sourceNode = audioCtx.createMediaStreamSource(mediaStream);
