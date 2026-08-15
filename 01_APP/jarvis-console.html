@@ -80,6 +80,12 @@
   .status { color: var(--text-muted); font-size: 0.88rem; }
   .counter { color: var(--text-muted); font-size: 0.8rem; margin-left: auto; }
 
+  /* Eigener Kanal für den Mikrofon-Ablauf. #ask-status gehört dem Frage-
+     Ablauf samt Cooldown-Countdown, der im Sekundentakt neu schreibt - eine
+     Meldung wie "Transkript eingefügt" war dort nicht haltbar. */
+  .mic-note { font-size: 0.86rem; margin: 10px 0 0; color: var(--text-muted); }
+  .mic-note.fail { color: var(--fail-fg); font-weight: 600; }
+
   .badge {
     display: inline-block; font-size: 0.76rem; font-weight: 600;
     padding: 2px 9px; border-radius: 999px; border: 1px solid;
@@ -140,10 +146,18 @@
        on the same property). */
     transition: background 0.4s ease, box-shadow 0.4s ease, transform 0.12s ease-out;
   }
+  /* Über .orb-core, nicht darunter: in der DOM-Reihenfolge steht .orb-core
+     nach .orb-spin und ist voll deckend, weshalb der rotierende Lichtpunkt
+     bis 6f140e8 nie zu sehen war - die Rotation lief, nur sah sie niemand.
+     Daher der z-index. Sichtbar wird er ausschließlich in den beiden
+     Zuständen, die ihn auch animieren (transcribing/thinking); sonst bliebe
+     er in idle/listening/speaking als statischer Fleck stehen. */
   #orb .orb-spin {
     position: absolute; inset: 8px;
     border-radius: 50%;
     overflow: hidden;
+    z-index: 1;
+    opacity: 0;
   }
   #orb .orb-spin::before {
     content: "";
@@ -178,12 +192,21 @@
       color-mix(in srgb, var(--ok-fg) calc(28% + var(--orb-audio-level, 0) * 42%), transparent);
   }
 
-  /* transcribing: schneller Verarbeitungszustand */
-  #orb[data-state="transcribing"] .orb-spin { animation: orb-rotate 0.9s linear infinite; }
-  #orb[data-state="transcribing"] .orb-core { animation: orb-breathe 1.4s ease-in-out infinite; }
+  /* transcribing: schneller Verarbeitungszustand. Bewusst in der Farbe von
+     "listening" (--ok-fg) - Transkribieren gehört noch zur Stimme des
+     Nutzers, während thinking im Akzentblau bleibt: da arbeitet Jarvis an
+     der Antwort. Vorher unterschieden sich die beiden Zustände allein durch
+     die Atemgeschwindigkeit (1,4s gegen 3,6s) bei identischer Farbe und
+     Form, was im Betrieb nicht auseinanderzuhalten war. */
+  #orb[data-state="transcribing"] .orb-spin { opacity: 1; animation: orb-rotate 0.9s linear infinite; }
+  #orb[data-state="transcribing"] .orb-core {
+    background: radial-gradient(circle at 34% 28%, var(--ok-fg), var(--surface-2) 72%);
+    box-shadow: 0 0 14px 1px color-mix(in srgb, var(--ok-fg) 30%, transparent);
+    animation: orb-breathe 1.4s ease-in-out infinite;
+  }
 
   /* thinking: langsame, "nachdenkliche" Bewegung */
-  #orb[data-state="thinking"] .orb-spin { animation: orb-rotate 3.6s linear infinite; }
+  #orb[data-state="thinking"] .orb-spin { opacity: 1; animation: orb-rotate 3.6s linear infinite; }
   #orb[data-state="thinking"] .orb-core { animation: orb-breathe 3.6s ease-in-out infinite; }
 
   /* speaking: sichtbare Sprachaktivität - Ringe wie ausgehender Schall */
@@ -267,6 +290,7 @@
     <span class="status" id="ask-status" role="status" aria-live="polite">Bereit.</span>
     <span class="counter" id="char-counter">0 / 500</span>
   </div>
+  <p class="mic-note" id="mic-status" role="status" aria-live="polite" hidden></p>
   <p class="card-hint" id="mic-hint" style="margin-top:10px;">Spracheingabe läuft vollständig lokal über einen manuell gestarteten whisper-server auf diesem Rechner. Das Transkript landet im Textfeld – nichts wird automatisch abgeschickt.</p>
   <p class="card-hint" id="jarvis-voice-hint" hidden>Sprachein- oder -ausgabe ist auf diesem Server aktuell nicht vollständig eingerichtet. Die Buttons bleiben nutzbar, ein Versuch kann aber fehlschlagen.</p>
   <p class="card-hint" id="jarvis-unavailable-hint" hidden>Jarvis-Core ist gerade nicht verfügbar. Eine Frage kann trotzdem abgeschickt werden, wird aber voraussichtlich fehlschlagen.</p>
@@ -298,6 +322,24 @@
   // of letting a click appear to do nothing.
   var COOLDOWN_SECONDS = 60;
 
+  // Der Server verbucht seinen Zeitstempel nicht bei Antwortankunft, sondern
+  // beim Eintritt in die Textpipeline - also vor der Generierung, aber nach
+  // Cockpit-Abruf und Retrieval. Bis 6f140e8 startete der Countdown erst mit
+  // der Antwort und lag damit um die gesamte Generierungsdauer daneben; bei
+  // einem lokalen Modell sind das schnell zehn bis zwanzig Sekunden, in denen
+  // der Server längst wieder bereit war und die Seite weiter sperrte. Der
+  // Absendezeitpunkt trifft das Fenster deutlich besser. Der Zuschlag deckt
+  // die Serverarbeit ab, die noch vor dem Zeitstempel liegt, damit die Seite
+  // nicht umgekehrt ein paar Sekunden zu früh wieder freigibt.
+  var COOLDOWN_ANCHOR_MARGIN_MS = 2000;
+
+  // Eine abgelehnte Anfrage schreibt serverseitig keinen neuen Zeitstempel
+  // fort - das ursprüngliche Fenster gilt weiter. Ein voller neuer 60-s-Block
+  // wäre deshalb falsch und würde einen zu frühen Klick doppelt bestrafen:
+  // offen ist höchstens die Ungenauigkeit des Zuschlags oben. Bleibt es beim
+  // Limit, verlängert sich diese kurze Wartezeit von selbst.
+  var COOLDOWN_RETRY_SECONDS = 5;
+
   var askBtn = document.getElementById("ask-btn");
   var micBtn = document.getElementById("mic-btn");
   var statusEl = document.getElementById("ask-status");
@@ -314,6 +356,7 @@
   var speakStatusEl = document.getElementById("speak-status");
   var orbEl = document.getElementById("orb");
   var orbCooldownEl = document.getElementById("orb-cooldown");
+  var micStatusEl = document.getElementById("mic-status");
 
   // A snapshot, not a live subscription: the rest of the page already
   // treats prefers-reduced-motion purely through CSS (see the @media block
@@ -393,8 +436,14 @@
       return isCoolingDown() ? "cooldown" : "idle";
     }
 
+    // Ein Zustand ohne eigenen Text beansprucht die Statuszeile nicht mehr.
+    // Der Mikrofon-Ablauf meldet seine Ergebnisse seit dieser Änderung in
+    // #mic-status und ruft enter(...) nur noch für den Zustand selbst auf -
+    // ohne diese Bedingung würde er #ask-status mit einem leeren String
+    // überschreiben und dabei den laufenden Countdown verschlucken. Für den
+    // Frage-Ablauf, der weiterhin mit Text eintritt, ändert sich nichts.
     function renderStatus() {
-      if (activity !== "idle") {
+      if (activity !== "idle" && activityText) {
         statusEl.textContent = activityText;
       } else if (isCoolingDown()) {
         var left = Math.ceil((cooldownUntil - Date.now()) / 1000);
@@ -460,8 +509,19 @@
     // Honest waiting: the button stays disabled and the remaining seconds
     // are shown, so a blocked request is visibly a limit rather than a
     // dead click.
-    function startCooldown(seconds, label) {
-      cooldownUntil = Date.now() + seconds * 1000;
+    //
+    // startedAt ist der Zeitpunkt, ab dem das Fenster serverseitig läuft -
+    // nicht der Zeitpunkt dieses Aufrufs. Der Aufrufer kennt ihn (er hat die
+    // Anfrage abgeschickt), diese Funktion nicht, deshalb wird er
+    // hereingereicht statt hier geraten. Liegt das Fensterende dadurch
+    // bereits in der Vergangenheit - bei einer Generierung, die länger als
+    // das Fenster selbst gedauert hat -, wird gar kein Cooldown gestartet,
+    // sondern ein eventuell laufender beendet.
+    function startCooldown(seconds, label, startedAt) {
+      var anchor = typeof startedAt === "number" ? startedAt : Date.now();
+      var until = anchor + seconds * 1000;
+      if (until <= Date.now()) { stopCooldown(); return; }
+      cooldownUntil = until;
       cooldownTotalMs = seconds * 1000;
       cooldownLabel = label;
       askBtn.disabled = true;
@@ -694,6 +754,10 @@
 
     var response = null;
     var payload = null;
+    // Vor dem fetch festgehalten, nicht danach: das ist der Zeitpunkt, an dem
+    // das serverseitige Fenster zu laufen beginnt (siehe
+    // COOLDOWN_ANCHOR_MARGIN_MS oben).
+    var askSentAt = Date.now();
     try {
       response = await fetch("/api/jarvis/ask", {
         method: "POST",
@@ -723,12 +787,17 @@
     render(payload);
     jarvisState.enter("idle", "");
 
-    // 429 is the route's own limiter, not a failure. Both it and a normal
-    // answer consume the same 1-per-60s budget, so both start the countdown.
+    // 429 is the route's own limiter, not a failure. Die beiden Fälle sind
+    // aber unterschiedlich zu behandeln: eine beantwortete Anfrage hat das
+    // Fenster tatsächlich verbraucht und zählt volle 60 Sekunden ab ihrem
+    // Absendezeitpunkt herunter. Eine abgelehnte hat es nicht verbraucht -
+    // dort läuft das alte Fenster weiter und ist fast abgelaufen, sonst wäre
+    // der Button gar nicht wieder freigegeben gewesen (siehe
+    // COOLDOWN_RETRY_SECONDS oben).
     if (response.status === 429) {
-      jarvisState.startCooldown(COOLDOWN_SECONDS, "Limit erreicht: eine Anfrage pro 60 Sekunden.");
+      jarvisState.startCooldown(COOLDOWN_RETRY_SECONDS, "Limit erreicht: eine Anfrage pro 60 Sekunden.", Date.now());
     } else {
-      jarvisState.startCooldown(COOLDOWN_SECONDS, "Beantwortet.");
+      jarvisState.startCooldown(COOLDOWN_SECONDS, "Beantwortet.", askSentAt + COOLDOWN_ANCHOR_MARGIN_MS);
     }
   });
 
@@ -737,12 +806,35 @@
   // A deliberate, manually-triggered button - never automatic. Sends the
   // already-displayed, already-read answer text back to the server, plays
   // whatever audio/wav comes back. No auto-play, no speech loop, no polling.
+  // Die Anzeige behält ihre [K1]-Marker - sie sind der Beleg und gehören zur
+  // gelesenen Antwort. Vorgelesen sind sie sinnlos bis irreführend: Piper
+  // spricht sie wörtlich mit ("K eins"). Bereinigt wird deshalb nur der Text,
+  // der an /api/jarvis/speak geht; currentAnswerText und #answer bleiben
+  // unangetastet. Der Marker wird ersatzlos entfernt, danach werden die
+  // dabei entstehenden doppelten Leerzeichen und die vom Satzzeichen
+  // abgetrennten Lücken wieder geschlossen ("laut [K1] gilt" -> "laut gilt",
+  // "gilt [K1]." -> "gilt."). Bleibt nichts übrig, wird der Originaltext
+  // gesendet statt eine leere Anfrage.
+  function speechTextFor(text) {
+    var source = String(text == null ? "" : text);
+    var spoken = source
+      .replace(/\[K\d+\]/g, "")
+      .replace(/[ \t]{2,}/g, " ")
+      .replace(/[ \t]+([,.;:!?])/g, "$1")
+      .trim();
+    return spoken || source;
+  }
+
   speakBtn.addEventListener("click", async function () {
     if (speaking || !currentAnswerText) return;
-    speaking = true;
-    jarvisState.renderOrb();
+    // speaking wird bewusst NICHT hier gesetzt. Piper braucht gemessene ~4s
+    // Kaltstart, bevor überhaupt Audio existiert - der Orb hätte sonst
+    // mehrere Sekunden "spricht" angezeigt, während nichts zu hören war. Der
+    // Zustand entsteht erst, wenn die Wiedergabe wirklich läuft (siehe
+    // audio.play() unten). Gegen einen zweiten Klick in der Zwischenzeit
+    // schützt der deaktivierte Button.
     speakBtn.disabled = true;
-    speakStatusEl.textContent = "Spreche …";
+    speakStatusEl.textContent = "Sprachausgabe wird erzeugt …";
 
     if (currentAudioUrl) { URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; }
 
@@ -751,11 +843,9 @@
       response = await fetch("/api/jarvis/speak", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: currentAnswerText })
+        body: JSON.stringify({ text: speechTextFor(currentAnswerText) })
       });
     } catch (e) {
-      speaking = false;
-      jarvisState.renderOrb();
       speakBtn.disabled = false;
       speakStatusEl.textContent = "Übertragung fehlgeschlagen – läuft der Router noch?";
       return;
@@ -765,8 +855,6 @@
     if (!response.ok || contentType.indexOf("audio/") !== 0) {
       var errorCode = "INTERNAL_ERROR";
       try { var errPayload = await response.json(); errorCode = (errPayload.error && errPayload.error.code) || errorCode; } catch (e) { /* keep default */ }
-      speaking = false;
-      jarvisState.renderOrb();
       speakBtn.disabled = false;
       speakStatusEl.textContent = SPEAK_ERROR_TEXT[errorCode] || "Sprachausgabe fehlgeschlagen.";
       return;
@@ -783,8 +871,17 @@
     };
     audio.addEventListener("ended", function () { stopSpeaking(""); });
     audio.addEventListener("error", function () { stopSpeaking("Audio konnte nicht abgespielt werden."); });
-    speakStatusEl.textContent = "Wird abgespielt …";
-    audio.play().catch(function () {
+    // Erst hier gilt Jarvis als sprechend: play() wird eingelöst, sobald die
+    // Wiedergabe tatsächlich begonnen hat. Die ended-Prüfung deckt den Fall
+    // ab, dass ein sehr kurzer Clip schon durchgelaufen ist, bevor dieser
+    // Handler dran war - dann darf der Zustand nicht nachträglich noch
+    // einmal auf "spricht" springen.
+    audio.play().then(function () {
+      if (audio.ended) return;
+      speaking = true;
+      jarvisState.renderOrb();
+      speakStatusEl.textContent = "Wird abgespielt …";
+    }).catch(function () {
       stopSpeaking("Wiedergabe blockiert – bitte erneut klicken.");
     });
   });
@@ -814,6 +911,18 @@
   var recordedChunks = [];
   var recordedSampleRate = 0;
   var autoStopTimer = null;
+  var recordStartedAt = 0;
+  var recordTickTimer = null;
+
+  // Bis 6f140e8 nannte die Statuszeile nur die Obergrenze ("max. 60 s"), nicht
+  // den Stand. Bei einer Aufnahme, die nach 60 s von selbst abbricht, ist das
+  // die entscheidende Information - und der Hinweis auf Escape steht dort, wo
+  // er gebraucht wird, statt in einem Hilfetext daneben.
+  function recordingStatusText() {
+    var elapsed = Math.max(0, Math.floor((Date.now() - recordStartedAt) / 1000));
+    var left = Math.max(0, MAX_RECORD_SECONDS - elapsed);
+    return "Aufnahme läuft … " + elapsed + " s, noch " + left + " s. Escape verwirft die Aufnahme.";
+  }
 
   // Peak-normalization target/ceiling for encodeWav's gain step below.
   // Measured 2026-08-15 with a HATOR HYPERPUNK 3 microphone: raw capture
@@ -896,6 +1005,32 @@
     if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
     if (audioCtx) { audioCtx.close().catch(function () {}); audioCtx = null; }
     if (autoStopTimer) { clearTimeout(autoStopTimer); autoStopTimer = null; }
+    if (recordTickTimer) { clearInterval(recordTickTimer); recordTickTimer = null; }
+  }
+
+  // Abbrechen ohne Transkription: bis 6f140e8 führte jeder Stopp zwingend
+  // durch den vollen Whisper-Lauf, eine versehentlich gestartete Aufnahme
+  // ließ sich nicht mehr wegwerfen. Verworfen wird lokal - die Aufnahme hat
+  // den Rechner nie verlassen, es gibt nichts zurückzurufen.
+  function cancelRecording() {
+    stopTracks();
+    recordedChunks = [];
+    setMicIdle("Aufnahme verworfen – es wurde nichts transkribiert.");
+  }
+
+  // Ergebnisse des Mikrofon-Ablaufs stehen in #mic-status, nicht in
+  // #ask-status. Grund: #ask-status gehört dem Frage-Ablauf und wird während
+  // eines laufenden Cooldowns im Sekundentakt neu geschrieben. Da das
+  // Mikrofon währenddessen absichtlich benutzbar bleibt, war genau der
+  // Normalfall kaputt - man diktierte während der Wartezeit und bekam die
+  // Bestätigung "Transkript eingefügt" nie zu sehen, weil der nächste
+  // Countdown-Tick sie sofort überschrieb. Eine Meldung hier bleibt stehen,
+  // bis der Mikrofon-Ablauf selbst sie ersetzt.
+  function setMicMessage(text, kind) {
+    if (!micStatusEl) return;
+    micStatusEl.textContent = text || "";
+    micStatusEl.className = kind === "fail" ? "mic-note fail" : "mic-note";
+    micStatusEl.hidden = !text;
   }
 
   // "idle" for outcomes that are not a failure (nothing recorded, no
@@ -903,16 +1038,23 @@
   // outcomes where a request was made and it failed (unreadable response,
   // a rejected/failed transcription, a network failure), matching the
   // same idle/error split the ask flow above uses for its own outcomes.
+  //
+  // Der Text geht an #mic-status, der Zustand an die Zustandsmaschine - die
+  // beiden enter(...)-Aufrufe bleiben deshalb ohne eigenen Text (siehe
+  // renderStatus). Der Orb zeigt den Fehler weiterhin an, der laufende
+  // Countdown in #ask-status wird dabei aber nicht mehr verdeckt.
   function setMicIdle(text) {
     micBtn.disabled = false;
     micBtn.textContent = "Aufnahme starten";
-    jarvisState.enter("idle", text || "");
+    setMicMessage(text, "");
+    jarvisState.enter("idle", "");
   }
 
   function setMicError(text) {
     micBtn.disabled = false;
     micBtn.textContent = "Aufnahme starten";
-    jarvisState.enter("error", text || "");
+    setMicMessage(text, "fail");
+    jarvisState.enter("error", "");
   }
 
   async function stopRecordingAndTranscribe() {
@@ -965,14 +1107,19 @@
 
   async function startRecording() {
     if (jarvisState.state === "listening" || jarvisState.state === "transcribing") return;
+    // Die Meldung des vorigen Durchlaufs gehört nicht zu diesem.
+    setMicMessage("", "");
+    // Auch diese beiden gehen über setMicError in #mic-status: sie gehören
+    // zum Mikrofon-Ablauf, nicht zum Frage-Ablauf, und wären in #ask-status
+    // während eines Cooldowns genauso flüchtig wie die Meldungen unten.
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.AudioContext) {
-      jarvisState.enter("error", "Spracheingabe wird von diesem Browser nicht unterstützt.");
+      setMicError("Spracheingabe wird von diesem Browser nicht unterstützt.");
       return;
     }
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
     } catch (e) {
-      jarvisState.enter("error", "Mikrofonzugriff verweigert oder nicht verfügbar.");
+      setMicError("Mikrofonzugriff verweigert oder nicht verfügbar.");
       return;
     }
 
@@ -1006,15 +1153,38 @@
     sourceNode.connect(processorNode);
     processorNode.connect(audioCtx.destination);
 
-    jarvisState.enter("listening", "Aufnahme läuft … (max. " + MAX_RECORD_SECONDS + " s)");
+    recordStartedAt = Date.now();
+    jarvisState.enter("listening", recordingStatusText());
     micBtn.textContent = "Aufnahme stoppen";
     autoStopTimer = setTimeout(stopRecordingAndTranscribe, MAX_RECORD_SECONDS * 1000);
+    // Reine Textaktualisierung im Sekundentakt, über denselben
+    // enter("listening", ...)-Weg wie der Start - kein zweiter Schreiber auf
+    // #ask-status und keine Entscheidung, die hier getroffen würde. Der
+    // Zustandswechsel selbst hängt weiter allein an autoStopTimer bzw. am
+    // Klick auf "Aufnahme stoppen". Aufgeräumt wird der Intervall in
+    // stopTracks(), also auf jedem Weg aus der Aufnahme heraus.
+    recordTickTimer = setInterval(function () {
+      if (jarvisState.state !== "listening") return;
+      jarvisState.enter("listening", recordingStatusText());
+    }, 1000);
   }
 
   micBtn.addEventListener("click", function () {
     if (jarvisState.state === "transcribing") return;
     if (jarvisState.state === "listening") stopRecordingAndTranscribe();
     else startRecording();
+  });
+
+  // Escape verwirft eine laufende Aufnahme. Bewusst nur das: kein Kürzel, das
+  // eine Anfrage abschickt oder vorlesen lässt - hier soll weiterhin nichts
+  // von selbst passieren. Der Listener hängt am Dokument, weil während der
+  // Aufnahme der Fokus auch im Textfeld stehen kann; preventDefault nur im
+  // tatsächlich behandelten Fall, damit Escape sonst normal wirkt.
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") return;
+    if (jarvisState.state !== "listening") return;
+    event.preventDefault();
+    cancelRecording();
   });
 
   // --- Jarvis-Readiness (einmalig beim Laden) -----------------------------
