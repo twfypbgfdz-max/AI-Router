@@ -270,8 +270,18 @@ function citationRuleText(resultsCount) {
 // resting purely on Accepted decisions or on long-term personal facts stays
 // a normal answer - the safeguard must not block ordinary, well-evidenced
 // questions.
-function needsPresentStateHedge(results, presentStateQuestion) {
+// A usable Cockpit day-context (operationalContext !== null) is itself an
+// authoritative source for "what is true right now today" - see
+// OPERATIONAL_CONTEXT_RULE. The present-state hedge exists to stop the
+// model from treating static, dated RAG documentation as live truth; it
+// was never meant to fire once a genuinely live source (TAGESKONTEXT) is
+// already on the table, so it is suppressed whenever operationalContext is
+// present. This never touches implementationAlignmentQuestion (see
+// IMPLEMENTATION_ALIGNMENT_RULE): no Cockpit data ever attests to whether
+// code matches a decision.
+function needsPresentStateHedge(results, presentStateQuestion, operationalContext = null) {
   return Boolean(presentStateQuestion)
+    && !operationalContext
     && results.length > 0
     && !results.every((result) => authorityOf(result.informationClass).presentStateSafe);
 }
@@ -279,7 +289,7 @@ function needsPresentStateHedge(results, presentStateQuestion) {
 // The conditional rules are derived from the server-built results and the
 // server's own question classification only - never from anything the model
 // produced, and never from a caller-supplied field.
-function buildConditionalRules(results, { presentStateQuestion, implementationAlignmentQuestion }) {
+function buildConditionalRules(results, { presentStateQuestion, implementationAlignmentQuestion, operationalContext = null }) {
   const rules = [];
   if (results.some((result) => result.sectionValidity === "historical")) {
     rules.push(HISTORICAL_SOURCE_RULE);
@@ -291,11 +301,11 @@ function buildConditionalRules(results, { presentStateQuestion, implementationAl
   if (implementationAlignmentQuestion) {
     rules.push(IMPLEMENTATION_ALIGNMENT_RULE);
   }
-  if (presentStateQuestion && results.length === 0) {
+  if (presentStateQuestion && !operationalContext && results.length === 0) {
     rules.push(PRESENT_STATE_NO_SOURCE_RULE);
     return rules;
   }
-  if (needsPresentStateHedge(results, presentStateQuestion)) {
+  if (needsPresentStateHedge(results, presentStateQuestion, operationalContext)) {
     rules.push(PRESENT_STATE_RULE, DATE_RULE);
   }
   return rules;
@@ -305,7 +315,7 @@ function buildAnswerRules(results, { presentStateQuestion, implementationAlignme
   const rules = [
     ...FIXED_RULES_BEFORE_CITATION,
     ...(operationalContext ? [OPERATIONAL_CONTEXT_RULE] : []),
-    ...buildConditionalRules(results, { presentStateQuestion, implementationAlignmentQuestion }),
+    ...buildConditionalRules(results, { presentStateQuestion, implementationAlignmentQuestion, operationalContext }),
     citationRuleText(results.length),
     ...FIXED_RULES_AFTER_CITATION
   ];
@@ -323,7 +333,8 @@ export function buildKnowledgeAnswerPromptText({
   // appear together; they address different halves of the same underlying
   // problem (no live technical source) and neither implies the other.
   const notices = [];
-  if (needsPresentStateHedge(safeResults, presentStateQuestion) || (presentStateQuestion && safeResults.length === 0)) {
+  if (needsPresentStateHedge(safeResults, presentStateQuestion, operationalContext)
+    || (presentStateQuestion && !operationalContext && safeResults.length === 0)) {
     notices.push(PRESENT_STATE_NOTICE);
   }
   if (implementationAlignmentQuestion) notices.push(IMPLEMENTATION_ALIGNMENT_NOTICE);

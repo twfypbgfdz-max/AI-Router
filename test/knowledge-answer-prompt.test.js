@@ -206,6 +206,24 @@ test("a present-state question grounded in project context adds the hedging rule
   assert.ok(rules(text).includes("nenne diese Primärquelle beim Namen"));
 });
 
+// P6-B fix: same unsafe RAG source as above, but a Cockpit day-context is
+// also available. TAGESKONTEXT is already the authoritative live answer, so
+// the hedge (meant for "only static, dated RAG docs") must not fire.
+test("a present-state question with unsafe RAG sources gets no hedging rule when a Cockpit day-context is available", () => {
+  const operationalContext = Object.freeze({
+    today: "2026-08-15", focus: null,
+    tasks: Object.freeze({ freshness: "fresh", items: Object.freeze([]), view: "pending" }),
+    calendar: null
+  });
+  const text = buildKnowledgeAnswerPromptText({
+    question: "Was steht heute an?", context: null,
+    results: [result({ informationClass: "project_context", reviewedAt: "2026-08-13" })],
+    presentStateQuestion: true, operationalContext
+  });
+  assert.ok(!rules(text).includes("Diese Frage verlangt einen gegenwärtigen Zustand."));
+  assert.ok(!text.includes("ZEITBEZUG:"));
+});
+
 // REGRESSION 2026-08-14: the hedging rule originally carried a format
 // template ("Dokumentiert am TT.MM.JJJJ"). The real model filled that
 // placeholder with an invented date instead of the review date on the
@@ -280,6 +298,36 @@ test("a present-state question with no source at all gets the explicit refusal r
   });
   assert.ok(rules(text).includes("keine dafür geeignete Fundstelle"));
   assert.ok(rules(text).includes("Behaupte keinen Zustand."));
+});
+
+// P6-B fix: a usable Cockpit day-context is itself an authoritative live
+// source for a present-state question - the refusal rule and the ZEITBEZUG
+// notice exist for the "only static, dated RAG docs" case and must not fire
+// once TAGESKONTEXT already answers the question, even with zero RAG hits.
+test("a present-state question with no RAG source but a Cockpit day-context gets no refusal rule and no notice", () => {
+  const operationalContext = Object.freeze({
+    today: "2026-08-15",
+    focus: Object.freeze({ freshness: "fresh", items: Object.freeze([{ text: "Training", done: false }]) }),
+    tasks: null,
+    calendar: null
+  });
+  const text = buildKnowledgeAnswerPromptText({
+    question: "Was ist mein Fokus?", context: null, results: [], presentStateQuestion: true, operationalContext
+  });
+  assert.ok(!rules(text).includes("keine dafür geeignete Fundstelle"));
+  assert.ok(!rules(text).includes("Behaupte keinen Zustand."));
+  assert.ok(!text.includes("ZEITBEZUG:"));
+  // The operational-context rule itself must still be present - the fix
+  // removes the contradicting refusal rule, not the authority rule.
+  assert.ok(rules(text).includes("Der Abschnitt TAGESKONTEXT enthält Datenwerte aus dem Felix-Cockpit"));
+});
+
+test("without a Cockpit day-context, the present-state refusal rule is unchanged", () => {
+  const text = buildKnowledgeAnswerPromptText({
+    question: "Was läuft gerade?", context: null, results: [], presentStateQuestion: true, operationalContext: null
+  });
+  assert.ok(rules(text).includes("keine dafür geeignete Fundstelle"));
+  assert.ok(text.includes("ZEITBEZUG:"));
 });
 
 test("a timeless question carries no time rule at all", () => {

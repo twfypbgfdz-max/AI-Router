@@ -329,16 +329,26 @@ export const AUTHORITY_WARNINGS = Object.freeze([
 // note and would be noise. Detecting a genuine contradiction in prose needs
 // the model, and P1-A3 deliberately does not add a model-filled metadata
 // field for it.
-export function deriveAuthorityWarnings({ presentStateQuestion, implementationAlignmentQuestion = false, sources = [] }) {
+// hasOperationalContext: true exactly when jarvis-console-proxy.js's Cockpit
+// day-context was available and usable for this question (operationalContext
+// !== null in knowledge-service.js). That context is itself an authoritative
+// live source for "what is true right now today" (see the
+// OPERATIONAL_CONTEXT_RULE prompt rule and DEC's operational_live class), so
+// a present-state question it covers must never be flagged as unverified
+// just because RAG had no hit or an unsafe class. Deliberately excluded from
+// implementationAlignmentQuestion: no Cockpit data ever attests to whether
+// code matches a decision, so that branch's warning stays unconditional.
+export function deriveAuthorityWarnings({ presentStateQuestion, implementationAlignmentQuestion = false, sources = [], hasOperationalContext = false }) {
   const warnings = [];
-  const demandsUnavailableCurrentState = Boolean(presentStateQuestion) || Boolean(implementationAlignmentQuestion);
+  const operationalContextCoversPresentState = Boolean(presentStateQuestion) && !implementationAlignmentQuestion && hasOperationalContext;
+  const demandsUnavailableCurrentState = (Boolean(presentStateQuestion) || Boolean(implementationAlignmentQuestion)) && !operationalContextCoversPresentState;
   if (sources.length === 0) {
     if (demandsUnavailableCurrentState) warnings.push("current_state_not_verified");
     return warnings;
   }
   if (implementationAlignmentQuestion) {
     warnings.push("current_state_not_verified");
-  } else if (presentStateQuestion && !sources.every((source) => authorityOf(source.informationClass).presentStateSafe)) {
+  } else if (presentStateQuestion && !operationalContextCoversPresentState && !sources.every((source) => authorityOf(source.informationClass).presentStateSafe)) {
     warnings.push("current_state_not_verified");
   }
   if (sources.every((source) => source.sectionValidity === "historical")) {

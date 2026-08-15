@@ -15,6 +15,19 @@ test("matches open tasks", () => {
   assert.equal(intent.taskView, "pending");
 });
 
+test("matches open tasks in predicative word order", () => {
+  const intent = matchJarvisDailyIntent("Welche Aufgaben sind offen?");
+  assert.ok(intent);
+  assert.equal(intent.needsTasks, true);
+  assert.equal(intent.taskView, "pending");
+});
+
+test("matches 'Aufgaben stehen noch offen' phrasing", () => {
+  const intent = matchJarvisDailyIntent("Aufgaben stehen noch offen.");
+  assert.ok(intent);
+  assert.equal(intent.needsTasks, true);
+});
+
 test("matches completed/done tasks", () => {
   const intent = matchJarvisDailyIntent("Was habe ich heute erledigt?");
   assert.ok(intent);

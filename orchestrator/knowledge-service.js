@@ -274,7 +274,7 @@ export function createKnowledgeService({
         warnings: [
           "no_context_no_knowledge",
           ...freshnessWarnings,
-          ...deriveAuthorityWarnings({ presentStateQuestion, implementationAlignmentQuestion, sources: [] })
+          ...deriveAuthorityWarnings({ presentStateQuestion, implementationAlignmentQuestion, sources: [], hasOperationalContext: operationalContextState === "available" })
         ],
         now, schemaVersion
       }));
@@ -336,7 +336,7 @@ export function createKnowledgeService({
     const warnings = [
       ...freshnessWarnings,
       ...operationalContextWarnings(operationalContext),
-      ...deriveAuthorityWarnings({ presentStateQuestion, implementationAlignmentQuestion, sources: sourceValidation.sources })
+      ...deriveAuthorityWarnings({ presentStateQuestion, implementationAlignmentQuestion, sources: sourceValidation.sources, hasOperationalContext: operationalContextState === "available" })
     ];
     if (URL_PATTERN.test(rawAnswer) || ABSOLUTE_PATH_PATTERN.test(rawAnswer)) warnings.push("model_output_contains_path_or_url");
     if (COMMAND_REFERENCE_PATTERN.test(rawAnswer)) warnings.push("model_output_contains_command_reference");

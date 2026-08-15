@@ -20,7 +20,10 @@ const FOCUS_PATTERN = /\b(tages)?fokus\b|\bworauf\s+(sollte\s+ich\s+mich\s+)?heu
 // \b after the plain-ASCII suffix (g/e/n) still works correctly.
 const OVERDUE_PATTERN = /überfällig(e|en)?\b|\bverpasst(e|en)?\s+(aufgabe|termin|frist)\b/i;
 const DONE_TASKS_PATTERN = /\berledigt(e|en)?\b|\babgeschlossen(e|en)?\s+aufgaben?\b|\bwas\s+habe\s+ich\s+(heute\s+)?geschafft\b/i;
-const OPEN_TASKS_PATTERN = /\boffene(n)?\s+aufgaben\b|\bwas\s+(muss|soll)\s+ich\s+(heute\s+)?(noch\s+)?(erledigen|tun|machen)\b|\bmeine\s+aufgaben(\s+(für\s+)?heute)?\b|\bwas\s+liegt\s+(heute\s+)?an\b/i;
+// Two word orders for the same fact: "offene Aufgaben" (adjective before
+// noun) and "Aufgaben ... offen" (predicative - "Aufgaben sind/stehen
+// (noch) offen"), the natural phrasing of "Welche Aufgaben sind offen?".
+const OPEN_TASKS_PATTERN = /\boffene(n)?\s+aufgaben\b|\baufgaben\s+(sind|stehen)\s+(noch\s+)?offen\b|\bwas\s+(muss|soll)\s+ich\s+(heute\s+)?(noch\s+)?(erledigen|tun|machen)\b|\bmeine\s+aufgaben(\s+(für\s+)?heute)?\b|\bwas\s+liegt\s+(heute\s+)?an\b/i;
 const CALENDAR_PATTERN = /\btermin(e)?\b|\bkalender\b|\bmeeting(s)?\b/i;
 const GENERIC_TODAY_PATTERN = /\bwas\s+steht\s+(heute\s+)?an\b|\btages(-|\s)?(überblick|stand|lage)\b|\bwie\s+sieht\s+(mein\s+)?tag\s+(heute\s+)?aus\b/i;
 const BARE_TODAY_PATTERN = /\bheute\b/i;

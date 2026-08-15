@@ -371,6 +371,42 @@ test("a present-state question with no source at all is flagged", () => {
   assert.deepEqual(deriveAuthorityWarnings({ presentStateQuestion: false, sources: [] }), []);
 });
 
+// P6-B fix: a usable Cockpit day-context is itself authoritative for a
+// present-state question, so it must not be flagged unverified just because
+// RAG had no hit or an unsafe class.
+test("a present-state question with no RAG source is not flagged when a Cockpit day-context is available", () => {
+  assert.deepEqual(
+    deriveAuthorityWarnings({ presentStateQuestion: true, sources: [], hasOperationalContext: true }),
+    []
+  );
+});
+
+test("a present-state question grounded only in unsafe RAG sources is not flagged when a Cockpit day-context is available", () => {
+  assert.deepEqual(
+    deriveAuthorityWarnings({ presentStateQuestion: true, sources: [source()], hasOperationalContext: true }),
+    []
+  );
+});
+
+test("hasOperationalContext defaults to false and does not change existing callers", () => {
+  assert.deepEqual(deriveAuthorityWarnings({ presentStateQuestion: true, sources: [] }), ["current_state_not_verified"]);
+});
+
+// The Cockpit bypass never applies to a Soll/Ist comparison: no operational
+// (daily focus/tasks/calendar) data ever attests to whether code matches a
+// decision, so this warning must stay unconditional regardless of Cockpit.
+test("a Soll/Ist comparison is still flagged even with a Cockpit day-context available", () => {
+  assert.deepEqual(
+    deriveAuthorityWarnings({
+      presentStateQuestion: false,
+      implementationAlignmentQuestion: true,
+      sources: [],
+      hasOperationalContext: true
+    }),
+    ["current_state_not_verified"]
+  );
+});
+
 test("an answer resting only on historical passages is flagged", () => {
   assert.ok(deriveAuthorityWarnings({
     presentStateQuestion: false,

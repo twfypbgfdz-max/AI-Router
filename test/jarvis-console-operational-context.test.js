@@ -133,3 +133,60 @@ test("end-to-end: the /jarvis proxy answers a day question purely from cockpit d
   assert.equal(seenAdapterInputs.length, 1);
   assert.ok(seenAdapterInputs[0].question.includes("Plateau-Brecher testen"));
 });
+
+// P6-B regression: real bug found during the P6-B realness check. "Was ist
+// mein Fokus heute?" above is a present-state question with zero RAG
+// results too, but its fake adapter always returns the same canned string
+// regardless of prompt content - it only proves the wiring, never the
+// actual PRESENT_STATE_NO_SOURCE_RULE/ZEITBEZUG contradiction a real model
+// was observed to follow. This test asserts directly on the built prompt
+// text and the response envelope: neither may still tell the model "say
+// this cannot be verified" once a usable Cockpit day-context answers the
+// same present-state question.
+test("a present-state day question with a Cockpit context gets no refusal rule in the prompt and no current_state_not_verified warning", async () => {
+  const env = fullEnv();
+  const fetchImpl = async () => ({
+    ok: true,
+    headers: { get: (name) => (name.toLowerCase() === "content-type" ? "application/json" : null) },
+    text: async () => JSON.stringify({
+      schemaVersion: 1,
+      generatedAt: "2026-08-15T08:00:00.000Z",
+      services: {
+        dailyState: { status: "ok", stale: false, updatedAt: "2026-08-15T07:00:00.000Z", data: { state: { date: "2026-08-15", focus: [{ id: "f1", text: "Training", done: false }] } } },
+        tasks: { status: "ok", stale: false, updatedAt: "2026-08-15T07:00:00.000Z", data: { state: { tasks: [{ text: "Projekt-Notizen sortieren", status: "open", priority: "", dueDate: "", project: "", blocked: false }] } } },
+        calendar: { status: "unconfigured", stale: false, updatedAt: "", data: null }
+      }
+    })
+  });
+
+  const seenAdapterInputs = [];
+  const knowledgeHandler = createKnowledgeHandler({
+    env,
+    timingSafeEqualFn: (a, b) => a.equals(b),
+    eventLogger: { log() {} },
+    retrieveKnowledgeFn: async () => ({ knowledgeState: "no_match", results: [] }),
+    adapterFactory: () => ({
+      async generateText(input) {
+        seenAdapterInputs.push(input);
+        return { text: JSON.stringify({ answer: "Fokus: Training. Offen: Projekt-Notizen sortieren.", citedSources: [] }), usage: { inputTokens: 40, outputTokens: 10, totalTokens: 50 } };
+      }
+    }),
+    operationalContextProviderFn: (question) => jarvisOperationalContextProvider(question, { env, fetchImpl })
+  });
+
+  const handler = createJarvisConsoleHandler({ env, fetchImpl, knowledgeHandler });
+  const req = request({ question: "Was steht heute an?" });
+  const res = response();
+  await handler(req, res);
+  const payload = res.json();
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(payload.state, "partial");
+  assert.notEqual(payload.answer, null);
+  assert.ok(!payload.warnings.includes("current_state_not_verified"));
+  assert.equal(seenAdapterInputs.length, 1);
+  const promptText = seenAdapterInputs[0].question;
+  assert.ok(!promptText.includes("keine dafür geeignete Fundstelle"));
+  assert.ok(!promptText.includes("ZEITBEZUG:"));
+  assert.ok(promptText.includes("Der Abschnitt TAGESKONTEXT enthält Datenwerte aus dem Felix-Cockpit"));
+});
