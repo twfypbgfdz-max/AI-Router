@@ -2,6 +2,9 @@ import { EventEmitter } from "node:events";
 import { sendJson } from "./http-utils.js";
 import { handleKnowledgeRequest } from "./knowledge-handler.js";
 import { KNOWLEDGE_TOKEN_ENV_VAR } from "./knowledge-config.js";
+import { fetchCockpitStatus } from "./cockpit-client.js";
+import { matchJarvisDailyIntent } from "./jarvis-daily-intent.js";
+import { buildJarvisDailyContext } from "./jarvis-daily-context.js";
 
 // Bridges the browser-facing /jarvis page to POST /api/v1/knowledge.
 //
@@ -10,15 +13,37 @@ import { KNOWLEDGE_TOKEN_ENV_VAR } from "./knowledge-config.js";
 // which is the point: the token stays in the server's environment and never
 // reaches a browser. This proxy runs server-side, builds a plain internal
 // request object (no Origin, token attached here from process.env) and
-// passes it into the unmodified handler. Exactly the pattern
-// router-console-proxy.js already uses for /api/router/respond.
+// passes it into the handler. Exactly the pattern router-console-proxy.js
+// already uses for /api/router/respond.
 //
-// It adds nothing to the payload and interprets nothing: the knowledge
-// route's observation envelope is relayed byte-for-byte, including its
-// state, warnings and HTTP status. The 429 from the route's rate limiter
-// therefore reaches the page as a real 429, so the UI can say "läuft
-// bereits / Limit erreicht" instead of hanging or showing a raw error.
+// It relays the knowledge route's observation envelope byte-for-byte,
+// including its state, warnings and HTTP status: the 429 from the route's
+// rate limiter therefore reaches the page as a real 429, so the UI can say
+// "läuft bereits / Limit erreicht" instead of hanging or showing a raw
+// error. This proxy calls the exact same exported singleton
+// (handleKnowledgeRequest) that /api/v1/knowledge's own route uses in
+// server.js - not a second instance - so both routes keep sharing one
+// rate/concurrency budget, exactly as before P6-A. The one addition (P6-A)
+// is a per-call, third-argument option on that same handler (see
+// knowledge-handler.js): only this proxy ever supplies it, built from a
+// read-only Felix Cockpit call plus a deterministic day-intent match on the
+// already-received question - never from anything the page can influence
+// beyond asking a day-shaped question in the first place. server.js's own
+// call site never passes this third argument, so cockpit data can only
+// ever reach a prompt through this one route.
 const MAX_CONSOLE_BODY_BYTES = 8_192;
+
+// Deterministic first (no network call for the common case of a non-day
+// question), then one bounded, read-only Cockpit GET only when the
+// question actually needs it. Never throws: a Cockpit outage must degrade
+// to "no operational context", never take the knowledge route down with it
+// (see the try/catch in knowledge-handler.js around this call).
+export async function jarvisOperationalContextProvider(question, { env = process.env, fetchImpl = globalThis.fetch } = {}) {
+  const intent = matchJarvisDailyIntent(question);
+  if (!intent) return null;
+  const cockpitStatus = await fetchCockpitStatus({ env, fetchImpl });
+  return buildJarvisDailyContext({ cockpitStatus, intent });
+}
 
 // The page posts {question}; the knowledge contract wants
 // {schemaVersion, question}. Filling schemaVersion here rather than letting
@@ -74,9 +99,27 @@ async function readRawBody(request, maxBytes) {
   });
 }
 
+// The exact singleton, called with a third, per-call-only argument - not a
+// second createKnowledgeHandler() instance. This is what keeps
+// /api/v1/knowledge and /api/jarvis/ask on one shared rate/concurrency
+// budget (see knowledge-handler.js's handleKnowledge signature): both
+// routes now genuinely throttle each other again, exactly as they did
+// before P6-A, when jarvis-console-proxy.js happened to call the same
+// function reference for an unrelated reason.
+function defaultJarvisKnowledgeHandler(env, fetchImpl) {
+  return (request, response) => handleKnowledgeRequest(request, response, {
+    operationalContextProviderFn: (question) => jarvisOperationalContextProvider(question, { env, fetchImpl })
+  });
+}
+
 export function createJarvisConsoleHandler({
   env = process.env,
-  knowledgeHandler = handleKnowledgeRequest
+  // Test-only seam: production never overrides this, it only exists so a
+  // test can observe/mock the one outbound network call this proxy can
+  // make (the Cockpit GET), without needing to override the whole
+  // knowledgeHandler and reimplement its transport logic.
+  fetchImpl = globalThis.fetch,
+  knowledgeHandler = defaultJarvisKnowledgeHandler(env, fetchImpl)
 } = {}) {
   return async function handleJarvisConsoleAsk(request, response) {
     let question = "";

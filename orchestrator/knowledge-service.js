@@ -56,6 +56,16 @@ function mapGenerationFailureWarning(generationPayload) {
   return "internal_error";
 }
 
+// A stale cockpit block still renders (with its own "veraltet" label in the
+// prompt text, see knowledge-answer-prompt.js), but the response's own
+// warnings array must say so too - the same "surface staleness, never hide
+// it" rule the RAG index path already follows via index_stale.
+function operationalContextWarnings(operationalContext) {
+  if (!operationalContext) return [];
+  const blocks = [operationalContext.focus, operationalContext.tasks, operationalContext.calendar].filter(Boolean);
+  return blocks.some((block) => block.freshness === "stale") ? ["operational_context_stale"] : [];
+}
+
 function indexWarnings({ knowledgeState, indexVerification }) {
   const warnings = [];
   if (knowledgeState === "index_stale") warnings.push("index_stale");
@@ -204,12 +214,22 @@ export function createKnowledgeService({
 
   // question and context must already be validated by the caller's own
   // request contract - this function never re-validates and never accepts
-  // raw request data.
-  return async function answerKnowledgeQuestion({ question, context = null }) {
+  // raw request data. operationalContext is different: it is never part of
+  // any request contract at all (no route accepts it from a caller) - it is
+  // built server-side, exclusively by Jarvis's own wiring in
+  // jarvis-console-proxy.js, from jarvis-daily-context.js. /api/v1/knowledge
+  // and cc/knowledge never pass it, so it is always null for them and their
+  // behaviour is unchanged by its existence.
+  return async function answerKnowledgeQuestion({ question, context = null, operationalContext = null }) {
     const knowledge = await retrieveKnowledgeFn(question, { env: scopedEnv });
     const { knowledgeState, results, indexVerification = null } = knowledge;
     const freshnessWarnings = indexWarnings(knowledge);
     const systemContextState = context !== null ? "available" : "unavailable";
+    // Orthogonal to systemContextState on purpose (see the comment above):
+    // a CC status context and a Cockpit day context are different data with
+    // different authority (see knowledge-authority.js's operational_live
+    // class) and must never be merged into one flag or one shape.
+    const operationalContextState = operationalContext !== null ? "available" : "unavailable";
     // Evaluated once, on the caller's already-validated question only -
     // never on the retrieved evidence, so a snippet containing the word
     // "aktuell" cannot make an unrelated question look time-dependent.
@@ -225,6 +245,7 @@ export function createKnowledgeService({
       safeMetadata: Object.freeze({
         state: payload.state,
         systemContextState: payload.systemContextState,
+        operationalContextState,
         knowledgeState: payload.knowledgeState,
         resultCount: results.length,
         sourceCount: payload.sources.length,
@@ -240,10 +261,14 @@ export function createKnowledgeService({
       })
     });
 
-    // No usable basis at all: no context, no knowledge match. Answering
-    // would mean either general knowledge (forbidden - no free chat) or
-    // fabrication. No provider call is made.
-    if (systemContextState === "unavailable" && results.length === 0) {
+    // No usable basis at all: no CC context, no operational (Cockpit) day
+    // context, no knowledge match. Answering would mean either general
+    // knowledge (forbidden - no free chat) or fabrication. No provider call
+    // is made. operationalContextState is always "unavailable" for
+    // /api/v1/knowledge and cc/knowledge (neither route ever passes
+    // operationalContext), so this condition is unchanged for them - only
+    // Jarvis's own wiring can make it "available" and skip this exit.
+    if (systemContextState === "unavailable" && operationalContextState === "unavailable" && results.length === 0) {
       return finish(buildKnowledgeAnswerObservation({
         state: "unavailable", systemContextState, knowledgeState,
         warnings: [
@@ -255,7 +280,7 @@ export function createKnowledgeService({
       }));
     }
 
-    const promptText = buildKnowledgeAnswerPromptText({ question, context, results, presentStateQuestion, implementationAlignmentQuestion });
+    const promptText = buildKnowledgeAnswerPromptText({ question, context, results, presentStateQuestion, implementationAlignmentQuestion, operationalContext });
     const internalRequest = buildInternalRequest(promptText, scopedEnv.AI_ROUTER_INTERNAL_TOKEN, requestIdPrefix);
     const internalResponse = captureResponse();
     // The provider receives the full grounded prompt, but execution intent is
@@ -310,6 +335,7 @@ export function createKnowledgeService({
     // on, which is a server fact, while what it claims is not.
     const warnings = [
       ...freshnessWarnings,
+      ...operationalContextWarnings(operationalContext),
       ...deriveAuthorityWarnings({ presentStateQuestion, implementationAlignmentQuestion, sources: sourceValidation.sources })
     ];
     if (URL_PATTERN.test(rawAnswer) || ABSOLUTE_PATH_PATTERN.test(rawAnswer)) warnings.push("model_output_contains_path_or_url");
@@ -338,6 +364,7 @@ export function createKnowledgeService({
 export const knowledgeServiceInternals = Object.freeze({
   mapGenerationFailureWarning,
   indexWarnings,
+  operationalContextWarnings,
   validateCitedSources,
   containsActionClaim
 });

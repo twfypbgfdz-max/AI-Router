@@ -65,6 +65,16 @@ function safeLog(eventLogger, event, { durationMs, safeMetadata = {} } = {}) {
 
 const transportFailure = (error) => buildKnowledgeAnswerTransportFailure(error, { schemaVersion: KNOWLEDGE_SCHEMA_VERSION });
 
+// Default seam: no operational (Cockpit day) context, ever. The production
+// /api/v1/knowledge singleton exported below never overrides this, so its
+// behaviour is byte-for-byte what it always was. Only jarvis-console-proxy.js
+// builds its own createKnowledgeHandler({ operationalContextProviderFn })
+// instance with a real provider - this generic route stays a pure knowledge
+// consumer, exactly as its own contract (knowledge-contract.js) says.
+async function noOperationalContext() {
+  return null;
+}
+
 export function createKnowledgeHandler({
   env = process.env,
   timingSafeEqualFn,
@@ -73,7 +83,14 @@ export function createKnowledgeHandler({
   retrieveKnowledgeFn,
   // Test-only seams: production never overrides these.
   adapterFactory,
-  totalTimeoutMs = KNOWLEDGE_ABSOLUTE_TIMEOUT_MS
+  totalTimeoutMs = KNOWLEDGE_ABSOLUTE_TIMEOUT_MS,
+  // Constructor-time fallback only - production never overrides this (see
+  // the call-time parameter of the same name on the returned handler
+  // below, which is how jarvis-console-proxy.js actually supplies one).
+  // Kept as a constructor option purely so a test can build a fully
+  // self-contained handler instance without needing to thread the option
+  // through every call site.
+  operationalContextProviderFn: defaultOperationalContextProviderFn = noOperationalContext
 } = {}) {
   const answerKnowledgeQuestion = createKnowledgeService({
     env,
@@ -87,7 +104,17 @@ export function createKnowledgeHandler({
     requestIdPrefix: "knowledge"
   });
 
-  return async function handleKnowledge(request, response) {
+  // operationalContextProviderFn is a per-call option, not baked into the
+  // handler at construction: this is what lets jarvis-console-proxy.js
+  // reuse the exact same handler instance (and therefore the exact same
+  // rate/concurrency limiter, see createKnowledgeService above) that
+  // /api/v1/knowledge's own singleton export uses, instead of building a
+  // second instance with a second, independent budget. server.js's route
+  // wiring calls this with two arguments only, so the third parameter is
+  // always undefined there and defaultOperationalContextProviderFn (a
+  // permanent no-op for the production singleton) applies - this route's
+  // behaviour is unchanged.
+  return async function handleKnowledge(request, response, { operationalContextProviderFn = defaultOperationalContextProviderFn } = {}) {
     setHeaders(response);
     if (request.headers?.origin) {
       const payload = transportFailure({ code: "ORIGIN_NOT_ALLOWED" });
@@ -132,11 +159,25 @@ export function createKnowledgeHandler({
       return sendJson(response, knowledgeAnswerTransportHttpStatus(payload), payload);
     }
 
-    // No context is passed and none can be: this contract has no such field.
-    // The service therefore reports systemContextState "unavailable" and
-    // requires at least one cited source whenever it found any - a knowledge
-    // answer on this route is never allowed to stand on nothing.
-    const { payload, safeMetadata } = await answerKnowledgeQuestion({ question: normalized.question });
+    // No CC context is passed and none can be: this contract has no such
+    // field. The service therefore reports systemContextState "unavailable"
+    // and requires at least one cited source whenever it found any - a
+    // knowledge answer on this route is never allowed to stand on nothing.
+    //
+    // operationalContext is a separate, non-contract concept (see
+    // knowledge-service.js): the production singleton below never supplies
+    // a provider, so this is always null here and the route's behaviour is
+    // unchanged. Never allowed to throw or hang the response - a failing or
+    // slow provider must degrade to "no operational context", not break
+    // knowledge answering.
+    let operationalContext = null;
+    try {
+      operationalContext = (await operationalContextProviderFn(normalized.question)) || null;
+    } catch {
+      operationalContext = null;
+    }
+
+    const { payload, safeMetadata } = await answerKnowledgeQuestion({ question: normalized.question, operationalContext });
 
     safeLog(eventLogger, "knowledge_observed", { durationMs: Date.now() - startedAt, safeMetadata });
     return sendJson(response, knowledgeAnswerObservationHttpStatus(payload.warnings), payload);

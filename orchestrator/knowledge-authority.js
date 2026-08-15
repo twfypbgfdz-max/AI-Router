@@ -407,7 +407,8 @@ const WARNING_RANK = Object.freeze({
   index_age_warning: 100,
   embedding_model_identity_unverified: 101,
   model_output_contains_path_or_url: 102,
-  model_output_contains_command_reference: 103
+  model_output_contains_command_reference: 103,
+  operational_context_stale: 104
 });
 
 const UNKNOWN_WARNING_RANK = 90;
