@@ -108,6 +108,117 @@
   .src-key { font-family: ui-monospace, Consolas, monospace; color: var(--accent); }
   .foot { color: var(--text-muted); font-size: 0.8rem; margin-top: 26px; }
   .foot code { font-family: ui-monospace, Consolas, monospace; }
+
+  /* --- Jarvis-Orb ----------------------------------------------------
+     Pure renderer: every rule below is keyed off #orb[data-state="..."],
+     the seven values jarvisState.state can hold (see the script). Nothing
+     here decides anything - it only reflects whatever the state machine
+     already decided. The orb is aria-hidden (see markup) and must never be
+     the only status a user can read; #ask-status (role="status",
+     aria-live="polite") stays the authoritative, always-present text. */
+  .orb-wrap { display: flex; justify-content: center; margin: 4px 0 22px; }
+  #orb {
+    position: relative;
+    width: 76px; height: 76px;
+    display: grid; place-items: center;
+  }
+  #orb .orb-ring {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    border: 2px solid transparent;
+  }
+  #orb .orb-core {
+    position: absolute; inset: 8px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 34% 28%, var(--accent), var(--surface-2) 72%);
+    box-shadow: 0 0 16px 1px color-mix(in srgb, var(--accent) 35%, transparent);
+    transition: background 0.4s ease, box-shadow 0.4s ease;
+  }
+  #orb .orb-spin {
+    position: absolute; inset: 8px;
+    border-radius: 50%;
+    overflow: hidden;
+  }
+  #orb .orb-spin::before {
+    content: "";
+    position: absolute; top: 6%; left: 34%;
+    width: 32%; height: 32%;
+    border-radius: 50%;
+    background: radial-gradient(circle, #ffffff88, transparent 70%);
+    filter: blur(1px);
+  }
+  #orb .orb-cooldown {
+    position: relative; z-index: 1;
+    font-size: 0.8rem; font-weight: 700;
+    color: var(--text);
+    opacity: 0;
+  }
+
+  /* idle: dezente Atembewegung */
+  #orb[data-state="idle"] .orb-core { animation: orb-breathe 4.2s ease-in-out infinite; }
+
+  /* listening: aktives Pulsieren, zeigt Aufnahme an */
+  #orb[data-state="listening"] .orb-core {
+    background: radial-gradient(circle at 34% 28%, var(--ok-fg), var(--surface-2) 72%);
+    animation: orb-pulse 1.1s ease-in-out infinite;
+  }
+
+  /* transcribing: schneller Verarbeitungszustand */
+  #orb[data-state="transcribing"] .orb-spin { animation: orb-rotate 0.9s linear infinite; }
+  #orb[data-state="transcribing"] .orb-core { animation: orb-breathe 1.4s ease-in-out infinite; }
+
+  /* thinking: langsame, "nachdenkliche" Bewegung */
+  #orb[data-state="thinking"] .orb-spin { animation: orb-rotate 3.6s linear infinite; }
+  #orb[data-state="thinking"] .orb-core { animation: orb-breathe 3.6s ease-in-out infinite; }
+
+  /* speaking: sichtbare Sprachaktivität - Ringe wie ausgehender Schall */
+  #orb[data-state="speaking"] .orb-core {
+    animation: orb-pulse 0.5s ease-in-out infinite;
+  }
+  #orb[data-state="speaking"] .orb-ring {
+    border-color: var(--accent);
+    animation: orb-ping 1s ease-out infinite;
+  }
+
+  /* cooldown: ruhig, mit sichtbarem Countdown-Ring und -Zahl */
+  #orb[data-state="cooldown"] .orb-ring {
+    background: conic-gradient(var(--accent) calc(var(--orb-cooldown-progress, 0) * 360deg), transparent 0deg);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+  }
+  #orb[data-state="cooldown"] .orb-cooldown { opacity: 1; }
+
+  /* error: dezenter Fehlerzustand - keine Alarmoptik, nur Farbe + langsames Verblassen */
+  #orb[data-state="error"] .orb-core {
+    background: radial-gradient(circle at 34% 28%, var(--fail-fg), var(--surface-2) 72%);
+    box-shadow: 0 0 16px 1px color-mix(in srgb, var(--fail-fg) 30%, transparent);
+    animation: orb-breathe 4.2s ease-in-out infinite;
+  }
+
+  @keyframes orb-breathe {
+    0%, 100% { transform: scale(0.96); opacity: 0.88; }
+    50% { transform: scale(1.04); opacity: 1; }
+  }
+  @keyframes orb-pulse {
+    0%, 100% { transform: scale(0.9); }
+    50% { transform: scale(1.14); }
+  }
+  @keyframes orb-rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes orb-ping {
+    0% { transform: scale(0.88); opacity: 0.6; }
+    70%, 100% { transform: scale(1.4); opacity: 0; }
+  }
+
+  /* Accessibility: motion is decoration only, never the only signal - a
+     reduced-motion preference simply freezes every orb animation. Colour
+     per data-state (set above) still distinguishes states visually; the
+     text status line remains the actual source of truth either way. */
+  @media (prefers-reduced-motion: reduce) {
+    #orb, #orb * { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -117,6 +228,19 @@
   <p class="sub" id="jarvis-ready-line"><span class="badge pending" id="jarvis-ready-badge">Prüfe Jarvis-Status …</span></p>
   <p class="card-hint" id="jarvis-ready-reasons" hidden></p>
 </header>
+
+<!-- Rein dekorativ: aria-hidden, weil #ask-status (role="status",
+     aria-live="polite") unten der einzige verbindliche Statuskanal bleibt.
+     Der Orb spiegelt ausschließlich jarvisState und trifft selbst keine
+     Entscheidung - siehe Kommentar bei jarvisState im Script. -->
+<div class="orb-wrap" aria-hidden="true">
+  <div id="orb" data-state="idle">
+    <div class="orb-ring"></div>
+    <div class="orb-spin"></div>
+    <div class="orb-core"></div>
+    <span class="orb-cooldown" id="orb-cooldown"></span>
+  </div>
+</div>
 
 <section class="card">
   <h2>Frage</h2>
@@ -173,13 +297,141 @@
   var speakRow = document.getElementById("speak-row");
   var speakBtn = document.getElementById("speak-btn");
   var speakStatusEl = document.getElementById("speak-status");
+  var orbEl = document.getElementById("orb");
+  var orbCooldownEl = document.getElementById("orb-cooldown");
 
-  var inFlight = false;
-  var cooldownUntil = 0;
-  var cooldownTimer = null;
   var currentAnswerText = "";
   var speaking = false;
   var currentAudioUrl = null;
+
+  // --- Jarvis-Zustandsmaschine -------------------------------------------
+  //
+  // Single source of truth for what Jarvis is doing right now, and
+  // therefore for #ask-status. Before this, three independent writers (the
+  // ask flow, the mic/transcribe flow, and the 1s cooldown tick) each
+  // assigned statusEl.textContent directly - whichever ran last won, so a
+  // freshly inserted transcript or an in-progress recording could be
+  // silently overwritten mid-sentence by the next cooldown tick. Now every
+  // one of them calls jarvisState.enter(...) (or .startCooldown/
+  // .stopCooldown for the one state that is a running countdown rather
+  // than a snapshot), and renderStatus() below is the only place that ever
+  // writes to statusEl.
+  //
+  // "cooldown" is deliberately not entered via .enter(): the 60s ask
+  // budget and recording/transcribing are independent in this UI (the mic
+  // stays usable while cooldown counts down - only the "Fragen" button is
+  // disabled by it, exactly as before this change), so cooldown is tracked
+  // as a background fact (cooldownUntil) alongside whichever foreground
+  // activity is running. jarvisState.state always resolves to exactly one
+  // of the seven names below: an active listening/transcribing/thinking/
+  // error always wins the display over the cooldown countdown, which only
+  // surfaces once the foreground activity is idle again. "speaking" is
+  // tracked read-only from the existing `speaking` flag below so
+  // jarvisState.state stays a complete picture of Jarvis - Vorlesen keeps
+  // writing its own #speak-status exactly as before, since it never
+  // touched #ask-status in the first place.
+  var JARVIS_STATES = Object.freeze(["idle", "listening", "transcribing", "thinking", "speaking", "cooldown", "error"]);
+
+  var jarvisState = (function () {
+    var activity = "idle";
+    var activityText = "";
+    var cooldownUntil = 0;
+    var cooldownTotalMs = 0;
+    var cooldownTimer = null;
+    var cooldownLabel = "";
+
+    function isCoolingDown() {
+      return Date.now() < cooldownUntil;
+    }
+
+    // The one place that decides which of the seven names jarvisState.state
+    // can report - used by the getter below and by renderOrb(), so the orb
+    // and any future consumer can never observe a different state than the
+    // rest of the page.
+    function computeState() {
+      if (speaking) return "speaking";
+      if (activity !== "idle") return activity;
+      return isCoolingDown() ? "cooldown" : "idle";
+    }
+
+    function renderStatus() {
+      if (activity !== "idle") {
+        statusEl.textContent = activityText;
+      } else if (isCoolingDown()) {
+        var left = Math.ceil((cooldownUntil - Date.now()) / 1000);
+        statusEl.textContent = cooldownLabel + " Nächste Frage in " + left + " s.";
+      } else {
+        statusEl.textContent = activityText || "Bereit.";
+      }
+      renderOrb();
+    }
+
+    // Orb is a pure renderer: it never decides anything, it only reflects
+    // computeState() plus, during cooldown, how much of the 60s window is
+    // left. Called from every renderStatus() (ask + mic flows) and,
+    // separately, from the Vorlesen click handler when `speaking` toggles -
+    // that handler intentionally never touches #ask-status (see comment
+    // above), so it cannot go through renderStatus() and calls this
+    // directly instead. No-op if the markup has no #orb (defensive, not
+    // expected to happen on this page).
+    function renderOrb() {
+      if (!orbEl) return;
+      var state = computeState();
+      orbEl.dataset.state = state;
+      if (state === "cooldown" && cooldownTotalMs > 0) {
+        var remaining = Math.max(0, cooldownUntil - Date.now());
+        orbEl.style.setProperty("--orb-cooldown-progress", (remaining / cooldownTotalMs).toFixed(4));
+        if (orbCooldownEl) orbCooldownEl.textContent = String(Math.ceil(remaining / 1000));
+      } else if (orbCooldownEl) {
+        orbCooldownEl.textContent = "";
+      }
+    }
+
+    function enter(next, text) {
+      if (next === "cooldown" || next === "speaking" || JARVIS_STATES.indexOf(next) === -1) {
+        throw new Error("jarvisState.enter: \"" + next + "\" is not enterable directly.");
+      }
+      activity = next;
+      activityText = text || "";
+      renderStatus();
+    }
+
+    // Honest waiting: the button stays disabled and the remaining seconds
+    // are shown, so a blocked request is visibly a limit rather than a
+    // dead click.
+    function startCooldown(seconds, label) {
+      cooldownUntil = Date.now() + seconds * 1000;
+      cooldownTotalMs = seconds * 1000;
+      cooldownLabel = label;
+      askBtn.disabled = true;
+      if (cooldownTimer) clearInterval(cooldownTimer);
+      cooldownTimer = setInterval(function () {
+        if (!isCoolingDown()) { stopCooldown(); return; }
+        renderStatus();
+      }, 1000);
+      renderStatus();
+    }
+
+    function stopCooldown() {
+      if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer = null; }
+      cooldownUntil = 0;
+      cooldownTotalMs = 0;
+      cooldownLabel = "";
+      askBtn.disabled = false;
+      renderStatus();
+    }
+
+    return Object.freeze({
+      enter: enter,
+      startCooldown: startCooldown,
+      stopCooldown: stopCooldown,
+      isCoolingDown: isCoolingDown,
+      renderOrb: renderOrb,
+      get state() {
+        return computeState();
+      }
+    });
+  })();
 
   function escapeHtml(value) {
     return String(value == null ? "" : value)
@@ -363,43 +615,20 @@
     speakStatusEl.textContent = "";
   }
 
-  function stopCooldown() {
-    if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer = null; }
-    cooldownUntil = 0;
-    askBtn.disabled = false;
-    statusEl.textContent = "Bereit.";
-  }
-
-  // Honest waiting: the button stays disabled and the remaining seconds are
-  // shown, so a blocked request is visibly a limit rather than a dead click.
-  function startCooldown(seconds, reason) {
-    cooldownUntil = Date.now() + seconds * 1000;
-    askBtn.disabled = true;
-    if (cooldownTimer) clearInterval(cooldownTimer);
-    var tick = function () {
-      var left = Math.ceil((cooldownUntil - Date.now()) / 1000);
-      if (left <= 0) { stopCooldown(); return; }
-      statusEl.textContent = reason + " Nächste Frage in " + left + " s.";
-    };
-    tick();
-    cooldownTimer = setInterval(tick, 1000);
-  }
-
   questionEl.addEventListener("input", function () {
     counterEl.textContent = questionEl.value.length + " / 500";
   });
 
   askBtn.addEventListener("click", async function () {
-    if (inFlight || Date.now() < cooldownUntil) return;
+    if (jarvisState.state === "thinking" || jarvisState.isCoolingDown()) return;
     var question = questionEl.value.trim();
     if (!question) {
-      statusEl.textContent = "Bitte eine Frage eingeben.";
+      jarvisState.enter("idle", "Bitte eine Frage eingeben.");
       return;
     }
 
-    inFlight = true;
+    jarvisState.enter("thinking", "Antwort läuft … Das lokale Modell braucht dafür meist einige Sekunden.");
     askBtn.disabled = true;
-    statusEl.textContent = "Antwort läuft … Das lokale Modell braucht dafür meist einige Sekunden.";
 
     var response = null;
     var payload = null;
@@ -411,34 +640,33 @@
       });
       try { payload = await response.json(); } catch (e) { payload = null; }
     } catch (e) {
-      inFlight = false;
       askBtn.disabled = false;
-      statusEl.textContent = "Anfrage fehlgeschlagen – läuft der Router noch?";
+      jarvisState.enter("error", "Anfrage fehlgeschlagen – läuft der Router noch?");
       return;
     }
-    inFlight = false;
 
     if (!payload) {
       askBtn.disabled = false;
-      statusEl.textContent = "Unlesbare Antwort vom Server.";
+      jarvisState.enter("error", "Unlesbare Antwort vom Server.");
       return;
     }
 
     if (payload.error) {
       showTransportError(payload.error.code, payload.error.message);
       askBtn.disabled = false;
-      statusEl.textContent = "Abgelehnt.";
+      jarvisState.enter("error", "Abgelehnt.");
       return;
     }
 
     render(payload);
+    jarvisState.enter("idle", "");
 
     // 429 is the route's own limiter, not a failure. Both it and a normal
     // answer consume the same 1-per-60s budget, so both start the countdown.
     if (response.status === 429) {
-      startCooldown(COOLDOWN_SECONDS, "Limit erreicht: eine Anfrage pro 60 Sekunden.");
+      jarvisState.startCooldown(COOLDOWN_SECONDS, "Limit erreicht: eine Anfrage pro 60 Sekunden.");
     } else {
-      startCooldown(COOLDOWN_SECONDS, "Beantwortet.");
+      jarvisState.startCooldown(COOLDOWN_SECONDS, "Beantwortet.");
     }
   });
 
@@ -450,6 +678,7 @@
   speakBtn.addEventListener("click", async function () {
     if (speaking || !currentAnswerText) return;
     speaking = true;
+    jarvisState.renderOrb();
     speakBtn.disabled = true;
     speakStatusEl.textContent = "Spreche …";
 
@@ -464,6 +693,7 @@
       });
     } catch (e) {
       speaking = false;
+      jarvisState.renderOrb();
       speakBtn.disabled = false;
       speakStatusEl.textContent = "Übertragung fehlgeschlagen – läuft der Router noch?";
       return;
@@ -474,6 +704,7 @@
       var errorCode = "INTERNAL_ERROR";
       try { var errPayload = await response.json(); errorCode = (errPayload.error && errPayload.error.code) || errorCode; } catch (e) { /* keep default */ }
       speaking = false;
+      jarvisState.renderOrb();
       speakBtn.disabled = false;
       speakStatusEl.textContent = SPEAK_ERROR_TEXT[errorCode] || "Sprachausgabe fehlgeschlagen.";
       return;
@@ -484,6 +715,7 @@
     var audio = new Audio(currentAudioUrl);
     var stopSpeaking = function (text) {
       speaking = false;
+      jarvisState.renderOrb();
       speakBtn.disabled = false;
       speakStatusEl.textContent = text || "";
     };
@@ -519,8 +751,6 @@
   var processorNode = null;
   var recordedChunks = [];
   var recordedSampleRate = 0;
-  var recording = false;
-  var transcribing = false;
   var autoStopTimer = null;
 
   // Peak-normalization target/ceiling for encodeWav's gain step below.
@@ -591,19 +821,28 @@
     if (autoStopTimer) { clearTimeout(autoStopTimer); autoStopTimer = null; }
   }
 
+  // "idle" for outcomes that are not a failure (nothing recorded, no
+  // speech detected, a transcript successfully inserted) - "error" for
+  // outcomes where a request was made and it failed (unreadable response,
+  // a rejected/failed transcription, a network failure), matching the
+  // same idle/error split the ask flow above uses for its own outcomes.
   function setMicIdle(text) {
-    recording = false;
     micBtn.disabled = false;
     micBtn.textContent = "Aufnahme starten";
-    statusEl.textContent = text || "Bereit.";
+    jarvisState.enter("idle", text || "");
+  }
+
+  function setMicError(text) {
+    micBtn.disabled = false;
+    micBtn.textContent = "Aufnahme starten";
+    jarvisState.enter("error", text || "");
   }
 
   async function stopRecordingAndTranscribe() {
-    if (!recording) return;
-    recording = false;
+    if (jarvisState.state !== "listening") return;
     micBtn.disabled = true;
     micBtn.textContent = "Aufnahme starten";
-    statusEl.textContent = "Transkribiere …";
+    jarvisState.enter("transcribing", "Transkribiere …");
 
     var wavBlob = recordedChunks.length ? encodeWav(recordedChunks, recordedSampleRate) : null;
     stopTracks();
@@ -614,7 +853,6 @@
       return;
     }
 
-    transcribing = true;
     try {
       var response = await fetch("/api/jarvis/transcribe", {
         method: "POST",
@@ -625,11 +863,11 @@
       try { payload = await response.json(); } catch (e) { payload = null; }
 
       if (!payload) {
-        setMicIdle("Unlesbare Antwort vom Server.");
+        setMicError("Unlesbare Antwort vom Server.");
         return;
       }
       if (payload.error) {
-        setMicIdle(TRANSCRIBE_ERROR_TEXT[payload.error.code] || "Transkription fehlgeschlagen.");
+        setMicError(TRANSCRIBE_ERROR_TEXT[payload.error.code] || "Transkription fehlgeschlagen.");
         return;
       }
 
@@ -644,22 +882,20 @@
       counterEl.textContent = questionEl.value.length + " / 500";
       setMicIdle("Transkript eingefügt – bitte prüfen und dann auf „Fragen“ klicken.");
     } catch (e) {
-      setMicIdle("Übertragung der Aufnahme fehlgeschlagen – läuft der Router noch?");
-    } finally {
-      transcribing = false;
+      setMicError("Übertragung der Aufnahme fehlgeschlagen – läuft der Router noch?");
     }
   }
 
   async function startRecording() {
-    if (recording || transcribing) return;
+    if (jarvisState.state === "listening" || jarvisState.state === "transcribing") return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.AudioContext) {
-      statusEl.textContent = "Spracheingabe wird von diesem Browser nicht unterstützt.";
+      jarvisState.enter("error", "Spracheingabe wird von diesem Browser nicht unterstützt.");
       return;
     }
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
     } catch (e) {
-      statusEl.textContent = "Mikrofonzugriff verweigert oder nicht verfügbar.";
+      jarvisState.enter("error", "Mikrofonzugriff verweigert oder nicht verfügbar.");
       return;
     }
 
@@ -685,15 +921,14 @@
     sourceNode.connect(processorNode);
     processorNode.connect(audioCtx.destination);
 
-    recording = true;
+    jarvisState.enter("listening", "Aufnahme läuft … (max. " + MAX_RECORD_SECONDS + " s)");
     micBtn.textContent = "Aufnahme stoppen";
-    statusEl.textContent = "Aufnahme läuft … (max. " + MAX_RECORD_SECONDS + " s)";
     autoStopTimer = setTimeout(stopRecordingAndTranscribe, MAX_RECORD_SECONDS * 1000);
   }
 
   micBtn.addEventListener("click", function () {
-    if (transcribing) return;
-    if (recording) stopRecordingAndTranscribe();
+    if (jarvisState.state === "transcribing") return;
+    if (jarvisState.state === "listening") stopRecordingAndTranscribe();
     else startRecording();
   });
 
