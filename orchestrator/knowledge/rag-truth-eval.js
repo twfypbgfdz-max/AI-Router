@@ -3,11 +3,23 @@ const HISTORICAL_QUALIFIER_PATTERN = /\b(?:historisch\w*|dokumentiert\w*|momenta
 const NON_CLAIM_PATTERN = /\b(?:unbekannt|nicht belegt|nicht verifiziert|nicht sicher ableitbar|nicht ermittelbar)\b/iu;
 const CURRENT_COMMIT_CLAIM_PATTERN = /\b(?:aktuell\w*|derzeitig\w*|heutig\w*)\s+(?:commit|head)\b[^.!?\n]{0,40}\b(?:ist|lautet|steht auf|=)\s+[`"']?([a-z0-9._/-]{2,40})[^.!?\n]{0,80}/giu;
 
+// Phase 5C (test-harness fix, no prompt/criteria change): NFKD + combining-
+// mark removal folds every German umlaut correctly (ö/ä/ü each have a
+// canonical decomposition into a base vowel plus a combining diaeresis,
+// stripped by \p{M} above) - but "ß" has no NFKD decomposition to "ss" at
+// all; Unicode leaves it as a single, non-decomposable code point. A truth-
+// set concept written in the ASCII "ss" spelling (e.g. "ausschliesslich")
+// could therefore never match a model answer using the standard German "ß"
+// spelling ("ausschließlich"), independent of answer quality - confirmed by
+// reproducing the exact false negative on T04 (DEC-009 Phase 5C validation,
+// 16.08.2026). toLowerCase() already folds the rare capital "ẞ" to "ß", so
+// a single lowercase-then-replace step normalizes both cases.
 function normalizedText(value) {
   return String(value ?? "")
     .normalize("NFKD")
     .replace(/\p{M}/gu, "")
     .toLowerCase()
+    .replace(/ß/g, "ss")
     .replace(/\s+/g, " ")
     .trim();
 }
