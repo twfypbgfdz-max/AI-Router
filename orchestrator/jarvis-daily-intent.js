@@ -58,6 +58,21 @@ export function matchJarvisDailyIntent(question) {
   });
 }
 
+// A fixed "show everything" intent for proactive, non-question-triggered
+// consumers (the Jarvis "Heute" tab, DEC-010 Phase 4A) - the identical shape
+// matchJarvisDailyIntent() already produces for a generic day question
+// (GENERIC_TODAY_PATTERN/BARE_TODAY_PATTERN, taskView "pending", no overdue
+// emphasis), just without needing an actual question string. No new
+// matching logic: buildJarvisDailyContext() consumes this exactly like any
+// other intent object.
+export const FULL_DAY_INTENT = Object.freeze({
+  needsDailyState: true,
+  needsTasks: true,
+  needsCalendar: true,
+  taskView: "pending",
+  emphasizeOverdue: false
+});
+
 export const jarvisDailyIntentInternals = Object.freeze({
   NEGATIVE_OVERRIDE_PATTERN,
   FOCUS_PATTERN,

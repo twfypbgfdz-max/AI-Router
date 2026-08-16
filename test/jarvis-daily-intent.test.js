@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { matchJarvisDailyIntent } from "../orchestrator/jarvis-daily-intent.js";
+import { matchJarvisDailyIntent, FULL_DAY_INTENT } from "../orchestrator/jarvis-daily-intent.js";
 
 test("matches a plain focus question", () => {
   const intent = matchJarvisDailyIntent("Was ist mein Fokus?");
@@ -74,4 +74,12 @@ test("returns null for empty or non-string input", () => {
   assert.equal(matchJarvisDailyIntent(""), null);
   assert.equal(matchJarvisDailyIntent("   "), null);
   assert.equal(matchJarvisDailyIntent(undefined), null);
+});
+
+// --- DEC-010 Phase 4A: FULL_DAY_INTENT must not silently drift from what a
+// real generic day question already produces - a proactive "Heute" tab and
+// a reactive "Was steht heute an?" question must request identically.
+test("FULL_DAY_INTENT matches exactly what a generic day question produces", () => {
+  const fromQuestion = matchJarvisDailyIntent("Was steht heute an?");
+  assert.deepEqual(FULL_DAY_INTENT, fromQuestion);
 });

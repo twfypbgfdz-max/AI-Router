@@ -265,6 +265,27 @@
     .disclosure-body, .disclosure-icon, .panel.panel-enter { transition: none !important; animation: none !important; }
   }
 
+  /* --- Heute / Verlauf: echte, rein lesende Daten (DEC-010 Phase 4A) --
+     Beide Bereiche zeigen ausschließlich bereits serverseitig (Heute) bzw.
+     bereits im Voice Zentrum gerenderte (Verlauf) Werte an - keine eigene
+     Sortier-, Filter- oder Bewertungslogik hier, nur Darstellung. */
+  .section-label {
+    font-weight: 600; font-size: var(--text-sm); color: var(--text);
+    margin: var(--space-3) 0 var(--space-1);
+  }
+  .section-label:first-child { margin-top: 0; }
+
+  .history-entry {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    margin-top: var(--space-2);
+  }
+  .history-entry:first-child { margin-top: 0; }
+  .history-entry .q { font-weight: 600; font-size: var(--text-sm); }
+  .history-entry .a { color: var(--text-muted); font-size: var(--text-sm); margin-top: 4px; white-space: pre-wrap; }
+  .history-entry time { display: block; margin-top: 6px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); }
+
   /* --- Jarvis-Orb ----------------------------------------------------
      Pure renderer: every rule below is keyed off #orb[data-state="..."],
      the seven values jarvisState.state can hold (see the script). Nothing
@@ -518,18 +539,10 @@
 </section>
 
 <section id="panel-heute" role="tabpanel" aria-labelledby="tab-heute" class="panel" hidden>
-  <section class="card card--empty">
+  <section class="card">
     <h2>Heute</h2>
-    <p class="card-hint">Noch keine Verbindung zum Felix-Cockpit.</p>
-    <div class="disclosure" data-disclosure>
-      <button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="disc-heute">
-        <span>Was zeigt dieser Bereich später?</span>
-        <span class="disclosure-icon" aria-hidden="true">⌄</span>
-      </button>
-      <div class="disclosure-body" id="disc-heute" aria-hidden="true">
-        <div><p>Ein aggregierter Tagesfokus aus dem Felix-Cockpit (Operational Response Profile, DEC-007) – die Anbindung ist eine eigene, spätere Umsetzungsphase (DEC-010, Abschnitt 7).</p></div>
-      </div>
-    </div>
+    <p class="card-hint" id="heute-hint">Wird geladen …</p>
+    <div id="heute-content"></div>
   </section>
 </section>
 
@@ -573,16 +586,17 @@
 </section>
 
 <section id="panel-verlauf" role="tabpanel" aria-labelledby="tab-verlauf" class="panel" hidden>
-  <section class="card card--empty">
+  <section class="card">
     <h2>Verlauf</h2>
-    <p class="card-hint">Noch keine Einträge in dieser Sitzung.</p>
+    <p class="card-hint" id="verlauf-hint">Noch keine Einträge in dieser Sitzung.</p>
+    <div id="verlauf-list"></div>
     <div class="disclosure" data-disclosure>
       <button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="disc-verlauf">
         <span>Wie funktioniert der Verlauf?</span>
         <span class="disclosure-icon" aria-hidden="true">⌄</span>
       </button>
       <div class="disclosure-body" id="disc-verlauf" aria-hidden="true">
-        <div><p>Zurückliegende Fragen und Antworten. Ob und wie das über eine Sitzung hinaus gespeichert wird, ist noch nicht entschieden (DEC-010, Risiko 5).</p></div>
+        <div><p>Der Verlauf gilt nur für diese Sitzung – er zeigt bereits im Voice Zentrum beantwortete Fragen, ausschließlich im Browser gehalten (kein localStorage, kein Server). Beim Neuladen der Seite ist er wieder leer. Ob ein dauerhafter Verlauf sinnvoll ist, ist eine eigene, hier nicht getroffene Entscheidung (DEC-010, Risiko 5).</p></div>
       </div>
     </div>
   </section>
@@ -1518,10 +1532,13 @@
 
 <!-- Reiner UI-Layer: schaltet zwischen den fünf Panels aus DEC-010 Abschnitt 7
      um (Sections/Tabs, keine separaten Routen), steuert die Dropdown-/
-     Accordion-Bausteine (Phase 2) und die Pfeiltasten-Navigation der Tabs
-     (Phase 3). Kein Zugriff auf jarvisState, keine Netzwerkanfrage, keine
-     Berührung der Voice-Pipeline im Script oben - "Nur Layout und
-     Komponentenstruktur, noch keine vollständige Datenintegration". -->
+     Accordion-Bausteine (Phase 2), die Pfeiltasten-Navigation der Tabs
+     (Phase 3) sowie Heute/Verlauf mit echten, rein lesenden Daten
+     (Phase 4A). Weiterhin kein Zugriff auf jarvisState und keine Berührung
+     der Voice-Pipeline im Script oben - Heute liest ausschließlich
+     GET /api/jarvis/today (neu, read-only), Verlauf beobachtet nur bereits
+     von der Voice-Pipeline gerenderte DOM-Änderungen, greift aber nie in
+     sie ein. -->
 <script>
 (function () {
   "use strict";
@@ -1544,6 +1561,9 @@
         panel.classList.remove("panel-enter");
         void panel.offsetWidth;
         panel.classList.add("panel-enter");
+        // Phase 4A: Daten nur beim tatsächlichen Öffnen laden, kein
+        // Hintergrundabruf, kein Caching - jede Aktivierung fragt frisch ab.
+        if (other.id === "tab-heute") loadHeute();
       } else {
         panel.hidden = true;
         panel.classList.remove("panel-enter");
@@ -1590,6 +1610,189 @@
       body.setAttribute("aria-hidden", open ? "false" : "true");
     });
   });
+
+  // --- Heute (DEC-010 Phase 4A) -------------------------------------------
+  //
+  // Ein GET pro Tab-Öffnung gegen die neue, rein lesende Route
+  // /api/jarvis/today (orchestrator/jarvis-today-handler.js). Diese Funktion
+  // entscheidet nichts über Inhalt, Reihenfolge oder Priorität - das hat der
+  // Server bereits erledigt (bestehende Budgets/Rang aus
+  // jarvis-daily-context.js, unverändert). Sie bildet nur ab, was ankommt.
+  var heuteHint = document.getElementById("heute-hint");
+  var heuteContent = document.getElementById("heute-content");
+
+  var COCKPIT_STATE_TEXT = {
+    unconfigured: "Cockpit ist nicht konfiguriert.",
+    unavailable: "Cockpit ist gerade nicht erreichbar."
+  };
+  var FRESH_STATES = { fresh: true, stale: true };
+  // Text je Sektionszustand, wenn andere Sektionen brauchbar sind, diese
+  // einzelne aber nicht (z. B. Fokus vorhanden, Termine beim Cockpit selbst
+  // nicht konfiguriert) - Review-Korrektur: vorher blieb der Abschnitt in
+  // diesem Fall kommentarlos leer statt den Zustand zu benennen.
+  var SECTION_STATE_TEXT = {
+    unconfigured: "Nicht konfiguriert.",
+    unavailable: "Gerade nicht erreichbar.",
+    error: "Fehlerhafter Stand."
+  };
+
+  function clearChildren(el) {
+    while (el && el.firstChild) el.removeChild(el.firstChild);
+  }
+
+  function addSectionLabel(parent, text) {
+    var label = document.createElement("div");
+    label.className = "section-label";
+    label.textContent = text;
+    parent.appendChild(label);
+  }
+
+  function addEmptyLine(parent, text) {
+    var p = document.createElement("p");
+    p.className = "card-hint";
+    p.style.margin = "0 0 8px";
+    p.textContent = text;
+    parent.appendChild(p);
+  }
+
+  function addInfoPanel(parent, items, rowFn) {
+    var panel = document.createElement("div");
+    panel.className = "info-panel";
+    items.forEach(function (item) {
+      var row = document.createElement("div");
+      row.className = "info-panel-row";
+      var pair = rowFn(item);
+      var k = document.createElement("span"); k.className = "k"; k.textContent = pair[0];
+      var v = document.createElement("span"); v.className = "v"; v.textContent = pair[1];
+      row.appendChild(k); row.appendChild(v);
+      panel.appendChild(row);
+    });
+    parent.appendChild(panel);
+  }
+
+  function renderBlock(parent, label, block, emptyText, rowFn) {
+    if (!block) return;
+    addSectionLabel(parent, label);
+    if (block.freshness === "empty") { addEmptyLine(parent, emptyText); return; }
+    if (!FRESH_STATES[block.freshness]) {
+      addEmptyLine(parent, SECTION_STATE_TEXT[block.freshness] || "Nicht verfügbar.");
+      return;
+    }
+    addInfoPanel(parent, block.items, rowFn);
+    if (block.freshness === "stale") addEmptyLine(parent, "Stand veraltet.");
+  }
+
+  function formatEventTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function renderHeute(payload) {
+    if (!heuteContent) return;
+    clearChildren(heuteContent);
+
+    if (!payload || payload.cockpitState !== "ok" || !payload.context) {
+      var reason = payload && COCKPIT_STATE_TEXT[payload.cockpitState];
+      if (heuteHint) { heuteHint.textContent = reason || "Für heute liegt nichts vor."; heuteHint.hidden = false; }
+      return;
+    }
+    if (heuteHint) heuteHint.hidden = true;
+
+    var ctx = payload.context;
+    renderBlock(heuteContent, "Fokus", ctx.focus, "Kein Fokus gesetzt.", function (item) {
+      return [item.text, item.done ? "erledigt" : "offen"];
+    });
+    renderBlock(heuteContent, "Aufgaben", ctx.tasks, "Keine offenen Aufgaben.", function (item) {
+      var tags = [];
+      if (item.overdue) tags.push("überfällig");
+      if (item.blocked) tags.push("blockiert");
+      if (item.dueDate) tags.push(item.dueDate);
+      return [item.text, tags.join(" · ") || item.status];
+    });
+    renderBlock(heuteContent, "Termine", ctx.calendar, "Keine Termine heute.", function (event) {
+      return [event.title, event.allDay ? "ganztägig" : formatEventTime(event.start)];
+    });
+    // Kein Fallback für "ctx.focus/tasks/calendar alle leer" hier nötig:
+    // FULL_DAY_INTENT fordert immer alle drei Sektionen an, buildJarvisDaily-
+    // Context() füllt bei nicht-null context deshalb auch immer alle drei
+    // Feldobjekte (höchstens mit freshness "unconfigured"/"unavailable"/
+    // "error", nie null) - der Fall "gar nichts brauchbar" ist bereits über
+    // payload.context === null oben abgedeckt, bevor dieser Code erreicht wird.
+  }
+
+  function loadHeute() {
+    if (!heuteHint || !heuteContent) return;
+    heuteHint.textContent = "Wird geladen …";
+    heuteHint.hidden = false;
+    clearChildren(heuteContent);
+    fetch("/api/jarvis/today")
+      .then(function (response) { return response.json(); })
+      .then(function (payload) { renderHeute(payload); })
+      .catch(function () { renderHeute({ cockpitState: "unavailable", context: null }); });
+  }
+
+  // --- Verlauf (DEC-010 Phase 4A) ------------------------------------------
+  //
+  // Rein clientseitig, nur für die laufende Sitzung: kein localStorage, kein
+  // sessionStorage, kein indexedDB, kein Server-Speicher - ein einfaches
+  // In-Memory-Array, das beim Neuladen der Seite verschwindet. Beobachtet
+  // #answer per MutationObserver von außen, statt render() im ersten Script
+  // zu ändern - die Voice-Pipeline bleibt vollständig unberührt. Feuert nur,
+  // wenn tatsächlich ein neuer, nicht-leerer Antworttext gerendert wurde
+  // (showTransportError() leert #answer und wird dadurch korrekt ignoriert).
+  var verlaufHint = document.getElementById("verlauf-hint");
+  var verlaufList = document.getElementById("verlauf-list");
+  var answerEl = document.getElementById("answer");
+  var questionEl = document.getElementById("question");
+  var MAX_HISTORY_ENTRIES = 20;
+  var historyEntries = [];
+  var lastCapturedAnswer = null;
+
+  function renderVerlauf() {
+    if (!verlaufList) return;
+    clearChildren(verlaufList);
+    if (!historyEntries.length) {
+      if (verlaufHint) verlaufHint.hidden = false;
+      return;
+    }
+    if (verlaufHint) verlaufHint.hidden = true;
+    // Neueste zuerst.
+    for (var i = historyEntries.length - 1; i >= 0; i -= 1) {
+      var entry = historyEntries[i];
+      var box = document.createElement("div");
+      box.className = "history-entry";
+      var q = document.createElement("div"); q.className = "q"; q.textContent = entry.question || "(ohne Frage)";
+      var a = document.createElement("div"); a.className = "a"; a.textContent = entry.answer;
+      var time = document.createElement("time");
+      time.textContent = entry.at.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+      box.appendChild(q); box.appendChild(a); box.appendChild(time);
+      verlaufList.appendChild(box);
+    }
+  }
+
+  function captureAnswerIfNew() {
+    if (!answerEl) return;
+    var text = answerEl.textContent || "";
+    // text === lastCapturedAnswer verwirft nicht nur echte Doppel-Mutationen
+    // (z. B. eine zusätzliche, folgenlose DOM-Änderung), sondern auch eine
+    // tatsächlich zweite, wortgleiche Antwort auf dieselbe Frage kurz
+    // hintereinander - dieser Fall bekommt dann bewusst keinen zweiten
+    // Verlaufseintrag. In der Praxis mit einem LLM sehr unwahrscheinlich.
+    if (!text || text === lastCapturedAnswer) return;
+    lastCapturedAnswer = text;
+    historyEntries.push({
+      question: questionEl ? questionEl.value : "",
+      answer: text,
+      at: new Date()
+    });
+    if (historyEntries.length > MAX_HISTORY_ENTRIES) historyEntries.shift();
+    renderVerlauf();
+  }
+
+  if (answerEl && window.MutationObserver) {
+    new MutationObserver(captureAnswerIfNew).observe(answerEl, { childList: true, characterData: true, subtree: true });
+  }
 })();
 </script>
 </body>
