@@ -611,6 +611,24 @@
 (function () {
   "use strict";
 
+  // Phase 5A (DEC-010 Folgearbeit, UI only): ein kleines, geteiltes
+  // UI-Wörterbuch für Systemzustandswörter, die unverändert aus mehreren
+  // Backend-Verträgen durchgereicht werden (Command Center: ok/warning/error,
+  // commandCenterState/cockpitState: unavailable, Freshness: stale). Ohne
+  // dieses Wörterbuch zeigten zwei Tabs für denselben Vertragswert
+  // unterschiedliche Wörter (z. B. "Fehler" im System-Tab vs.
+  // "Fehlerhafter Stand." im Heute-Tab für denselben "error"-Zustand) - keine
+  // neue Bedeutung, nur ein einheitlicher Wortlaut für bereits bestehende
+  // Zustände. Auf window, weil dieses <script> und das zweite (Tab-/Heute-/
+  // System-Logik) getrennte Funktionsbereiche ohne gemeinsamen Scope sind.
+  window.JARVIS_STATUS_TEXT = Object.freeze({
+    ok: "Verfügbar",
+    warning: "Hinweis",
+    error: "Problem",
+    unavailable: "Nicht verfügbar",
+    stale: "Daten veraltet"
+  });
+
   // The knowledge route allows one request per 60 seconds (concurrency 1).
   // That is a real constraint, so the UI states it and counts down instead
   // of letting a click appear to do nothing.
@@ -860,6 +878,20 @@
     return parts[parts.length - 1].replace(/\.md$/, "");
   }
 
+  // Phase 5A (DEC-010 Folgearbeit, UI only): entfernt [K#]-Quellenmarker aus
+  // der BILDSCHIRMANZEIGE des Antworttexts - eine reine Darstellungsfrage.
+  // payload.answer selbst bleibt unverändert; #answer erhält nur eine lokal
+  // bereinigte Kopie. currentAnswerText (an POST /api/jarvis/speak gesendet,
+  // dort von orchestrator/jarvis-speak-normalize.js normalisiert, DEC-008)
+  // bleibt bewusst der unveränderte Rohtext - diese Funktion hat keinen
+  // Einfluss auf die Sprachausgabe und dupliziert nicht deren Bereinigung.
+  // Die Quellenbelege bleiben vollständig erreichbar: dieselben [K#] stehen
+  // weiterhin am Kopf jeder Box in renderSources() unten.
+  var DISPLAY_SOURCE_MARKER_PATTERN = /\s?\[K\d+\]/g;
+  function stripSourceMarkersForDisplay(text) {
+    return String(text == null ? "" : text).replace(DISPLAY_SOURCE_MARKER_PATTERN, "");
+  }
+
   // Every warning the knowledge contract can emit, in plain German. An
   // unknown code is shown verbatim rather than swallowed - a silent gap
   // would be worse than an ugly string.
@@ -967,6 +999,26 @@
     }
   }
 
+  // Phase 5A (DEC-010 Folgearbeit, UI only): bindet Trigger/Body einer
+  // dynamisch erzeugten Disclosure-Box. Eigene Funktion statt Inline-Closure
+  // im umgebenden for-Loop, weil `var` in diesem Skript funktionsweit gilt -
+  // eine Closure direkt im Loop-Rumpf würde bei jedem Klick nur die zuletzt
+  // erzeugte Box treffen, unabhängig davon, welche tatsächlich geklickt
+  // wurde. Verhalten identisch zur globalen [data-disclosure]-Bindung weiter
+  // unten; diese hier läuft nur zusätzlich, weil Quellenboxen erst nach dem
+  // initialen Seitenaufbau entstehen und die einmalige globale Bindung sie
+  // nie erreichen würde.
+  function bindDisclosure(disclosureEl) {
+    var trigger = disclosureEl.querySelector(".disclosure-trigger");
+    var body = disclosureEl.querySelector(".disclosure-body");
+    if (!trigger || !body) return;
+    trigger.addEventListener("click", function () {
+      var open = disclosureEl.classList.toggle("is-open");
+      trigger.setAttribute("aria-expanded", open ? "true" : "false");
+      body.setAttribute("aria-hidden", open ? "false" : "true");
+    });
+  }
+
   function renderSources(sources) {
     sourcesEl.innerHTML = "";
     if (!sources || sources.length === 0) return;
@@ -982,13 +1034,34 @@
       box.className = "src";
       var version = s.docVersion ? " v" + s.docVersion : "";
       var similarity = typeof s.similarity === "number" ? s.similarity.toFixed(3) : "–";
-      var freshness = s.freshness === "stale" ? "Index veraltet" : s.freshness === "fresh" ? "aktuell" : "unbekannt";
+      // Trust-relevant, deshalb auf der ersten Ebene: sagt, ob diese Quelle
+      // noch aktuell sein könnte. "stale" nutzt das geteilte Wörterbuch
+      // (Phase 5A) statt einer eigenen dritten Formulierung für denselben
+      // Zustand, den System-Tab bereits als "Daten veraltet" zeigt.
+      var freshness = s.freshness === "stale" ? JARVIS_STATUS_TEXT.stale : s.freshness === "fresh" ? "aktuell" : "unbekannt";
       box.innerHTML =
         '<div class="src-head"><span class="src-key">[K' + (i + 1) + ']</span> ' + escapeHtml(docName(s.sourceDoc)) + "</div>" +
         '<div class="src-meta">' + escapeHtml(s.section || "(kein Abschnitt)") + "</div>" +
-        '<div class="src-meta">Übereinstimmung ' + similarity +
-        " · Stand " + escapeHtml((s.docStatus || "unbekannt") + version) +
-        " · " + escapeHtml(freshness) + "</div>";
+        '<div class="src-meta">' + escapeHtml(freshness) + "</div>";
+
+      // Nicht vertrauensrelevant, deshalb hinter einer Disclosure statt auf
+      // der ersten Ebene (DEC-010 Abschnitt 7: Details auf Abruf, nie
+      // erzwungen) - Ähnlichkeitswert und Dokumentstand/-version bleiben
+      // unverändert abrufbar, drängen sich aber nicht mehr jeder Antwort auf.
+      var discId = "disc-src-" + i;
+      var disclosure = document.createElement("div");
+      disclosure.className = "disclosure";
+      disclosure.style.marginTop = "10px";
+      disclosure.innerHTML =
+        '<button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="' + discId + '">'
+        + "<span>Technische Details</span><span class=\"disclosure-icon\" aria-hidden=\"true\">⌄</span>"
+        + "</button>"
+        + '<div class="disclosure-body" id="' + discId + '" aria-hidden="true">'
+        + '<div><p>Übereinstimmung ' + similarity + " · Stand " + escapeHtml((s.docStatus || "unbekannt") + version) + "</p></div>"
+        + "</div>";
+      box.appendChild(disclosure);
+      bindDisclosure(disclosure);
+
       sourcesEl.appendChild(box);
     }
   }
@@ -1020,7 +1093,7 @@
     }
     renderNotices(notices, state === "unavailable" ? "fail" : "warn");
 
-    answerEl.textContent = payload.answer || "";
+    answerEl.textContent = stripSourceMarkersForDisplay(payload.answer);
     renderSources(payload.sources);
 
     // Vorlesen only makes sense when there is text to read - an
@@ -1098,16 +1171,18 @@
   // --- Vorlesen (lokal) ---------------------------------------------------
   //
   // A deliberate, manually-triggered button - never automatic. Sends the
-  // already-displayed, already-read answer text back to the server, plays
-  // whatever audio/wav comes back. No auto-play, no speech loop, no polling.
-  // Die Anzeige behält ihre [K1]-Marker - sie sind der Beleg und gehören zur
-  // gelesenen Antwort; currentAnswerText und #answer bleiben unangetastet.
-  // DEC-008: Die Sprechbereinigung (Marker/relative Vault-Pfade/Whitespace)
-  // liegt nicht mehr hier, sondern serverseitig in
+  // already-read answer text back to the server, plays whatever audio/wav
+  // comes back. No auto-play, no speech loop, no polling.
+  // currentAnswerText bleibt der unveränderte Rohtext aus payload.answer,
+  // inklusive [K#]-Marker - nur #answer zeigt seit Phase 5A (DEC-010
+  // Folgearbeit, UI only) eine bereinigte Kopie zum Lesen auf dem Bildschirm
+  // (siehe stripSourceMarkersForDisplay oben). Diese Trennung ist
+  // beabsichtigt: DEC-008s Sprechbereinigung (Marker/relative
+  // Vault-Pfade/Whitespace) liegt weiterhin ausschließlich serverseitig in
   // orchestrator/jarvis-speak-normalize.js, angewendet vor dem Piper-Aufruf
-  // in orchestrator/jarvis-speak-handler.js. Das Frontend sendet deshalb den
-  // unveränderten Antworttext, ohne eine zweite, hier gepflegte Kopie
-  // derselben Bereinigungslogik.
+  // in orchestrator/jarvis-speak-handler.js - das Frontend sendet deshalb
+  // weiterhin den unveränderten Antworttext, ohne eine zweite, hier
+  // gepflegte Kopie derselben Bereinigungslogik.
 
   speakBtn.addEventListener("click", async function () {
     if (speaking || !currentAnswerText) return;
@@ -1631,10 +1706,15 @@
   // einzelne aber nicht (z. B. Fokus vorhanden, Termine beim Cockpit selbst
   // nicht konfiguriert) - Review-Korrektur: vorher blieb der Abschnitt in
   // diesem Fall kommentarlos leer statt den Zustand zu benennen.
+  // "unavailable"/"error" nutzen ab Phase 5A (DEC-010 Folgearbeit, UI only)
+  // das geteilte window.JARVIS_STATUS_TEXT statt einer eigenen dritten
+  // Formulierung ("Fehlerhafter Stand." hieß im System-Tab für denselben
+  // "error"-Zustand schon "Fehler") - "unconfigured" bleibt lokal, da dieser
+  // Zustand nicht Teil des geteilten Wörterbuchs ist.
   var SECTION_STATE_TEXT = {
     unconfigured: "Nicht konfiguriert.",
-    unavailable: "Gerade nicht erreichbar.",
-    error: "Fehlerhafter Stand."
+    unavailable: window.JARVIS_STATUS_TEXT.unavailable + ".",
+    error: window.JARVIS_STATUS_TEXT.error + "."
   };
 
   function clearChildren(el) {
@@ -1744,6 +1824,11 @@
   // beiden Text-Wörterbücher unten übersetzen die bereits vom Command
   // Center gelieferten Enum-Werte wörtlich ins Deutsche - das ist reine
   // Vokabularübersetzung, keine Interpretation und keine Ableitung.
+  // ok/warning/error und "stale" nutzen ab Phase 5A (DEC-010 Folgearbeit,
+  // UI only) das geteilte window.JARVIS_STATUS_TEXT - vorher zeigte dieser
+  // Tab für "ok" das unübersetzte englische Wort selbst an; "fresh"/
+  // "unknown" bleiben lokal, da sie nicht Teil des geteilten Wörterbuchs
+  // sind (reine Aktualitäts-, keine Verfügbarkeitsaussage).
   var systemHint = document.getElementById("system-hint");
   var systemContent = document.getElementById("system-content");
 
@@ -1751,8 +1836,12 @@
     unconfigured: "Command Center ist nicht konfiguriert.",
     unavailable: "Command Center ist gerade nicht erreichbar."
   };
-  var LEVEL_TEXT = { ok: "ok", warning: "Warnung", error: "Fehler" };
-  var FRESHNESS_TEXT = { fresh: "aktuell", stale: "veraltet", unknown: "unbekannt" };
+  var LEVEL_TEXT = {
+    ok: window.JARVIS_STATUS_TEXT.ok,
+    warning: window.JARVIS_STATUS_TEXT.warning,
+    error: window.JARVIS_STATUS_TEXT.error
+  };
+  var FRESHNESS_TEXT = { fresh: "aktuell", stale: window.JARVIS_STATUS_TEXT.stale, unknown: "unbekannt" };
 
   function formatAbsoluteTime(iso) {
     var d = new Date(iso);
