@@ -892,57 +892,118 @@
     return String(text == null ? "" : text).replace(DISPLAY_SOURCE_MARKER_PATTERN, "");
   }
 
-  // Every warning the knowledge contract can emit, in plain German. An
-  // unknown code is shown verbatim rather than swallowed - a silent gap
-  // would be worse than an ugly string.
+  // Every warning the knowledge contract can emit. Phase 5B (DEC-009/
+  // DEC-010 Folgearbeit, UI only): ein Eintrag ist entweder ein einfacher
+  // String (Text war bereits verständlich, nichts zu verbergen) oder ein
+  // { summary, detail }-Objekt (Text nannte bisher interne Bezeichner -
+  // Ollama, Embedding-Modell, Index/Indexaufbau/Manifest, Chunking,
+  // Reindex - summary ersetzt das für die erste Ansicht, detail bewahrt den
+  // ursprünglichen, technisch genaueren Wortlaut vollständig, nur hinter
+  // einer Disclosure statt auf der ersten Ebene). Ein unbekannter Code wird
+  // weiterhin verbatim gezeigt statt geschluckt (siehe noticeTextFor unten)
+  // - ein stiller Ausfall wäre schlimmer als ein hässlicher String.
   var WARNING_TEXT = {
-    no_context_no_knowledge: "Zu dieser Frage gibt es keine Fundstelle in den freigegebenen Dokumenten. Es wurde bewusst nicht geantwortet, statt zu raten.",
-    index_stale: "Die Wissensbasis hat sich seit dem letzten Indexaufbau geändert oder enthält nur einen letzten bekannten Stand. Die Antwort kann veraltet sein.",
-    index_age_warning: "Der Index ist älter als 24 Stunden, wurde aber inhaltlich gegen die aktuellen freigegebenen Dokumente verifiziert.",
-    index_incompatible: "Der Index passt technisch nicht zur aktuellen Index-, Chunking- oder Embedding-Konfiguration und muss neu aufgebaut werden.",
-    index_error: "Der Index oder sein Manifest enthält einen Dokument- oder Prüfungsfehler. Alte Fundstellen gelten nicht als aktuell.",
-    embedding_model_identity_unverified: "Das konfigurierte Embedding-Modell ist vorhanden, aber Ollama lieferte keinen stabilen Modelldigest zur vollständigen Identitätsprüfung.",
-    index_missing: "Es existiert noch kein lokaler Index. Zuerst einen Reindex ausführen.",
-    embedding_model_unavailable: "Das Embedding-Modell ist nicht verfügbar. Läuft Ollama, und ist das Modell geladen?",
-    search_failed: "Die Suche im lokalen Index ist fehlgeschlagen.",
-    rate_limited: "Limit erreicht: eine Anfrage pro 60 Sekunden.",
-    concurrency_limited: "Es läuft bereits eine Anfrage. Bitte diese abwarten.",
-    answer_provider_unavailable: "Das lokale Antwortmodell ist nicht erreichbar. Läuft Ollama?",
-    answer_model_unavailable: "Es ist kein lokales Antwortmodell konfiguriert.",
-    model_response_invalid: "Das Modell hat eine unbrauchbare Antwort geliefert. Sie wurde verworfen statt ungeprüft angezeigt.",
-    prompt_budget_exceeded: "Die Anfrage war zusammen mit den Fundstellen zu groß.",
-    model_source_validation_failed: "Das Modell hat keine oder eine nicht angebotene Quelle zitiert. Die Antwort wurde verworfen.",
+    no_context_no_knowledge: "Zu dieser Frage liegt keine passende Information vor. Es wurde bewusst nicht geraten.",
+    index_stale: {
+      summary: "Die Wissensbasis wurde seit der letzten Aktualisierung möglicherweise verändert. Die Antwort kann veraltet sein.",
+      detail: "Die Wissensbasis hat sich seit dem letzten Indexaufbau geändert oder enthält nur einen letzten bekannten Stand. Die Antwort kann veraltet sein."
+    },
+    index_age_warning: {
+      summary: "Die Wissensbasis wurde länger nicht aktualisiert, ihr Inhalt wurde aber geprüft.",
+      detail: "Der Index ist älter als 24 Stunden, wurde aber inhaltlich gegen die aktuellen freigegebenen Dokumente verifiziert."
+    },
+    index_incompatible: {
+      summary: "Die Wissensbasis muss neu aufgebaut werden, bevor sie wieder genutzt werden kann.",
+      detail: "Der Index passt technisch nicht zur aktuellen Index-, Chunking- oder Embedding-Konfiguration und muss neu aufgebaut werden."
+    },
+    index_error: {
+      summary: "Die Wissensbasis enthält einen Fehler. Ältere Ergebnisse gelten nicht als aktuell.",
+      detail: "Der Index oder sein Manifest enthält einen Dokument- oder Prüfungsfehler. Alte Fundstellen gelten nicht als aktuell."
+    },
+    embedding_model_identity_unverified: {
+      summary: "Die Wissenssuche konnte nicht vollständig überprüft werden, funktioniert aber weiterhin.",
+      detail: "Das konfigurierte Embedding-Modell ist vorhanden, aber Ollama lieferte keinen stabilen Modelldigest zur vollständigen Identitätsprüfung."
+    },
+    index_missing: {
+      summary: "Es liegt noch keine Wissensbasis vor.",
+      detail: "Es existiert noch kein lokaler Index. Zuerst einen Reindex ausführen."
+    },
+    embedding_model_unavailable: {
+      summary: "Die Wissenssuche ist aktuell nicht verfügbar.",
+      detail: "Das Embedding-Modell ist nicht verfügbar. Läuft Ollama, und ist das Modell geladen?"
+    },
+    search_failed: {
+      summary: "Die Suche ist fehlgeschlagen.",
+      detail: "Die Suche im lokalen Index ist fehlgeschlagen."
+    },
+    rate_limited: "Es kann nur eine Frage pro Minute gestellt werden – bitte kurz warten.",
+    concurrency_limited: "Es läuft noch eine andere Anfrage. Bitte kurz warten.",
+    answer_provider_unavailable: {
+      summary: "Das Antwortmodell ist aktuell nicht erreichbar.",
+      detail: "Das lokale Antwortmodell ist nicht erreichbar. Läuft Ollama?"
+    },
+    answer_model_unavailable: "Es ist kein Antwortmodell verfügbar.",
+    model_response_invalid: "Die Antwort konnte nicht verwendet werden und wurde verworfen.",
+    prompt_budget_exceeded: "Die Anfrage war zusammen mit den gefundenen Informationen zu umfangreich für eine Antwort.",
+    model_source_validation_failed: "Die Antwort konnte nicht ausreichend belegt werden und wurde verworfen.",
     model_answer_too_large: "Die Antwort war zu lang und wurde verworfen.",
-    model_action_claim_blocked: "Das Modell hat behauptet, selbst etwas ausgeführt zu haben. Die Antwort wurde blockiert – hier wird nichts ausgeführt.",
-    model_tool_call_output_blocked: "Die Modellausgabe enthielt eine werkzeugartige Struktur und wurde blockiert.",
-    model_output_contains_path_or_url: "Die Antwort enthält einen Pfad oder eine URL – bitte mit Vorsicht lesen.",
+    model_action_claim_blocked: "Die Antwort wurde blockiert, weil sie eine eigene Aktion behauptet hat. Hier wird nichts ausgeführt.",
+    model_tool_call_output_blocked: "Die Antwort wurde blockiert, weil sie eine ungewöhnliche technische Struktur enthielt.",
+    model_output_contains_path_or_url: "Die Antwort enthält einen Pfad oder Link – bitte vorsichtig behandeln.",
     model_output_contains_command_reference: "Die Antwort nennt einen Befehl. Hier wird nichts ausgeführt.",
-    internal_error: "Interner Fehler bei der Beantwortung."
+    internal_error: "Es ist ein interner Fehler bei der Beantwortung aufgetreten."
   };
 
+  // Gleiches Format wie WARNING_TEXT oben (Phase 5B).
   var TRANSPORT_TEXT = {
-    AUTH_REQUIRED: "Der Server hat kein Zugriffstoken mitgeschickt.",
-    AUTH_INVALID: "Das serverseitige Zugriffstoken wurde abgelehnt.",
-    AUTH_NOT_CONFIGURED: "Auf dem Server ist AI_ROUTER_KNOWLEDGE_TOKEN nicht gesetzt. Ohne diese Umgebungsvariable ist der Wissenspfad nicht nutzbar.",
+    AUTH_REQUIRED: {
+      summary: "Die Wissensabfrage ist aktuell nicht verfügbar.",
+      detail: "Der Server hat kein Zugriffstoken mitgeschickt."
+    },
+    AUTH_INVALID: {
+      summary: "Die Wissensabfrage ist aktuell nicht verfügbar.",
+      detail: "Das serverseitige Zugriffstoken wurde abgelehnt."
+    },
+    AUTH_NOT_CONFIGURED: {
+      summary: "Die Wissensabfrage ist aktuell nicht verfügbar.",
+      detail: "Auf dem Server ist AI_ROUTER_KNOWLEDGE_TOKEN nicht gesetzt. Ohne diese Umgebungsvariable ist der Wissenspfad nicht nutzbar."
+    },
     VALIDATION_FAILED: "Die Frage wurde abgelehnt: höchstens 500 Zeichen, eine Zeile, keine Pfade, URLs oder geheim aussehenden Inhalte.",
     SECURITY_BLOCKED: "Die Frage wurde blockiert. Ausführungsaufforderungen und geheim aussehende Inhalte sind hier nicht zulässig.",
-    METHOD_NOT_ALLOWED: "Ungültige Anfrageart.",
-    ORIGIN_NOT_ALLOWED: "Direkter Browserzugriff auf den Wissenspfad ist nicht zulässig.",
+    METHOD_NOT_ALLOWED: {
+      summary: "Diese Anfrage konnte nicht verarbeitet werden.",
+      detail: "Ungültige Anfrageart."
+    },
+    ORIGIN_NOT_ALLOWED: {
+      summary: "Dieser Zugriffsweg ist nicht zulässig.",
+      detail: "Direkter Browserzugriff auf den Wissenspfad ist nicht zulässig."
+    },
     INVALID_REQUEST: "Die Anfrage konnte nicht gelesen werden.",
-    INTERNAL_ERROR: "Interner Fehler."
+    INTERNAL_ERROR: "Es ist ein interner Fehler aufgetreten."
   };
 
   // Every error the transcribe route can return, in plain German. Speech
   // input is a convenience for filling the text field, not a separate
   // channel that needs its own vocabulary of technical codes.
   var TRANSCRIBE_ERROR_TEXT = {
-    WHISPER_NOT_CONFIGURED: "Auf dem Server ist kein lokaler whisper-server eingerichtet (AI_ROUTER_WHISPER_SERVER_URL fehlt).",
-    WHISPER_UNAVAILABLE: "Der lokale whisper-server ist nicht erreichbar. Läuft er?",
-    WHISPER_INVALID_RESPONSE: "Der lokale whisper-server hat eine unbrauchbare Antwort geliefert.",
+    WHISPER_NOT_CONFIGURED: "Die Spracheingabe ist aktuell nicht eingerichtet.",
+    WHISPER_UNAVAILABLE: "Die Spracheingabe ist aktuell nicht erreichbar.",
+    WHISPER_INVALID_RESPONSE: "Die Spracheingabe konnte nicht verarbeitet werden.",
     PAYLOAD_TOO_LARGE: "Die Aufnahme war zu lang.",
     INVALID_REQUEST: "Die Aufnahme konnte nicht gesendet werden.",
     METHOD_NOT_ALLOWED: "Interner Fehler bei der Aufnahme.",
     INTERNAL_ERROR: "Interner Fehler bei der Transkription."
+  };
+
+  // Phase 5B (DEC-009/DEC-010 Folgearbeit, UI only): nur für die drei Codes,
+  // deren ursprünglicher Wortlaut interne Bezeichner nannte (whisper-server,
+  // AI_ROUTER_WHISPER_SERVER_URL) - dieser Text erscheint nicht auf der
+  // ersten Ebene, sondern nur als title-Attribut auf #mic-status (siehe
+  // setMicMessage unten), erreichbar per Hover/Fokus, nicht gelöscht.
+  var TRANSCRIBE_ERROR_DETAIL = {
+    WHISPER_NOT_CONFIGURED: "Auf dem Server ist kein lokaler whisper-server eingerichtet (AI_ROUTER_WHISPER_SERVER_URL fehlt).",
+    WHISPER_UNAVAILABLE: "Der lokale whisper-server ist nicht erreichbar.",
+    WHISPER_INVALID_RESPONSE: "Der lokale whisper-server hat eine unbrauchbare Antwort geliefert."
   };
 
   var STATE_HINT = {
@@ -972,16 +1033,25 @@
 
   // Every error the speak route can return, in plain German.
   var SPEAK_ERROR_TEXT = {
-    PIPER_NOT_CONFIGURED: "Auf dem Server ist keine lokale Sprachausgabe eingerichtet (AI_ROUTER_PIPER_BINARY_PATH/AI_ROUTER_PIPER_VOICE_MODEL_PATH fehlt).",
-    PIPER_UNAVAILABLE: "Die lokale Sprachausgabe ist nicht verfügbar.",
-    PIPER_TIMEOUT: "Die lokale Sprachausgabe hat zu lange gebraucht.",
+    PIPER_NOT_CONFIGURED: "Die Sprachausgabe ist aktuell nicht eingerichtet.",
+    PIPER_UNAVAILABLE: "Die Sprachausgabe ist aktuell nicht verfügbar.",
+    PIPER_TIMEOUT: "Die Sprachausgabe hat zu lange gebraucht.",
     PIPER_OUTPUT_TOO_LARGE: "Die erzeugte Sprachausgabe war zu groß.",
-    PIPER_FAILED: "Die lokale Sprachausgabe ist fehlgeschlagen.",
-    PIPER_INVALID_OUTPUT: "Die lokale Sprachausgabe hat kein Audio erzeugt.",
+    PIPER_FAILED: "Die Sprachausgabe ist fehlgeschlagen.",
+    PIPER_INVALID_OUTPUT: "Die Sprachausgabe konnte kein Audio erzeugen.",
     PAYLOAD_TOO_LARGE: "Der Text war zu lang.",
     INVALID_REQUEST: "Der Text konnte nicht gesendet werden.",
     METHOD_NOT_ALLOWED: "Interner Fehler bei der Sprachausgabe.",
     INTERNAL_ERROR: "Interner Fehler bei der Sprachausgabe."
+  };
+
+  // Phase 5B (DEC-009/DEC-010 Folgearbeit, UI only): nur PIPER_NOT_CONFIGURED
+  // nannte bisher interne Bezeichner (zwei Umgebungsvariablen) - dieser Text
+  // erscheint nicht mehr auf der ersten Ebene, sondern nur als
+  // title-Attribut auf #speak-status (siehe Vorlesen-Click-Handler unten),
+  // erreichbar per Hover/Fokus, nicht gelöscht.
+  var SPEAK_ERROR_DETAIL = {
+    PIPER_NOT_CONFIGURED: "Auf dem Server ist keine lokale Sprachausgabe eingerichtet (AI_ROUTER_PIPER_BINARY_PATH/AI_ROUTER_PIPER_VOICE_MODEL_PATH fehlt)."
   };
 
   function setBadge(text, kind) {
@@ -989,12 +1059,49 @@
     stateBadge.className = "badge " + kind;
   }
 
+  // Phase 5B (DEC-009/DEC-010 Folgearbeit, UI only): liest einen WARNING_TEXT-
+  // /TRANSPORT_TEXT-Eintrag aus, der entweder ein einfacher String (nichts zu
+  // verbergen) oder ein { summary, detail }-Objekt ist (siehe Kommentar bei
+  // WARNING_TEXT oben). Ein Code ohne Eintrag - ein der UI unbekannter,
+  // künftiger Code - fällt weiterhin auf den rohen Code als sichtbaren Text
+  // zurück statt ihn zu verschlucken; sein detail zeigt den Code selbst,
+  // damit er trotzdem auffindbar bleibt.
+  function noticeTextFor(dict, code, fallback) {
+    var entry = dict[code];
+    if (entry && typeof entry === "object") return { summary: entry.summary, detail: entry.detail };
+    if (typeof entry === "string") return { summary: entry, detail: null };
+    return { summary: fallback || code, detail: fallback ? "Code: " + code : null };
+  }
+
   function renderNotices(list, kind) {
     noticesEl.innerHTML = "";
     for (var i = 0; i < list.length; i += 1) {
+      var item = list[i];
       var div = document.createElement("div");
       div.className = "notice " + kind;
-      div.innerHTML = "<strong>" + escapeHtml(list[i].title) + "</strong>" + escapeHtml(list[i].text);
+      var summaryEl = document.createElement("p");
+      summaryEl.style.margin = "0";
+      summaryEl.textContent = item.summary;
+      div.appendChild(summaryEl);
+
+      // Nur gezeigt, wenn tatsächlich ein ursprünglich technischerer Wortlaut
+      // existiert (siehe noticeTextFor) - eine bereits klare Meldung bekommt
+      // keine leere Disclosure aufgedrängt (DEC-009: ruhige Standardansicht).
+      if (item.detail) {
+        var discId = "disc-notice-" + i;
+        var disclosure = document.createElement("div");
+        disclosure.className = "disclosure";
+        disclosure.style.marginTop = "8px";
+        disclosure.innerHTML =
+          '<button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="' + discId + '">'
+          + "<span>Technische Details</span><span class=\"disclosure-icon\" aria-hidden=\"true\">⌄</span>"
+          + "</button>"
+          + '<div class="disclosure-body" id="' + discId + '" aria-hidden="true">'
+          + "<div><p>" + escapeHtml(item.detail) + "</p></div>"
+          + "</div>";
+        div.appendChild(disclosure);
+        bindDisclosure(disclosure);
+      }
       noticesEl.appendChild(div);
     }
   }
@@ -1069,8 +1176,9 @@
   function showTransportError(code, message) {
     resultCard.hidden = false;
     setBadge("nicht verfügbar", "fail");
-    stateHint.textContent = "Die Anfrage hat den Wissenspfad nicht erreicht.";
-    renderNotices([{ title: code, text: TRANSPORT_TEXT[code] || message || "Unbekannter Fehler." }], "fail");
+    stateHint.textContent = "Die Anfrage konnte nicht verarbeitet werden.";
+    var notice = noticeTextFor(TRANSPORT_TEXT, code, message);
+    renderNotices([{ summary: notice.summary, detail: notice.detail }], "fail");
     answerEl.textContent = "";
     sourcesEl.innerHTML = "";
     currentAnswerText = "";
@@ -1089,7 +1197,8 @@
 
     var notices = [];
     for (var i = 0; i < warnings.length; i += 1) {
-      notices.push({ title: warnings[i], text: WARNING_TEXT[warnings[i]] || "" });
+      var notice = noticeTextFor(WARNING_TEXT, warnings[i]);
+      notices.push({ summary: notice.summary, detail: notice.detail });
     }
     renderNotices(notices, state === "unavailable" ? "fail" : "warn");
 
@@ -1194,6 +1303,7 @@
     // schützt der deaktivierte Button.
     speakBtn.disabled = true;
     speakStatusEl.textContent = "Sprachausgabe wird erzeugt …";
+    speakStatusEl.title = "";
 
     if (currentAudioUrl) { URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; }
 
@@ -1216,6 +1326,10 @@
       try { var errPayload = await response.json(); errorCode = (errPayload.error && errPayload.error.code) || errorCode; } catch (e) { /* keep default */ }
       speakBtn.disabled = false;
       speakStatusEl.textContent = SPEAK_ERROR_TEXT[errorCode] || "Sprachausgabe fehlgeschlagen.";
+      // Phase 5B (DEC-009/DEC-010 Folgearbeit, UI only): siehe Kommentar bei
+      // setMicMessage oben - title statt einer Disclosure, weil #speak-status
+      // dieselbe kurzlebige role="status"-Live-Region-Rolle hat wie #mic-status.
+      speakStatusEl.title = SPEAK_ERROR_DETAIL[errorCode] || "";
       return;
     }
 
@@ -1385,11 +1499,19 @@
   // Bestätigung "Transkript eingefügt" nie zu sehen, weil der nächste
   // Countdown-Tick sie sofort überschrieb. Eine Meldung hier bleibt stehen,
   // bis der Mikrofon-Ablauf selbst sie ersetzt.
-  function setMicMessage(text, kind) {
+  // Phase 5B (DEC-009/DEC-010 Folgearbeit, UI only): detail ist optional und
+  // bewahrt einen ursprünglich technischeren Wortlaut (z. B. Servicename,
+  // Umgebungsvariable), ohne ihn auf der ersten Ebene zu zeigen - #mic-status
+  // ist eine role="status"-Live-Region für kurze, wechselnde Einzeiler; ein
+  // eigenes Disclosure-Widget wie bei den Notices oben wäre dort ein
+  // Fremdkörper. Das title-Attribut ist die kleinstmögliche Form, technische
+  // Details nicht zu löschen, sondern nur von der ersten Ansicht wegzuhalten.
+  function setMicMessage(text, kind, detail) {
     if (!micStatusEl) return;
     micStatusEl.textContent = text || "";
     micStatusEl.className = kind === "fail" ? "mic-note fail" : "mic-note";
     micStatusEl.hidden = !text;
+    micStatusEl.title = detail || "";
   }
 
   // "idle" for outcomes that are not a failure (nothing recorded, no
@@ -1409,10 +1531,10 @@
     jarvisState.enter("idle", "");
   }
 
-  function setMicError(text) {
+  function setMicError(text, detail) {
     micBtn.disabled = false;
     micBtn.textContent = "Aufnahme starten";
-    setMicMessage(text, "fail");
+    setMicMessage(text, "fail", detail);
     jarvisState.enter("error", "");
   }
 
@@ -1445,7 +1567,8 @@
         return;
       }
       if (payload.error) {
-        setMicError(TRANSCRIBE_ERROR_TEXT[payload.error.code] || "Transkription fehlgeschlagen.");
+        var transcribeCode = payload.error.code;
+        setMicError(TRANSCRIBE_ERROR_TEXT[transcribeCode] || "Transkription fehlgeschlagen.", TRANSCRIBE_ERROR_DETAIL[transcribeCode]);
         return;
       }
 
