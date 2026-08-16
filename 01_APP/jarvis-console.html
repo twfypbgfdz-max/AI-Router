@@ -6,42 +6,66 @@
 <title>Felix Core – Jarvis</title>
 <style>
   :root {
-    color-scheme: light dark;
-    --bg: #f4f5f7;
-    --surface: #ffffff;
-    --surface-2: #f8f9fb;
-    --border: #e4e5ea;
-    --text: #1c1d21;
-    --text-muted: #6b6c76;
-    --accent: #3b5bdb;
-    --accent-contrast: #ffffff;
-    --ok-fg: #14804a; --ok-bg: #14804a1a; --ok-bd: #14804a40;
-    --warn-fg: #a16207; --warn-bg: #a162071a; --warn-bd: #a1620740;
-    --fail-fg: #c92a2a; --fail-bg: #c92a2a1a; --fail-bd: #c92a2a40;
-    --pending-fg: #6b6c76; --pending-bg: #6b6c761a; --pending-bd: #6b6c7640;
+    color-scheme: dark light;
+    /* DEC-010 Abschnitt 5: dunkle Graphit-Basis als Standard (dark-first),
+       kein aufgehelltes Standard-Grau. Eine Hell-Präferenz des Betriebs-
+       systems bekommt die frühere Palette als Override, siehe
+       @media (prefers-color-scheme: light) unten - unverändert gegenüber
+       dem bisherigen Light-Theme, nur nicht mehr der Standardfall. */
+    --bg: #0a0c10;
+    --surface: #12151c;
+    --surface-2: #181c25;
+    --border: #262d3a;
+    --text: #edeff3;
+    --text-muted: #93a0b3;
+    /* Signal-Blau: ausschließlich für Zustand/Fokus (Orb, aktive Auswahl,
+       fokussierte Eingabe) - keine Dekorationsfarbe (DEC-010 Abschnitt 5). */
+    --accent: #4fa6d9;
+    --accent-contrast: #06121a;
+    /* Statusfarben bewusst getrennt vom Akzent: ok/warn/fail/pending
+       bedeuten Systemzustand, nie Jarvis' eigene Aktivität. */
+    --ok-fg: #5fbf8a; --ok-bg: #5fbf8a1a; --ok-bd: #5fbf8a40;
+    --warn-fg: #e0a458; --warn-bg: #e0a4581a; --warn-bd: #e0a45840;
+    --fail-fg: #e2665f; --fail-bg: #e2665f1a; --fail-bd: #e2665f40;
+    --pending-fg: #93a0b3; --pending-bg: #93a0b31a; --pending-bd: #93a0b340;
     --radius-lg: 18px;
     --radius-md: 12px;
     --radius-sm: 8px;
+
+    /* Systemschrift als Hauptschrift, Mono ausschließlich für technische
+       Informationen (Zeitstempel, Codes, Kennungen) - DEC-010 Abschnitt 5. */
+    --font-ui: -apple-system, "Segoe UI", system-ui, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+
+    /* 8-pt-Abstandsraster (DEC-010 Abschnitt 5). --space-1 ist die einzige
+       Nicht-8er-Stufe, ein dokumentierter Mikro-Schritt fuer Faelle, in
+       denen --space-2 zu grob waere - keine Freihandwerte darueber hinaus. */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 16px;
+    --space-4: 24px;
+    --space-5: 40px;
+    --space-6: 64px;
   }
-  @media (prefers-color-scheme: dark) {
+  @media (prefers-color-scheme: light) {
     :root {
-      --bg: #16171c;
-      --surface: #1e1f26;
-      --surface-2: #26272f;
-      --border: #33343d;
-      --text: #eceef2;
-      --text-muted: #9a9ba6;
-      --accent: #7c9bff;
-      --accent-contrast: #101223;
-      --ok-fg: #4fd693; --ok-bg: #4fd6931a; --ok-bd: #4fd69340;
-      --warn-fg: #e3b341; --warn-bg: #e3b3411a; --warn-bd: #e3b34140;
-      --fail-fg: #ff8080; --fail-bg: #ff808020; --fail-bd: #ff808045;
-      --pending-fg: #9a9ba6; --pending-bg: #9a9ba61a; --pending-bd: #9a9ba640;
+      --bg: #f4f5f7;
+      --surface: #ffffff;
+      --surface-2: #f8f9fb;
+      --border: #e4e5ea;
+      --text: #1c1d21;
+      --text-muted: #6b6c76;
+      --accent: #3b5bdb;
+      --accent-contrast: #ffffff;
+      --ok-fg: #14804a; --ok-bg: #14804a1a; --ok-bd: #14804a40;
+      --warn-fg: #a16207; --warn-bg: #a162071a; --warn-bd: #a1620740;
+      --fail-fg: #c92a2a; --fail-bg: #c92a2a1a; --fail-bd: #c92a2a40;
+      --pending-fg: #6b6c76; --pending-bg: #6b6c761a; --pending-bd: #6b6c7640;
     }
   }
   * { box-sizing: border-box; }
   body {
-    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-family: var(--font-ui);
     background: var(--bg); color: var(--text);
     max-width: 680px; margin: 0 auto; padding: 36px 20px 60px;
     line-height: 1.45;
@@ -111,9 +135,32 @@
   }
   .src-head { font-weight: 600; font-size: 0.88rem; margin-bottom: 2px; }
   .src-meta { color: var(--text-muted); font-size: 0.79rem; }
-  .src-key { font-family: ui-monospace, Consolas, monospace; color: var(--accent); }
+  .src-key { font-family: var(--font-mono); color: var(--accent); }
   .foot { color: var(--text-muted); font-size: 0.8rem; margin-top: 26px; }
-  .foot code { font-family: ui-monospace, Consolas, monospace; }
+  .foot code { font-family: var(--font-mono); }
+
+  /* --- Jarvis-Bereiche (DEC-010 Abschnitt 7) --------------------------
+     Single-Page-Struktur mit Sections/Tabs, keine separaten Routen. Fünf
+     Bereiche: Voice Zentrum (Standard-Tab beim Laden, siehe DEC-010
+     Risiko 1), Heute, Projekte, System, Verlauf. Diese Phase liefert
+     ausschließlich Layout und Komponentenstruktur - keine Datenanbindung,
+     siehe die Platzhaltertexte in den jeweiligen Panels. */
+  .tabs {
+    display: flex; gap: var(--space-2);
+    margin-bottom: var(--space-4);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .tabs .tab {
+    background: transparent; color: var(--text-muted);
+    font-weight: 600; font-size: 0.86rem;
+    padding: var(--space-2) var(--space-2) var(--space-3);
+    border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+    white-space: nowrap;
+  }
+  .tabs .tab:hover { color: var(--text); }
+  .tabs .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+  .panel[hidden] { display: none; }
 
   /* --- Jarvis-Orb ----------------------------------------------------
      Pure renderer: every rule below is keyed off #orb[data-state="..."],
@@ -267,6 +314,16 @@
   <p class="card-hint" id="jarvis-ready-reasons" hidden></p>
 </header>
 
+<nav class="tabs" role="tablist" aria-label="Jarvis-Bereiche">
+  <button type="button" role="tab" id="tab-voice" aria-controls="panel-voice" aria-selected="true" class="tab">Voice Zentrum</button>
+  <button type="button" role="tab" id="tab-heute" aria-controls="panel-heute" aria-selected="false" class="tab">Heute</button>
+  <button type="button" role="tab" id="tab-projekte" aria-controls="panel-projekte" aria-selected="false" class="tab">Projekte</button>
+  <button type="button" role="tab" id="tab-system" aria-controls="panel-system" aria-selected="false" class="tab">System</button>
+  <button type="button" role="tab" id="tab-verlauf" aria-controls="panel-verlauf" aria-selected="false" class="tab">Verlauf</button>
+</nav>
+
+<section id="panel-voice" role="tabpanel" aria-labelledby="tab-voice" class="panel">
+
 <!-- Rein dekorativ: aria-hidden, weil #ask-status (role="status",
      aria-live="polite") unten der einzige verbindliche Statuskanal bleibt.
      Der Orb spiegelt ausschließlich jarvisState und trifft selbst keine
@@ -306,6 +363,28 @@
     <span class="status" id="speak-status" role="status" aria-live="polite"></span>
   </div>
   <div id="sources"></div>
+</section>
+
+</section>
+
+<section id="panel-heute" role="tabpanel" aria-labelledby="tab-heute" class="panel card" hidden>
+  <h2>Heute</h2>
+  <p class="card-hint">Tagesüberblick aus dem Felix-Cockpit (Operational Response Profile, DEC-007). Dieser Bereich zeigt noch keine Daten – die Anbindung ist eine eigene, spätere Umsetzungsphase (DEC-010, Abschnitt 7).</p>
+</section>
+
+<section id="panel-projekte" role="tabpanel" aria-labelledby="tab-projekte" class="panel card" hidden>
+  <h2>Projekte</h2>
+  <p class="card-hint">Statuskarten aus dem Vault-Projektregister. Dieser Bereich zeigt noch keine Daten – die Anbindung ist eine eigene, spätere Umsetzungsphase (DEC-010, Abschnitt 7).</p>
+</section>
+
+<section id="panel-system" role="tabpanel" aria-labelledby="tab-system" class="panel card" hidden>
+  <h2>System</h2>
+  <p class="card-hint">Kompakte, bereits interpretierte Zusammenfassung mit Verweis auf das Command Center für Details (DEC-010, Abschnitt 7) – zeigt nur aggregierte Informationen, keine eigene Statuslogik. Dieser Bereich ist noch nicht angebunden.</p>
+</section>
+
+<section id="panel-verlauf" role="tabpanel" aria-labelledby="tab-verlauf" class="panel card" hidden>
+  <h2>Verlauf</h2>
+  <p class="card-hint">Zurückliegende Fragen und Antworten. Ob und wie das über eine Sitzung hinaus gespeichert wird, ist noch nicht entschieden (DEC-010, Risiko 5). Dieser Bereich zeigt noch keine Einträge.</p>
 </section>
 
 <p class="foot">
@@ -1233,6 +1312,28 @@
     .catch(function () {
       setReadyBadge("Jarvis-Status unbekannt", "pending");
     });
+})();
+</script>
+
+<!-- Reiner UI-Layer: schaltet nur zwischen den fünf Panels aus DEC-010
+     Abschnitt 7 um (Sections/Tabs, keine separaten Routen). Kein Zugriff auf
+     jarvisState, keine Netzwerkanfrage, keine Berührung der Voice-Pipeline
+     im Script oben - siehe DEC-010 Umsetzungsphase 1B ("Nur Layout und
+     Komponentenstruktur, noch keine vollständige Datenintegration"). -->
+<script>
+(function () {
+  "use strict";
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tabs [role="tab"]'));
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      tabs.forEach(function (other) {
+        var selected = other === tab;
+        other.setAttribute("aria-selected", selected ? "true" : "false");
+        var panel = document.getElementById(other.getAttribute("aria-controls"));
+        if (panel) panel.hidden = !selected;
+      });
+    });
+  });
 })();
 </script>
 </body>
