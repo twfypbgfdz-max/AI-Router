@@ -807,23 +807,13 @@
   // already-displayed, already-read answer text back to the server, plays
   // whatever audio/wav comes back. No auto-play, no speech loop, no polling.
   // Die Anzeige behält ihre [K1]-Marker - sie sind der Beleg und gehören zur
-  // gelesenen Antwort. Vorgelesen sind sie sinnlos bis irreführend: Piper
-  // spricht sie wörtlich mit ("K eins"). Bereinigt wird deshalb nur der Text,
-  // der an /api/jarvis/speak geht; currentAnswerText und #answer bleiben
-  // unangetastet. Der Marker wird ersatzlos entfernt, danach werden die
-  // dabei entstehenden doppelten Leerzeichen und die vom Satzzeichen
-  // abgetrennten Lücken wieder geschlossen ("laut [K1] gilt" -> "laut gilt",
-  // "gilt [K1]." -> "gilt."). Bleibt nichts übrig, wird der Originaltext
-  // gesendet statt eine leere Anfrage.
-  function speechTextFor(text) {
-    var source = String(text == null ? "" : text);
-    var spoken = source
-      .replace(/\[K\d+\]/g, "")
-      .replace(/[ \t]{2,}/g, " ")
-      .replace(/[ \t]+([,.;:!?])/g, "$1")
-      .trim();
-    return spoken || source;
-  }
+  // gelesenen Antwort; currentAnswerText und #answer bleiben unangetastet.
+  // DEC-008: Die Sprechbereinigung (Marker/relative Vault-Pfade/Whitespace)
+  // liegt nicht mehr hier, sondern serverseitig in
+  // orchestrator/jarvis-speak-normalize.js, angewendet vor dem Piper-Aufruf
+  // in orchestrator/jarvis-speak-handler.js. Das Frontend sendet deshalb den
+  // unveränderten Antworttext, ohne eine zweite, hier gepflegte Kopie
+  // derselben Bereinigungslogik.
 
   speakBtn.addEventListener("click", async function () {
     if (speaking || !currentAnswerText) return;
@@ -843,7 +833,7 @@
       response = await fetch("/api/jarvis/speak", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: speechTextFor(currentAnswerText) })
+        body: JSON.stringify({ text: currentAnswerText })
       });
     } catch (e) {
       speakBtn.disabled = false;

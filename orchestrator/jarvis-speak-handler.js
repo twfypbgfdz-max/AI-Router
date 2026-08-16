@@ -6,6 +6,7 @@ import {
 } from "./jarvis-speak-config.js";
 import { JarvisSpeakError } from "./jarvis-speak-error.js";
 import { createJarvisSpeakService } from "./jarvis-speak-service.js";
+import { normalizeForSpeech } from "./jarvis-speak-normalize.js";
 
 const HTTP_STATUS = Object.freeze({
   METHOD_NOT_ALLOWED: 405,
@@ -71,7 +72,13 @@ export function createJarvisSpeakHandler({ service = createJarvisSpeakService() 
         return sendJsonError(response, "INVALID_REQUEST");
       }
 
-      const result = await service.speak(text);
+      // DEC-008: deterministic, model-free cleanup of display-only
+      // artifacts (source markers, relative vault paths) before the text
+      // reaches Piper. Applied after the length/shape validation above (so
+      // the character cap still governs the actual request body, not a
+      // post-normalization shorter string) and before service.speak - no
+      // request/response contract field changes.
+      const result = await service.speak(normalizeForSpeech(text));
       return sendAudio(response, result.audio);
     } catch (error) {
       const code = error instanceof JarvisSpeakError ? error.code : "INTERNAL_ERROR";

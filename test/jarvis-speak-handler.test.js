@@ -90,6 +90,20 @@ test("passes the trimmed text through to the service", async () => {
   assert.equal(seen, "Wo liegt Felix Core?");
 });
 
+// DEC-008: normalizeForSpeech is applied between trim() and service.speak().
+// The test above already proves the identity case (no markers/paths - no
+// change); this proves the transformation actually happens at the handler,
+// not only in isolation in jarvis-speak-normalize.test.js.
+test("normalizes source markers and relative vault paths before calling the service", async () => {
+  let seen = null;
+  const handler = createJarvisSpeakHandler({ service: fakeService(async (text) => { seen = text; return { audio: Buffer.from("RIFF") }; }) });
+  const dirty = "Laut [K1] steht das in 10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md.";
+  await handler(request({ body: { text: dirty } }), response());
+  assert.ok(!seen.includes("[K1]"));
+  assert.ok(!seen.includes(".md"));
+  assert.equal(seen, "Laut steht das in.");
+});
+
 test("returns the audio buffer as audio/wav with no JSON envelope", async () => {
   const handler = createJarvisSpeakHandler({ service: fakeService(async () => ({ audio: Buffer.from("RIFFDATA") })) });
   const res = response();
