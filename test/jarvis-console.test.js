@@ -163,9 +163,9 @@ test("voice input uses local WAV recording, never a browser cloud speech API", (
   assert.ok(!/MediaRecorder/.test(PAGE), "no MediaRecorder - its compressed output needs ffmpeg on whisper-server");
 });
 
-test("the page talks only to its own five server-side bridges, never to a knowledge, STT or TTS backend directly", () => {
+test("the page talks only to its own six server-side bridges, never to a knowledge, STT or TTS backend directly", () => {
   const fetchTargets = [...PAGE.matchAll(/fetch\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/ready", "/api/jarvis/speak", "/api/jarvis/today", "/api/jarvis/transcribe"]);
+  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/ready", "/api/jarvis/speak", "/api/jarvis/system", "/api/jarvis/today", "/api/jarvis/transcribe"]);
 });
 
 // --- P2-C: readiness display --------------------------------------------

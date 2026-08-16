@@ -222,6 +222,10 @@
   .info-panel-row:last-child { border-bottom: 0; }
   .info-panel-row .k { color: var(--text); }
   .info-panel-row .v { color: var(--text-muted); font-family: var(--font-mono); font-size: var(--text-xs); }
+  /* Technische Meta-Zeile (Vertragsversion, Erzeugungszeitpunkt) unter einem
+     .info-panel - Mono, gedämpft, klar als technische Information markiert
+     (DEC-010 Abschnitt 5). */
+  .meta-line { color: var(--text-muted); font-family: var(--font-mono); font-size: var(--text-xs); margin: var(--space-2) 0 0; }
 
   /* Disclosure: ein wiederverwendbarer Auf-/Zuklapp-Baustein. Einzeln
      genutzt wirkt er wie ein Dropdown (eine Zeile, ein Inhalt); mehrere
@@ -565,21 +569,17 @@
 </section>
 
 <section id="panel-system" role="tabpanel" aria-labelledby="tab-system" class="panel" hidden>
-  <section class="card card--empty">
+  <section class="card">
     <h2>System</h2>
-    <p class="card-hint">Kompakte, bereits interpretierte Zusammenfassung – zeigt nur aggregierte Informationen, keine eigene Statuslogik (DEC-010, Abschnitt 7).</p>
-    <div class="info-panel">
-      <div class="info-panel-row"><span class="k">AI-Router</span><span class="v">–</span></div>
-      <div class="info-panel-row"><span class="k">Command Center</span><span class="v">–</span></div>
-      <div class="info-panel-row"><span class="k">Vault-Sync</span><span class="v">–</span></div>
-    </div>
+    <p class="card-hint" id="system-hint">Wird geladen …</p>
+    <div id="system-content"></div>
     <div class="disclosure" data-disclosure>
       <button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="disc-system">
-        <span>Woher kommen diese Werte später?</span>
+        <span>Woher kommen diese Werte?</span>
         <span class="disclosure-icon" aria-hidden="true">⌄</span>
       </button>
       <div class="disclosure-body" id="disc-system" aria-hidden="true">
-        <div><p>Aus dem Felix Command Center, mit Verweis auf dort für Details statt eigener Log- oder Statuslogik hier. Dieser Bereich ist noch nicht angebunden.</p></div>
+        <div><p>Aus dem Felix Command Center (GET /api/companion/status, Status-Companion-Datenvertrag v1) – bereits dort interpretierte Werte, unverändert angezeigt. Keine eigene Statuslogik, keine Berechnung von Aktualität, kein Ampel-System hier (DEC-010, Abschnitt 7; DEC-005).</p></div>
       </div>
     </div>
   </section>
@@ -1533,12 +1533,12 @@
 <!-- Reiner UI-Layer: schaltet zwischen den fünf Panels aus DEC-010 Abschnitt 7
      um (Sections/Tabs, keine separaten Routen), steuert die Dropdown-/
      Accordion-Bausteine (Phase 2), die Pfeiltasten-Navigation der Tabs
-     (Phase 3) sowie Heute/Verlauf mit echten, rein lesenden Daten
-     (Phase 4A). Weiterhin kein Zugriff auf jarvisState und keine Berührung
-     der Voice-Pipeline im Script oben - Heute liest ausschließlich
-     GET /api/jarvis/today (neu, read-only), Verlauf beobachtet nur bereits
-     von der Voice-Pipeline gerenderte DOM-Änderungen, greift aber nie in
-     sie ein. -->
+     (Phase 3) sowie Heute/Verlauf/System mit echten, rein lesenden Daten
+     (Phase 4A/4B). Weiterhin kein Zugriff auf jarvisState und keine
+     Berührung der Voice-Pipeline im Script oben - Heute liest
+     GET /api/jarvis/today, System liest GET /api/jarvis/system (beide neu,
+     read-only), Verlauf beobachtet nur bereits von der Voice-Pipeline
+     gerenderte DOM-Änderungen, greift aber nie in sie ein. -->
 <script>
 (function () {
   "use strict";
@@ -1561,9 +1561,10 @@
         panel.classList.remove("panel-enter");
         void panel.offsetWidth;
         panel.classList.add("panel-enter");
-        // Phase 4A: Daten nur beim tatsächlichen Öffnen laden, kein
+        // Phase 4A/4B: Daten nur beim tatsächlichen Öffnen laden, kein
         // Hintergrundabruf, kein Caching - jede Aktivierung fragt frisch ab.
         if (other.id === "tab-heute") loadHeute();
+        if (other.id === "tab-system") loadSystem();
       } else {
         panel.hidden = true;
         panel.classList.remove("panel-enter");
@@ -1730,6 +1731,70 @@
       .then(function (response) { return response.json(); })
       .then(function (payload) { renderHeute(payload); })
       .catch(function () { renderHeute({ cockpitState: "unavailable", context: null }); });
+  }
+
+  // --- System (DEC-010 Phase 4B) ------------------------------------------
+  //
+  // Ein GET pro Tab-Öffnung gegen die neue, rein lesende Route
+  // /api/jarvis/system (orchestrator/jarvis-system-handler.js), die
+  // ausschließlich Command Centers bestehenden Companion-Vertrag liest
+  // (GET /api/companion/status). Die sieben Felder werden unverändert
+  // angezeigt - keine eigene Statuslogik, keine Berechnung von Aktualität,
+  // kein Ampel-/Farbcode (DEC-005 Abschnitt 5, DEC-010 Abschnitt 7). Die
+  // beiden Text-Wörterbücher unten übersetzen die bereits vom Command
+  // Center gelieferten Enum-Werte wörtlich ins Deutsche - das ist reine
+  // Vokabularübersetzung, keine Interpretation und keine Ableitung.
+  var systemHint = document.getElementById("system-hint");
+  var systemContent = document.getElementById("system-content");
+
+  var COMMAND_CENTER_STATE_TEXT = {
+    unconfigured: "Command Center ist nicht konfiguriert.",
+    unavailable: "Command Center ist gerade nicht erreichbar."
+  };
+  var LEVEL_TEXT = { ok: "ok", warning: "Warnung", error: "Fehler" };
+  var FRESHNESS_TEXT = { fresh: "aktuell", stale: "veraltet", unknown: "unbekannt" };
+
+  function formatAbsoluteTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+
+  function renderSystem(payload) {
+    if (!systemContent) return;
+    clearChildren(systemContent);
+
+    if (!payload || payload.commandCenterState !== "ok" || !payload.status) {
+      var reason = payload && COMMAND_CENTER_STATE_TEXT[payload.commandCenterState];
+      if (systemHint) { systemHint.textContent = reason || "Für System liegt nichts vor."; systemHint.hidden = false; }
+      return;
+    }
+    if (systemHint) systemHint.hidden = true;
+
+    var s = payload.status;
+    addInfoPanel(systemContent, [
+      ["Gesamtstatus", LEVEL_TEXT[s.overallStatus] || s.overallStatus],
+      ["AI-Router", LEVEL_TEXT[s.aiRouterOverallStatus] || s.aiRouterOverallStatus],
+      ["Aktive Warnungen", String(s.activeWarningCount)],
+      ["Letzter erfolgreicher Stand", formatAbsoluteTime(s.lastSuccessfulUpdate)],
+      ["Aktualität", FRESHNESS_TEXT[s.statusFreshness] || s.statusFreshness]
+    ], function (pair) { return pair; });
+
+    var meta = document.createElement("p");
+    meta.className = "meta-line";
+    meta.textContent = "Vertrag " + s.schemaVersion + " · erzeugt " + formatAbsoluteTime(s.generatedAt);
+    systemContent.appendChild(meta);
+  }
+
+  function loadSystem() {
+    if (!systemHint || !systemContent) return;
+    systemHint.textContent = "Wird geladen …";
+    systemHint.hidden = false;
+    clearChildren(systemContent);
+    fetch("/api/jarvis/system")
+      .then(function (response) { return response.json(); })
+      .then(function (payload) { renderSystem(payload); })
+      .catch(function () { renderSystem({ commandCenterState: "unavailable", status: null }); });
   }
 
   // --- Verlauf (DEC-010 Phase 4A) ------------------------------------------
