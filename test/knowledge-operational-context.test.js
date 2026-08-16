@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { createKnowledgeHandler, handleKnowledgeRequest } from "../orchestrator/knowledge-handler.js";
+import { knowledgeServiceInternals } from "../orchestrator/knowledge-service.js";
 import { KNOWLEDGE_TOKEN_ENV_VAR } from "../orchestrator/knowledge-config.js";
 import { TEST_CC_TOKEN, TEST_INTERNAL_TOKEN, MODEL, ragResult, structuredAdapter } from "./cc-knowledge-helpers.js";
 
@@ -186,4 +187,63 @@ test("one handler instance shares its rate budget across a plain call and an ope
   });
   assert.equal(second.response.statusCode, 429);
   assert.ok([...second.response.json().warnings].includes("rate_limited"));
+});
+
+// DEC-007: responseProfile ("operational"/"knowledge") is derived purely
+// from operationalContextState (knowledge-service.js's own already-computed
+// value), never a new caller input, and must stay strictly internal.
+
+test("responseProfileOf derives 'operational' only from operationalContextState 'available'", () => {
+  assert.equal(knowledgeServiceInternals.responseProfileOf("available"), "operational");
+  assert.equal(knowledgeServiceInternals.responseProfileOf("unavailable"), "knowledge");
+});
+
+test("responseProfile never appears in the client-facing payload, with or without operational context", async () => {
+  const generated = operationalOnlyAdapter();
+  const handler = createKnowledgeHandler({
+    env: knowledgeEnv(),
+    timingSafeEqualFn: (a, b) => a.equals(b),
+    eventLogger: { log() {} },
+    retrieveKnowledgeFn: async () => ({ knowledgeState: "no_match", results: [] }),
+    adapterFactory: () => generated.adapter,
+    operationalContextProviderFn: async () => dailyOperationalContext
+  });
+
+  const withOperational = exchange(body());
+  await handler(withOperational.request, withOperational.response);
+  const operationalPayload = withOperational.response.json();
+  assert.ok(!("responseProfile" in operationalPayload));
+
+  const withoutHandler = createKnowledgeHandler({
+    env: knowledgeEnv(),
+    timingSafeEqualFn: (a, b) => a.equals(b),
+    eventLogger: { log() {} },
+    retrieveKnowledgeFn: async () => ({ knowledgeState: "no_match", results: [] }),
+    adapterFactory: () => { throw new Error("must not be called"); },
+    operationalContextProviderFn: async () => null
+  });
+  const withoutOperational = exchange(body({ question: "Was ist mein Fokus?" }));
+  await withoutHandler(withoutOperational.request, withoutOperational.response);
+  const knowledgePayload = withoutOperational.response.json();
+  assert.ok(!("responseProfile" in knowledgePayload));
+});
+
+test("responseProfile is logged as internal safeMetadata, matching operational-context presence", async () => {
+  const loggedEvents = [];
+  const eventLogger = { log(entry) { loggedEvents.push(entry); } };
+  const generated = operationalOnlyAdapter();
+  const handler = createKnowledgeHandler({
+    env: knowledgeEnv(),
+    timingSafeEqualFn: (a, b) => a.equals(b),
+    eventLogger,
+    retrieveKnowledgeFn: async () => ({ knowledgeState: "no_match", results: [] }),
+    adapterFactory: () => generated.adapter,
+    operationalContextProviderFn: async () => dailyOperationalContext
+  });
+
+  const { request, response } = exchange(body());
+  await handler(request, response);
+
+  const observed = loggedEvents.find((entry) => entry.event === "knowledge_observed");
+  assert.equal(observed.safeMetadata.responseProfile, "operational");
 });

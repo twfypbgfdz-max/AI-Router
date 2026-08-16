@@ -72,3 +72,30 @@ test("tasks and calendar blocks not requested by the intent are omitted, not ren
   assert.ok(!block.includes("Aufgaben"));
   assert.ok(!block.includes("Termine"));
 });
+
+// DEC-007: Operational Response Profile rules.
+test("with operational context, the operational response rules are added to ANTWORTREGELN", () => {
+  const text = buildKnowledgeAnswerPromptText({ question: "Q", context: null, results: [], operationalContext: focusContext });
+  const rulesBlock = text.slice(text.indexOf("ANTWORTREGELN"));
+  assert.ok(rulesBlock.includes("Nenne die Kernaussage im ersten Satz"));
+  assert.ok(rulesBlock.includes("Antworte kurz"));
+  assert.ok(rulesBlock.includes("Verwende im Antworttext keine Kennung [K#]"));
+  assert.ok(rulesBlock.includes("Nenne keine technischen Details"));
+  assert.ok(rulesBlock.includes("bereits serverseitig priorisiert"));
+  assert.ok(rulesBlock.includes("Kontextbudget, kein Antwortbudget"));
+});
+
+test("without operational context, the operational response rules are absent (default case unchanged)", () => {
+  const text = buildKnowledgeAnswerPromptText({ question: "Q", context: null, results: [] });
+  const rulesBlock = text.slice(text.indexOf("ANTWORTREGELN"));
+  assert.ok(!rulesBlock.includes("Nenne die Kernaussage im ersten Satz"));
+  assert.ok(!rulesBlock.includes("Kontextbudget, kein Antwortbudget"));
+});
+
+test("operational response rules never remove or replace the fact-safety rules", () => {
+  const withOperational = buildKnowledgeAnswerPromptText({ question: "Q", context: null, results: [], operationalContext: focusContext });
+  const withoutOperational = buildKnowledgeAnswerPromptText({ question: "Q", context: null, results: [] });
+  const factSafetyLine = "Erfinde keine Informationen. Benenne fehlende Daten ausdrücklich statt sie zu erraten.";
+  assert.ok(withOperational.includes(factSafetyLine));
+  assert.ok(withoutOperational.includes(factSafetyLine));
+});

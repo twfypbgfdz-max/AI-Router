@@ -143,6 +143,21 @@ function buildInternalRequestId(requestIdPrefix) {
   return `${requestIdPrefix}-${crypto.randomUUID()}`;
 }
 
+// DEC-007 (Jarvis Response Architecture). Purely derived from the state this
+// module already computes (operationalContextState, itself already
+// operationalContext !== null ? "available" : "unavailable") - no new input,
+// no new plumbing through jarvis-console-proxy.js or knowledge-handler.js.
+// operationalContext is only ever non-null on the Jarvis path (see
+// jarvis-console-proxy.js's jarvisOperationalContextProvider), so this stays
+// naturally scoped to exactly that path without a flag.
+// Internal-only: consumed below solely for the safeMetadata object passed to
+// the caller's event logger, never added to the buildKnowledgeAnswerObservation
+// payload that reaches the client - that payload's shape is unchanged by
+// this function's existence.
+function responseProfileOf(operationalContextState) {
+  return operationalContextState === "available" ? "operational" : "knowledge";
+}
+
 // A plain internal request object, never a browser fetch. The full
 // four-block prompt (already containing question, system context and
 // knowledge snippets) is the only thing sent as input.content; no separate
@@ -257,6 +272,7 @@ export function createKnowledgeService({
         indexLastVerifiedAt: indexVerification?.lastVerifiedAt || null,
         presentStateQuestion,
         implementationAlignmentQuestion,
+        responseProfile: responseProfileOf(operationalContextState),
         ...extraMeta
       })
     });
@@ -365,6 +381,7 @@ export const knowledgeServiceInternals = Object.freeze({
   mapGenerationFailureWarning,
   indexWarnings,
   operationalContextWarnings,
+  responseProfileOf,
   validateCitedSources,
   containsActionClaim
 });
