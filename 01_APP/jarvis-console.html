@@ -46,6 +46,14 @@
     --space-4: 24px;
     --space-5: 40px;
     --space-6: 64px;
+
+    /* Typografische Hierarchie (DEC-010 Designprinzip "Klarheit"), Phase 2:
+       nur für die neuen sekundären Komponenten unten genutzt - bestehende
+       Größen (h1, .card h2, .card-hint etc.) bleiben unangetastet. */
+    --text-xs: 0.72rem;
+    --text-sm: 0.82rem;
+    --text-base: 0.92rem;
+    --text-lg: 1.05rem;
   }
   @media (prefers-color-scheme: light) {
     :root {
@@ -161,6 +169,87 @@
   .tabs .tab:hover { color: var(--text); }
   .tabs .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
   .panel[hidden] { display: none; }
+
+  /* Dezenter Eintritts-Übergang beim Tab-Wechsel statt hartem Umschalten -
+     ausgelöst per JS (siehe zweiter <script>-Block), nicht automatisch,
+     weil ein reines hidden->sichtbar keine transition auslösen kann. */
+  @keyframes panel-enter {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .panel.panel-enter { animation: panel-enter 0.28s ease-out; }
+
+  /* --- Sekundäre Ebenen: Karten, Panel, Dropdown/Accordion ------------
+     DEC-010 Phase 2. Alles hier ist standardmäßig geschlossen bzw. leer -
+     die Standardansicht (Voice Zentrum) bleibt unberührt, und jeder
+     Leerzustand hier ist der ehrliche aktuelle Stand, keine simulierten
+     Daten. Diese Bausteine liegen bereits hinter einem Tab-Klick (siehe
+     .tabs oben) - "bewusstes Öffnen eines Bereichs". */
+  .card--empty { border-style: dashed; color: var(--text-muted); }
+  /* Review-Korrektur: color auf .card--empty ist geerbte Fließtextfarbe,
+     keine Vorgabe für Überschriften - ohne diese Zeile erbt .card h2 (Zeile
+     93, keine eigene color) sie mit und wirkt fälschlich gedämpft. */
+  .card--empty h2 { color: var(--text); }
+  .card--empty .card-hint:last-of-type { margin-bottom: 0; }
+
+  /* Panel: strukturierte Label/Wert-Zeilen, z. B. eine Systemübersicht -
+     unterscheidet sich von .card dadurch, dass es mehrere gleichartige
+     Zeilen trägt statt eines Fließtexts. */
+  .info-panel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-top: var(--space-3);
+  }
+  .info-panel-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--text-sm);
+  }
+  .info-panel-row:last-child { border-bottom: 0; }
+  .info-panel-row .k { color: var(--text); }
+  .info-panel-row .v { color: var(--text-muted); font-family: var(--font-mono); font-size: var(--text-xs); }
+
+  /* Disclosure: ein wiederverwendbarer Auf-/Zuklapp-Baustein. Einzeln
+     genutzt wirkt er wie ein Dropdown (eine Zeile, ein Inhalt); mehrere
+     davon in .accordion gestapelt ergeben ein Accordion - ein Bauteil,
+     zwei Anwendungen, keine doppelte Komponente. Animiert über
+     grid-template-rows 0fr -> 1fr, damit eine variable Inhaltshöhe ohne
+     JS-Höhenmessung sauber transitioniert (siehe zweiter <script>-Block
+     fürs Umschalten von .is-open). */
+  .disclosure {
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    margin-top: var(--space-3); overflow: hidden;
+  }
+  .accordion {
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    margin-top: var(--space-3); overflow: hidden;
+  }
+  .accordion .disclosure { border: 0; border-radius: 0; margin-top: 0; border-bottom: 1px solid var(--border); }
+  .accordion .disclosure:last-child { border-bottom: 0; }
+  .disclosure-trigger {
+    width: 100%; display: flex; justify-content: space-between; align-items: center;
+    gap: var(--space-2);
+    background: var(--surface-2); color: var(--text);
+    font: inherit; font-weight: 600; font-size: var(--text-sm);
+    border: 0; border-radius: 0;
+    padding: var(--space-2) var(--space-3);
+    cursor: pointer; text-align: left;
+  }
+  .disclosure-trigger:hover { background: var(--surface); }
+  .disclosure-icon { color: var(--text-muted); transition: transform 0.24s ease; flex: none; }
+  .disclosure-trigger[aria-expanded="true"] .disclosure-icon { transform: rotate(180deg); }
+  .disclosure-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.32s ease; }
+  .disclosure-body > div { overflow: hidden; min-height: 0; }
+  .disclosure-body > div > p { margin: 0; padding: var(--space-3); color: var(--text-muted); font-size: var(--text-sm); }
+  .disclosure.is-open .disclosure-body { grid-template-rows: 1fr; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .disclosure-body, .disclosure-icon, .panel.panel-enter { transition: none !important; animation: none !important; }
+  }
 
   /* --- Jarvis-Orb ----------------------------------------------------
      Pure renderer: every rule below is keyed off #orb[data-state="..."],
@@ -367,24 +456,75 @@
 
 </section>
 
-<section id="panel-heute" role="tabpanel" aria-labelledby="tab-heute" class="panel card" hidden>
-  <h2>Heute</h2>
-  <p class="card-hint">Tagesüberblick aus dem Felix-Cockpit (Operational Response Profile, DEC-007). Dieser Bereich zeigt noch keine Daten – die Anbindung ist eine eigene, spätere Umsetzungsphase (DEC-010, Abschnitt 7).</p>
+<section id="panel-heute" role="tabpanel" aria-labelledby="tab-heute" class="panel" hidden>
+  <section class="card card--empty">
+    <h2>Heute</h2>
+    <p class="card-hint">Noch keine Verbindung zum Felix-Cockpit.</p>
+    <div class="disclosure" data-disclosure>
+      <button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="disc-heute">
+        <span>Was zeigt dieser Bereich später?</span>
+        <span class="disclosure-icon" aria-hidden="true">⌄</span>
+      </button>
+      <div class="disclosure-body" id="disc-heute" aria-hidden="true">
+        <div><p>Ein aggregierter Tagesfokus aus dem Felix-Cockpit (Operational Response Profile, DEC-007) – die Anbindung ist eine eigene, spätere Umsetzungsphase (DEC-010, Abschnitt 7).</p></div>
+      </div>
+    </div>
+  </section>
 </section>
 
-<section id="panel-projekte" role="tabpanel" aria-labelledby="tab-projekte" class="panel card" hidden>
-  <h2>Projekte</h2>
-  <p class="card-hint">Statuskarten aus dem Vault-Projektregister. Dieser Bereich zeigt noch keine Daten – die Anbindung ist eine eigene, spätere Umsetzungsphase (DEC-010, Abschnitt 7).</p>
+<section id="panel-projekte" role="tabpanel" aria-labelledby="tab-projekte" class="panel" hidden>
+  <section class="card card--empty">
+    <h2>Projekte</h2>
+    <p class="card-hint">Noch keine Verbindung zum Vault-Projektregister.</p>
+    <div class="accordion">
+      <div class="disclosure" data-disclosure>
+        <button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="disc-projekte">
+          <span>Wie werden Projekte hier dargestellt?</span>
+          <span class="disclosure-icon" aria-hidden="true">⌄</span>
+        </button>
+        <div class="disclosure-body" id="disc-projekte" aria-hidden="true">
+          <div><p>Statuskarten aus dem Vault-Projektregister – die Anbindung ist eine eigene, spätere Umsetzungsphase (DEC-010, Abschnitt 7).</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
 </section>
 
-<section id="panel-system" role="tabpanel" aria-labelledby="tab-system" class="panel card" hidden>
-  <h2>System</h2>
-  <p class="card-hint">Kompakte, bereits interpretierte Zusammenfassung mit Verweis auf das Command Center für Details (DEC-010, Abschnitt 7) – zeigt nur aggregierte Informationen, keine eigene Statuslogik. Dieser Bereich ist noch nicht angebunden.</p>
+<section id="panel-system" role="tabpanel" aria-labelledby="tab-system" class="panel" hidden>
+  <section class="card card--empty">
+    <h2>System</h2>
+    <p class="card-hint">Kompakte, bereits interpretierte Zusammenfassung – zeigt nur aggregierte Informationen, keine eigene Statuslogik (DEC-010, Abschnitt 7).</p>
+    <div class="info-panel">
+      <div class="info-panel-row"><span class="k">AI-Router</span><span class="v">–</span></div>
+      <div class="info-panel-row"><span class="k">Command Center</span><span class="v">–</span></div>
+      <div class="info-panel-row"><span class="k">Vault-Sync</span><span class="v">–</span></div>
+    </div>
+    <div class="disclosure" data-disclosure>
+      <button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="disc-system">
+        <span>Woher kommen diese Werte später?</span>
+        <span class="disclosure-icon" aria-hidden="true">⌄</span>
+      </button>
+      <div class="disclosure-body" id="disc-system" aria-hidden="true">
+        <div><p>Aus dem Felix Command Center, mit Verweis auf dort für Details statt eigener Log- oder Statuslogik hier. Dieser Bereich ist noch nicht angebunden.</p></div>
+      </div>
+    </div>
+  </section>
 </section>
 
-<section id="panel-verlauf" role="tabpanel" aria-labelledby="tab-verlauf" class="panel card" hidden>
-  <h2>Verlauf</h2>
-  <p class="card-hint">Zurückliegende Fragen und Antworten. Ob und wie das über eine Sitzung hinaus gespeichert wird, ist noch nicht entschieden (DEC-010, Risiko 5). Dieser Bereich zeigt noch keine Einträge.</p>
+<section id="panel-verlauf" role="tabpanel" aria-labelledby="tab-verlauf" class="panel" hidden>
+  <section class="card card--empty">
+    <h2>Verlauf</h2>
+    <p class="card-hint">Noch keine Einträge in dieser Sitzung.</p>
+    <div class="disclosure" data-disclosure>
+      <button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="disc-verlauf">
+        <span>Wie funktioniert der Verlauf?</span>
+        <span class="disclosure-icon" aria-hidden="true">⌄</span>
+      </button>
+      <div class="disclosure-body" id="disc-verlauf" aria-hidden="true">
+        <div><p>Zurückliegende Fragen und Antworten. Ob und wie das über eine Sitzung hinaus gespeichert wird, ist noch nicht entschieden (DEC-010, Risiko 5).</p></div>
+      </div>
+    </div>
+  </section>
 </section>
 
 <p class="foot">
@@ -1315,11 +1455,12 @@
 })();
 </script>
 
-<!-- Reiner UI-Layer: schaltet nur zwischen den fünf Panels aus DEC-010
-     Abschnitt 7 um (Sections/Tabs, keine separaten Routen). Kein Zugriff auf
-     jarvisState, keine Netzwerkanfrage, keine Berührung der Voice-Pipeline
-     im Script oben - siehe DEC-010 Umsetzungsphase 1B ("Nur Layout und
-     Komponentenstruktur, noch keine vollständige Datenintegration"). -->
+<!-- Reiner UI-Layer: schaltet zwischen den fünf Panels aus DEC-010 Abschnitt 7
+     um (Sections/Tabs, keine separaten Routen) und steuert die Dropdown-/
+     Accordion-Bausteine (DEC-010 Phase 2). Kein Zugriff auf jarvisState,
+     keine Netzwerkanfrage, keine Berührung der Voice-Pipeline im Script
+     oben - "Nur Layout und Komponentenstruktur, noch keine vollständige
+     Datenintegration". -->
 <script>
 (function () {
   "use strict";
@@ -1330,8 +1471,35 @@
         var selected = other === tab;
         other.setAttribute("aria-selected", selected ? "true" : "false");
         var panel = document.getElementById(other.getAttribute("aria-controls"));
-        if (panel) panel.hidden = !selected;
+        if (!panel) return;
+        if (selected) {
+          panel.hidden = false;
+          // Klasse entfernen und einen Reflow erzwingen, bevor sie erneut
+          // gesetzt wird - sonst spielt die CSS-Animation beim wiederholten
+          // Öffnen desselben Tabs kein zweites Mal ab.
+          panel.classList.remove("panel-enter");
+          void panel.offsetWidth;
+          panel.classList.add("panel-enter");
+        } else {
+          panel.hidden = true;
+          panel.classList.remove("panel-enter");
+        }
       });
+    });
+  });
+
+  // Disclosure/Accordion: ein Baustein, per data-disclosure markiert. Öffnen
+  // schaltet ausschließlich aria-expanded/aria-hidden und eine Klasse - die
+  // eigentliche Höhenanimation liegt vollständig in CSS (grid-template-rows).
+  var disclosures = Array.prototype.slice.call(document.querySelectorAll("[data-disclosure]"));
+  disclosures.forEach(function (item) {
+    var trigger = item.querySelector(".disclosure-trigger");
+    var body = item.querySelector(".disclosure-body");
+    if (!trigger || !body) return;
+    trigger.addEventListener("click", function () {
+      var open = item.classList.toggle("is-open");
+      trigger.setAttribute("aria-expanded", open ? "true" : "false");
+      body.setAttribute("aria-hidden", open ? "false" : "true");
     });
   });
 })();
