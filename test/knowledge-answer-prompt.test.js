@@ -439,6 +439,26 @@ test("the rules stay a single continuously numbered list with the Soll/Ist rule 
   assert.deepEqual(numbers, Array.from({ length: numbers.length }, (_, index) => index + 1));
 });
 
+// ---------------------------------------------------------------------------
+// DEC-009: Communication Contract (global, unconditional)
+// ---------------------------------------------------------------------------
+
+test("the communication contract rules are present without any operational context", () => {
+  const text = buildKnowledgeAnswerPromptText({ question: "Q", context: null, results: [] });
+  const rulesBlock = rules(text);
+  assert.ok(rulesBlock.includes("Nenne die Kernaussage zuerst, im ersten Satz."));
+  assert.ok(rulesBlock.includes("Schreibe kurze, klare Sätze."));
+  assert.ok(rulesBlock.includes("ruhigen, präzisen, sachlichen Stil"));
+  assert.ok(rulesBlock.includes("Drücke Unsicherheit klar aus"));
+});
+
+test("the communication contract rules appear regardless of source count", () => {
+  for (const results of [[], [result()], [result(), result({ sourceDoc: "b.md" })]]) {
+    const text = buildKnowledgeAnswerPromptText({ question: "Q", context: null, results });
+    assert.ok(rules(text).includes("Nenne die Kernaussage zuerst, im ersten Satz."), `results.length=${results.length}`);
+  }
+});
+
 test("the prompt stays well inside the shared pipeline's input budget at full source count", () => {
   const text = buildKnowledgeAnswerPromptText({
     question: "Auf welchem Commit steht der AI-Router aktuell und was ist der dokumentierte Stand?",

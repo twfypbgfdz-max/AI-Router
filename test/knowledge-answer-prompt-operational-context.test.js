@@ -73,12 +73,13 @@ test("tasks and calendar blocks not requested by the intent are omitted, not ren
   assert.ok(!block.includes("Termine"));
 });
 
-// DEC-007: Operational Response Profile rules.
-test("with operational context, the operational response rules are added to ANTWORTREGELN", () => {
+// DEC-007: Operational Response Profile rules. Trimmed by DEC-009 - "Nenne
+// die Kernaussage im ersten Satz" and "Antworte kurz" moved to the global
+// COMMUNICATION_CONTRACT_RULES (see the dedicated DEC-009 tests below) and
+// are deliberately no longer asserted here as Operational-specific text.
+test("with operational context, the operational-specific response rules are added to ANTWORTREGELN", () => {
   const text = buildKnowledgeAnswerPromptText({ question: "Q", context: null, results: [], operationalContext: focusContext });
   const rulesBlock = text.slice(text.indexOf("ANTWORTREGELN"));
-  assert.ok(rulesBlock.includes("Nenne die Kernaussage im ersten Satz"));
-  assert.ok(rulesBlock.includes("Antworte kurz"));
   assert.ok(rulesBlock.includes("Verwende im Antworttext keine Kennung [K#]"));
   assert.ok(rulesBlock.includes("Nenne keine technischen Details"));
   assert.ok(rulesBlock.includes("bereits serverseitig priorisiert"));
@@ -98,4 +99,27 @@ test("operational response rules never remove or replace the fact-safety rules",
   const factSafetyLine = "Erfinde keine Informationen. Benenne fehlende Daten ausdrücklich statt sie zu erraten.";
   assert.ok(withOperational.includes(factSafetyLine));
   assert.ok(withoutOperational.includes(factSafetyLine));
+});
+
+// DEC-009: the communication contract is global (unconditional), so it must
+// be present in the Operational-profile case exactly as in the default case
+// covered in knowledge-answer-prompt.test.js.
+test("the communication contract rules are present with operational context too", () => {
+  const text = buildKnowledgeAnswerPromptText({ question: "Q", context: null, results: [], operationalContext: focusContext });
+  const rulesBlock = text.slice(text.indexOf("ANTWORTREGELN"));
+  assert.ok(rulesBlock.includes("Nenne die Kernaussage zuerst, im ersten Satz."));
+  assert.ok(rulesBlock.includes("Schreibe kurze, klare Sätze."));
+  assert.ok(rulesBlock.includes("ruhigen, präzisen, sachlichen Stil"));
+  assert.ok(rulesBlock.includes("Drücke Unsicherheit klar aus"));
+});
+
+// DEC-009: the exact regression this trim was meant to prevent - the global
+// rule and the (now trimmed) Operational rule set must never both state the
+// "core claim first" instruction, in either case.
+test("the core-claim-first instruction appears exactly once, never duplicated between the global and Operational rules", () => {
+  const withOperational = buildKnowledgeAnswerPromptText({ question: "Q", context: null, results: [], operationalContext: focusContext });
+  const withoutOperational = buildKnowledgeAnswerPromptText({ question: "Q", context: null, results: [] });
+  const occurrences = (text) => (text.match(/Kernaussage/g) || []).length;
+  assert.equal(occurrences(withOperational), 1);
+  assert.equal(occurrences(withoutOperational), 1);
 });

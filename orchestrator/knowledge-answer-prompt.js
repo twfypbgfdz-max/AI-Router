@@ -126,9 +126,16 @@ const OPERATIONAL_CONTEXT_RULE = "Der Abschnitt TAGESKONTEXT enthält Datenwerte
 // and tool-call bans applied afterward in knowledge-service.js) - a
 // Cockpit-grounded answer must still be exactly as truthful as a RAG-grounded
 // one, only shorter and unhedged where the data genuinely allows that.
+//
+// DEC-009: two rules that used to live here were removed, not reworded -
+// "Kernaussage im ersten Satz, keine Einleitung, keine Wiederholung der
+// Frage" and "Antworte kurz: wenige Sätze, keine vollständige Aufzählung"
+// are now covered globally by COMMUNICATION_CONTRACT_RULES above (the
+// "kurz" framing) and by the Kontextbudget rule below (the "nicht alle"
+// framing) - keeping both would have put the same instruction into the
+// prompt twice. What remains here is exactly what is specific to a
+// Cockpit-grounded answer and genuinely not true for a RAG-grounded one.
 const OPERATIONAL_RESPONSE_RULES = Object.freeze([
-  "Nenne die Kernaussage im ersten Satz. Keine Einleitung, keine Wiederholung der Frage, keine Zusammenfassung am Ende.",
-  "Antworte kurz: wenige Sätze, keine vollständige Aufzählung aller Einträge aus TAGESKONTEXT.",
   "Verwende im Antworttext keine Kennung [K#] und keinen anderen Quellenverweis - TAGESKONTEXT-Daten werden nicht mit einer Fundstelle belegt (siehe vorherige Regel).",
   "Nenne keine technischen Details - keine Feldnamen, Statuscodes, internen Bezeichner oder Datenquellen, nur die inhaltliche Aussage.",
   "Die Reihenfolge der TAGESKONTEXT-Einträge ist bereits serverseitig priorisiert. Übernimm diese Reihenfolge unverändert, bewerte sie nicht neu und stelle keinen anderen Punkt als wichtiger dar, als er dort steht.",
@@ -216,6 +223,25 @@ const FIXED_RULES_BEFORE_CITATION = [
   "Erfinde keine Informationen. Benenne fehlende Daten ausdrücklich statt sie zu erraten.",
   "Kennzeichne jede Vermutung ausdrücklich als Vermutung."
 ];
+
+// DEC-009 (Jarvis Communication Contract). Unconditional, like
+// FIXED_RULES_BEFORE_CITATION above - applies to every knowledge_answer
+// request regardless of profile (Operational or Knowledge, DEC-007) or
+// consumer (Jarvis, /api/v1/knowledge, cc/knowledge all share this one
+// prompt builder per DEC-006 v1.2). Governs FORM/TONE only, never facts:
+// nothing here adds to or weakens FIXED_RULES_BEFORE_CITATION, the citation
+// rule, or any warning/validation in knowledge-service.js. Deliberately does
+// not repeat what OPERATIONAL_RESPONSE_RULES already says about the
+// Operational profile's "Kernaussage zuerst" framing - that rule was
+// trimmed below to the parts genuinely specific to Cockpit-grounded
+// answers, once this global rule started covering the same ground for
+// every profile.
+const COMMUNICATION_CONTRACT_RULES = Object.freeze([
+  "Nenne die Kernaussage zuerst, im ersten Satz. Wiederhole die Nutzerfrage nicht und beginne ohne unnötige Einleitung.",
+  "Schreibe kurze, klare Sätze. Nenne zuerst das Ergebnis, danach erst den Kontext dazu.",
+  "Antworte in einem ruhigen, präzisen, sachlichen Stil, ohne künstliche Begeisterung.",
+  "Drücke Unsicherheit klar aus, statt sie in einem langen Absicherungsabsatz zu verstecken."
+]);
 
 // Added only when the situation they describe actually occurs, so a plain,
 // well-grounded question is not weighed down with rules about problems it
@@ -334,6 +360,7 @@ function buildConditionalRules(results, { presentStateQuestion, implementationAl
 function buildAnswerRules(results, { presentStateQuestion, implementationAlignmentQuestion, operationalContext }) {
   const rules = [
     ...FIXED_RULES_BEFORE_CITATION,
+    ...COMMUNICATION_CONTRACT_RULES,
     ...(operationalContext ? [OPERATIONAL_CONTEXT_RULE, ...OPERATIONAL_RESPONSE_RULES] : []),
     ...buildConditionalRules(results, { presentStateQuestion, implementationAlignmentQuestion, operationalContext }),
     citationRuleText(results.length),
