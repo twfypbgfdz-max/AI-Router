@@ -109,6 +109,9 @@
     padding: 9px 18px; cursor: pointer;
   }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
+  /* Einheitlicher Fokusring für alle Buttons (Ask/Mic/Vorlesen, Tabs,
+     Disclosure-Trigger) - Phase 3, reine visuelle Ergänzung. */
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .status { color: var(--text-muted); font-size: 0.88rem; }
   .counter { color: var(--text-muted); font-size: 0.8rem; margin-left: auto; }
 
@@ -163,11 +166,17 @@
     background: transparent; color: var(--text-muted);
     font-weight: 600; font-size: 0.86rem;
     padding: var(--space-2) var(--space-2) var(--space-3);
-    border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+    border: 0; border-bottom: 2px solid transparent;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
     white-space: nowrap;
+    transition: color 0.16s ease, background-color 0.16s ease, border-color 0.16s ease;
   }
   .tabs .tab:hover { color: var(--text); }
-  .tabs .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+  .tabs .tab[aria-selected="true"] {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
   .panel[hidden] { display: none; }
 
   /* Dezenter Eintritts-Übergang beim Tab-Wechsel statt hartem Umschalten -
@@ -200,6 +209,7 @@
     border-radius: var(--radius-md);
     overflow: hidden;
     margin-top: var(--space-3);
+    box-shadow: 0 1px 2px #0000000a;
   }
   .info-panel-row {
     display: flex; justify-content: space-between; align-items: baseline;
@@ -223,12 +233,14 @@
   .disclosure {
     border: 1px solid var(--border); border-radius: var(--radius-md);
     margin-top: var(--space-3); overflow: hidden;
+    box-shadow: 0 1px 2px #0000000a;
   }
   .accordion {
     border: 1px solid var(--border); border-radius: var(--radius-md);
     margin-top: var(--space-3); overflow: hidden;
+    box-shadow: 0 1px 2px #0000000a;
   }
-  .accordion .disclosure { border: 0; border-radius: 0; margin-top: 0; border-bottom: 1px solid var(--border); }
+  .accordion .disclosure { border: 0; border-radius: 0; margin-top: 0; border-bottom: 1px solid var(--border); box-shadow: none; }
   .accordion .disclosure:last-child { border-bottom: 0; }
   .disclosure-trigger {
     width: 100%; display: flex; justify-content: space-between; align-items: center;
@@ -238,8 +250,10 @@
     border: 0; border-radius: 0;
     padding: var(--space-2) var(--space-3);
     cursor: pointer; text-align: left;
+    transition: background-color 0.16s ease;
   }
   .disclosure-trigger:hover { background: var(--surface); }
+  .disclosure.is-open .disclosure-trigger { background: var(--surface); }
   .disclosure-icon { color: var(--text-muted); transition: transform 0.24s ease; flex: none; }
   .disclosure-trigger[aria-expanded="true"] .disclosure-icon { transform: rotate(180deg); }
   .disclosure-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.32s ease; }
@@ -261,7 +275,10 @@
   .orb-wrap { display: flex; justify-content: center; margin: 4px 0 22px; }
   #orb {
     position: relative;
-    width: 76px; height: 76px;
+    /* Phase 3: von 76px auf 88px vergrößert - der Orb bleibt das Zentrum
+       der Voice-Ansicht, nicht ein Element neben der Tab-Leiste. Nur ein
+       Zahlenwert, keine Änderung an Struktur oder inset-Verhältnissen. */
+    width: 88px; height: 88px;
     display: grid; place-items: center;
   }
   #orb .orb-ring {
@@ -273,14 +290,20 @@
     position: absolute; inset: 8px;
     border-radius: 50%;
     background: radial-gradient(circle at 34% 28%, var(--accent), var(--surface-2) 72%);
-    box-shadow: 0 0 16px 1px color-mix(in srgb, var(--accent) 35%, transparent);
+    /* Zweischichtiger Glow (Phase 3): enger heller Kern + weicher, breiterer
+       Umgebungsschein - wirkt hochwertiger als ein einzelner harter Schatten,
+       ohne die Regelstruktur zu ändern. */
+    box-shadow:
+      0 0 16px 1px color-mix(in srgb, var(--accent) 35%, transparent),
+      0 0 46px 10px color-mix(in srgb, var(--accent) 16%, transparent);
     /* transform is part of this transition only for the benefit of
        data-state="listening" below, which sets it from --orb-audio-level
        instead of an @keyframes animation - every other state still fully
        overrides transform via its own animation each frame, so this has no
        effect there (an active CSS animation always wins over a transition
-       on the same property). */
-    transition: background 0.4s ease, box-shadow 0.4s ease, transform 0.12s ease-out;
+       on the same property). Dauer 0.4s -> 0.5s (Phase 3): etwas ruhigere
+       Überblendung zwischen Zuständen, weiterhin klar responsiv. */
+    transition: background 0.5s ease, box-shadow 0.5s ease, transform 0.12s ease-out;
   }
   /* Über .orb-core, nicht darunter: in der DOM-Reihenfolge steht .orb-core
      nach .orb-spin und ist voll deckend, weshalb der rotierende Lichtpunkt
@@ -324,8 +347,13 @@
   #orb[data-state="listening"] .orb-core {
     background: radial-gradient(circle at 34% 28%, var(--ok-fg), var(--surface-2) 72%);
     transform: scale(calc(0.92 + var(--orb-audio-level, 0) * 0.26));
-    box-shadow: 0 0 calc(12px + var(--orb-audio-level, 0) * 26px) calc(1px + var(--orb-audio-level, 0) * 3px)
-      color-mix(in srgb, var(--ok-fg) calc(28% + var(--orb-audio-level, 0) * 42%), transparent);
+    /* Erste Schicht unverändert pegelgetrieben (siehe Kommentar oben bei
+       jarvisState.setAudioLevel) - zweite Schicht (Phase 3) ist ein
+       statischer, weicher Umgebungsschein für mehr Tiefe. */
+    box-shadow:
+      0 0 calc(12px + var(--orb-audio-level, 0) * 26px) calc(1px + var(--orb-audio-level, 0) * 3px)
+        color-mix(in srgb, var(--ok-fg) calc(28% + var(--orb-audio-level, 0) * 42%), transparent),
+      0 0 58px 6px color-mix(in srgb, var(--ok-fg) 14%, transparent);
   }
 
   /* transcribing: schneller Verarbeitungszustand. Bewusst in der Farbe von
@@ -337,16 +365,33 @@
   #orb[data-state="transcribing"] .orb-spin { opacity: 1; animation: orb-rotate 0.9s linear infinite; }
   #orb[data-state="transcribing"] .orb-core {
     background: radial-gradient(circle at 34% 28%, var(--ok-fg), var(--surface-2) 72%);
-    box-shadow: 0 0 14px 1px color-mix(in srgb, var(--ok-fg) 30%, transparent);
+    box-shadow:
+      0 0 14px 1px color-mix(in srgb, var(--ok-fg) 30%, transparent),
+      0 0 36px 6px color-mix(in srgb, var(--ok-fg) 12%, transparent);
     animation: orb-breathe 1.4s ease-in-out infinite;
   }
 
-  /* thinking: langsame, "nachdenkliche" Bewegung */
+  /* thinking: langsame, "nachdenkliche" Bewegung - eigener, engerer Glow
+     (Phase 3, geringerer Gradient-Stop + gedämpfterer Schatten als idle),
+     damit sich der Zustand klarer von idle und speaking unterscheidet statt
+     nur über die Atemgeschwindigkeit. */
   #orb[data-state="thinking"] .orb-spin { opacity: 1; animation: orb-rotate 3.6s linear infinite; }
-  #orb[data-state="thinking"] .orb-core { animation: orb-breathe 3.6s ease-in-out infinite; }
+  #orb[data-state="thinking"] .orb-core {
+    background: radial-gradient(circle at 34% 28%, var(--accent), var(--surface-2) 60%);
+    box-shadow:
+      0 0 12px 1px color-mix(in srgb, var(--accent) 30%, transparent),
+      0 0 30px 4px color-mix(in srgb, var(--accent) 10%, transparent);
+    animation: orb-breathe 3.6s ease-in-out infinite;
+  }
 
-  /* speaking: sichtbare Sprachaktivität - Ringe wie ausgehender Schall */
+  /* speaking: sichtbare Sprachaktivität - Ringe wie ausgehender Schall,
+     plus (Phase 3) ein hellerer, weiterer Glow als idle/thinking, damit der
+     Zustand auch ohne die Ringe sofort als "am aktivsten" lesbar ist. */
   #orb[data-state="speaking"] .orb-core {
+    background: radial-gradient(circle at 34% 28%, var(--accent), var(--surface-2) 78%);
+    box-shadow:
+      0 0 22px 3px color-mix(in srgb, var(--accent) 45%, transparent),
+      0 0 54px 10px color-mix(in srgb, var(--accent) 20%, transparent);
     animation: orb-pulse 0.5s ease-in-out infinite;
   }
   #orb[data-state="speaking"] .orb-ring {
@@ -392,6 +437,22 @@
      text status line remains the actual source of truth either way. */
   @media (prefers-reduced-motion: reduce) {
     #orb, #orb * { animation: none !important; transition: none !important; }
+  }
+
+  /* --- Mobile (DEC-010 Abschnitt 8) -----------------------------------
+     Keine eigene Informationsarchitektur, keine neue Navigation - dieselbe
+     Single-Page-Struktur mit Sections/Tabs, nur enger. Voice Zentrum bleibt
+     dominant: der Orb wird hier bewusst nicht verkleinert. Tabs bleiben
+     horizontal scrollbar (siehe .tabs { overflow-x: auto } oben) statt
+     eines zweiten Navigationsmusters. */
+  @media (max-width: 480px) {
+    body { padding: var(--space-4) var(--space-3) var(--space-5); }
+    .card { padding: var(--space-3) var(--space-3); }
+    .tabs { gap: var(--space-1); }
+    .tabs .tab { padding: var(--space-2) var(--space-1) var(--space-2); font-size: var(--text-sm); }
+    .row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
+    .row button { width: 100%; }
+    .row .status, .row .counter { margin-left: 0; text-align: left; }
   }
 </style>
 </head>
@@ -1456,37 +1517,64 @@
 </script>
 
 <!-- Reiner UI-Layer: schaltet zwischen den fünf Panels aus DEC-010 Abschnitt 7
-     um (Sections/Tabs, keine separaten Routen) und steuert die Dropdown-/
-     Accordion-Bausteine (DEC-010 Phase 2). Kein Zugriff auf jarvisState,
-     keine Netzwerkanfrage, keine Berührung der Voice-Pipeline im Script
-     oben - "Nur Layout und Komponentenstruktur, noch keine vollständige
-     Datenintegration". -->
+     um (Sections/Tabs, keine separaten Routen), steuert die Dropdown-/
+     Accordion-Bausteine (Phase 2) und die Pfeiltasten-Navigation der Tabs
+     (Phase 3). Kein Zugriff auf jarvisState, keine Netzwerkanfrage, keine
+     Berührung der Voice-Pipeline im Script oben - "Nur Layout und
+     Komponentenstruktur, noch keine vollständige Datenintegration". -->
 <script>
 (function () {
   "use strict";
   var tabs = Array.prototype.slice.call(document.querySelectorAll('.tabs [role="tab"]'));
-  tabs.forEach(function (tab) {
-    tab.addEventListener("click", function () {
-      tabs.forEach(function (other) {
-        var selected = other === tab;
-        other.setAttribute("aria-selected", selected ? "true" : "false");
-        var panel = document.getElementById(other.getAttribute("aria-controls"));
-        if (!panel) return;
-        if (selected) {
-          panel.hidden = false;
-          // Klasse entfernen und einen Reflow erzwingen, bevor sie erneut
-          // gesetzt wird - sonst spielt die CSS-Animation beim wiederholten
-          // Öffnen desselben Tabs kein zweites Mal ab.
-          panel.classList.remove("panel-enter");
-          void panel.offsetWidth;
-          panel.classList.add("panel-enter");
-        } else {
-          panel.hidden = true;
-          panel.classList.remove("panel-enter");
-        }
-      });
+
+  // Eine Aktivierungsfunktion für Klick UND Tastatur (Phase 3), statt zweier
+  // getrennter Kopien derselben Logik.
+  function activateTab(tab) {
+    tabs.forEach(function (other) {
+      var selected = other === tab;
+      other.setAttribute("aria-selected", selected ? "true" : "false");
+      other.tabIndex = selected ? 0 : -1;
+      var panel = document.getElementById(other.getAttribute("aria-controls"));
+      if (!panel) return;
+      if (selected) {
+        panel.hidden = false;
+        // Klasse entfernen und einen Reflow erzwingen, bevor sie erneut
+        // gesetzt wird - sonst spielt die CSS-Animation beim wiederholten
+        // Öffnen desselben Tabs kein zweites Mal ab.
+        panel.classList.remove("panel-enter");
+        void panel.offsetWidth;
+        panel.classList.add("panel-enter");
+      } else {
+        panel.hidden = true;
+        panel.classList.remove("panel-enter");
+      }
     });
+  }
+
+  tabs.forEach(function (tab) {
+    // Roving Tabindex (WAI-ARIA Tabs Pattern): nur der aktive Tab ist per
+    // Tab-Taste erreichbar, die übrigen per Pfeiltaste - Ausgangszustand
+    // spiegelt das bereits im Markup gesetzte aria-selected wider.
+    tab.tabIndex = tab.getAttribute("aria-selected") === "true" ? 0 : -1;
+    tab.addEventListener("click", function () { activateTab(tab); });
   });
+
+  var tablist = document.querySelector(".tabs");
+  if (tablist) {
+    tablist.addEventListener("keydown", function (event) {
+      var currentIndex = tabs.indexOf(document.activeElement);
+      if (currentIndex === -1) return;
+      var nextIndex = null;
+      if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % tabs.length;
+      else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+      else if (event.key === "Home") nextIndex = 0;
+      else if (event.key === "End") nextIndex = tabs.length - 1;
+      if (nextIndex === null) return;
+      event.preventDefault();
+      tabs[nextIndex].focus();
+      activateTab(tabs[nextIndex]);
+    });
+  }
 
   // Disclosure/Accordion: ein Baustein, per data-disclosure markiert. Öffnen
   // schaltet ausschließlich aria-expanded/aria-hidden und eine Klasse - die
