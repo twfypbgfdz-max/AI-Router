@@ -487,6 +487,14 @@
   <p class="sub">Fragen an das lokale FELIX_SYSTEM-Wissen. Läuft vollständig auf diesem Rechner, antwortet ausschließlich aus den freigegebenen Vault-Dokumenten und führt keine Aktionen aus.</p>
   <p class="sub" id="jarvis-ready-line"><span class="badge pending" id="jarvis-ready-badge">Prüfe Jarvis-Status …</span></p>
   <p class="card-hint" id="jarvis-ready-reasons" hidden></p>
+  <!-- Separater, ehrlicher Voice-Status statt eines pauschalen "Voice bereit":
+       Piper (Datei-Check) und Whisper (echter Erreichbarkeits-Check über
+       GET /api/jarvis/voice-status) werden unabhängig voneinander geladen
+       und angezeigt - siehe orchestrator/jarvis-voice-status.js. -->
+  <p class="sub" id="jarvis-voice-line">
+    <span class="badge pending" id="jarvis-piper-badge">Piper TTS: prüfe …</span>
+    <span class="badge pending" id="jarvis-whisper-badge">Whisper STT: prüfe …</span>
+  </p>
 </header>
 
 <nav class="tabs" role="tablist" aria-label="Jarvis-Bereiche">
@@ -523,7 +531,7 @@
     <span class="counter" id="char-counter">0 / 500</span>
   </div>
   <p class="mic-note" id="mic-status" role="status" aria-live="polite" hidden></p>
-  <p class="card-hint" id="mic-hint" style="margin-top:10px;">Spracheingabe läuft vollständig lokal über einen manuell gestarteten whisper-server auf diesem Rechner. Das Transkript landet im Textfeld – nichts wird automatisch abgeschickt.</p>
+  <p class="card-hint" id="mic-hint" style="margin-top:10px;">Spracheingabe läuft vollständig lokal über einen separat laufenden whisper-server auf diesem Rechner (eigener Autostart, unabhängig von diesem Server). Das Transkript landet im Textfeld – nichts wird automatisch abgeschickt.</p>
   <p class="card-hint" id="jarvis-voice-hint" hidden>Sprachein- oder -ausgabe ist auf diesem Server aktuell nicht vollständig eingerichtet. Die Buttons bleiben nutzbar, ein Versuch kann aber fehlschlagen.</p>
   <p class="card-hint" id="jarvis-unavailable-hint" hidden>Jarvis-Core ist gerade nicht verfügbar. Eine Frage kann trotzdem abgeschickt werden, wird aber voraussichtlich fehlschlagen.</p>
 </section>
@@ -1724,6 +1732,43 @@
     })
     .catch(function () {
       setReadyBadge("Jarvis-Status unbekannt", "pending");
+    });
+
+  // --- Voice-Status (einmalig beim Laden, separater Fetch) -----------------
+  //
+  // Deliberately a second, independent request to /api/jarvis/voice-status
+  // rather than folding this into the /api/jarvis/ready payload above: that
+  // endpoint stays network-ping-free on purpose (see orchestrator/
+  // jarvis-readiness.js), this one is the sole place that actually checks
+  // whether whisper-server answers. One fetch on load, no polling - the
+  // same "never blocks the rest of the page" contract as jarvis/ready.
+  var piperBadge = document.getElementById("jarvis-piper-badge");
+  var whisperBadge = document.getElementById("jarvis-whisper-badge");
+
+  var PIPER_STATE_TEXT = { ready: "bereit", unavailable: "nicht verfügbar" };
+  var PIPER_STATE_KIND = { ready: "ok", unavailable: "fail" };
+  var WHISPER_STATE_TEXT = { active: "aktiv", configured: "konfiguriert", unavailable: "nicht verfügbar" };
+  var WHISPER_STATE_KIND = { active: "ok", configured: "warn", unavailable: "fail" };
+
+  function setVoiceBadge(el, label, stateTextMap, stateKindMap, state) {
+    el.textContent = label + ": " + (stateTextMap[state] || state);
+    el.className = "badge " + (stateKindMap[state] || "pending");
+  }
+
+  fetch("/api/jarvis/voice-status")
+    .then(function (response) { return response.json(); })
+    .then(function (payload) {
+      if (!payload || typeof payload.whisper !== "string" || typeof payload.piper !== "string") {
+        setVoiceBadge(piperBadge, "Piper TTS", {}, {}, "unbekannt");
+        setVoiceBadge(whisperBadge, "Whisper STT", {}, {}, "unbekannt");
+        return;
+      }
+      setVoiceBadge(piperBadge, "Piper TTS", PIPER_STATE_TEXT, PIPER_STATE_KIND, payload.piper);
+      setVoiceBadge(whisperBadge, "Whisper STT", WHISPER_STATE_TEXT, WHISPER_STATE_KIND, payload.whisper);
+    })
+    .catch(function () {
+      setVoiceBadge(piperBadge, "Piper TTS", {}, {}, "unbekannt");
+      setVoiceBadge(whisperBadge, "Whisper STT", {}, {}, "unbekannt");
     });
 })();
 </script>

@@ -163,9 +163,9 @@ test("voice input uses local WAV recording, never a browser cloud speech API", (
   assert.ok(!/MediaRecorder/.test(PAGE), "no MediaRecorder - its compressed output needs ffmpeg on whisper-server");
 });
 
-test("the page talks only to its own six server-side bridges, never to a knowledge, STT or TTS backend directly", () => {
+test("the page talks only to its own seven server-side bridges, never to a knowledge, STT or TTS backend directly", () => {
   const fetchTargets = [...PAGE.matchAll(/fetch\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/ready", "/api/jarvis/speak", "/api/jarvis/system", "/api/jarvis/today", "/api/jarvis/transcribe"]);
+  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/ready", "/api/jarvis/speak", "/api/jarvis/system", "/api/jarvis/today", "/api/jarvis/transcribe", "/api/jarvis/voice-status"]);
 });
 
 // --- P2-C: readiness display --------------------------------------------
@@ -174,6 +174,16 @@ test("the page fetches /api/jarvis/ready exactly once on load, not via polling o
   assert.equal((PAGE.match(/fetch\(\s*"\/api\/jarvis\/ready"/g) || []).length, 1);
   assert.ok(!/setInterval|setTimeout/.test(PAGE.match(/Jarvis-Readiness[\s\S]*?\}\)\(\);/)?.[0] || ""), "no polling around the readiness fetch");
   assert.ok(!/new WebSocket/.test(PAGE), "no WebSocket anywhere on the page");
+});
+
+// The honest Voice status (Piper/Whisper) is a deliberately separate fetch
+// from /api/jarvis/ready - see orchestrator/jarvis-voice-status.js for why
+// the actual Whisper reachability ping must not live inside the
+// network-ping-free readiness check. Same "once on load, no polling"
+// contract as jarvis/ready above.
+test("the page fetches /api/jarvis/voice-status exactly once on load, not via polling or a socket", () => {
+  assert.equal((PAGE.match(/fetch\(\s*"\/api\/jarvis\/voice-status"/g) || []).length, 1);
+  assert.ok(!/setInterval|setTimeout/.test(PAGE.match(/Voice-Status \(einmalig[\s\S]*?\}\)\(\);/)?.[0] || ""), "no polling around the voice-status fetch");
 });
 
 test("the page renders all three readiness states in plain German using the existing badge/notice styling", () => {

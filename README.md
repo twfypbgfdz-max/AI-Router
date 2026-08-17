@@ -590,7 +590,17 @@ Token-Handling, Rate-Limit und Quellenanzeige sind unverändert.
   `--inference-path /inference`), dessen Basis-URL in
   `AI_ROUTER_WHISPER_SERVER_URL` steht. Ohne gesetzte Variable meldet die
   Route sauber `WHISPER_NOT_CONFIGURED`; ist der Server nicht erreichbar,
-  `WHISPER_UNAVAILABLE` — beides ohne stummes Hängen.
+  `WHISPER_UNAVAILABLE` — beides ohne stummes Hängen. whisper-server wird
+  seit 2026-08-17 durch ein eigenständiges Autostart-Tool
+  (`C:\Users\felil\Tools\felix-whisper-launcher`, eigener
+  Task-Scheduler-Eintrag „Felix Whisper Server") nach dem Windows-Login
+  gestartet — bewusst als eigener, von AI-Router vollständig unabhängiger
+  Prozess: kein Import, kein HTTP-Aufruf zwischen den beiden Tools, kein
+  Koppeln des AI-Router-Starts an Whisper. Ein Fehlschlag dort (Binary/
+  Modell fehlt, Port belegt) blockiert Jarvis nie — Voice zeigt dann
+  lediglich ehrlich `nicht verfügbar`/`konfiguriert` statt `aktiv` (siehe
+  „Voice-Status" unten). Details und Design-Entscheidungen:
+  `C:\Users\felil\Tools\felix-whisper-launcher\README.md`.
 - **`AI_ROUTER_WHISPER_SERVER_URL` hat bewusst keinen Default.** Ein
   geratener Port könnte sonst still mit dem falschen Prozess sprechen.
 - **Deutsch, mit Vokabular-Prompt.** Sprache ist fest `de`; der an
@@ -623,7 +633,10 @@ von OpenWhispr kann diese Dateien entfernen. Ein späterer Schritt sollte
 Modell und Binary in ein eigenes, von Felix Core verwaltetes Datenverzeichnis
 verschieben.
 
-Aufruf: whisper-server manuell starten, z. B.
+Aufruf: normalerweise nicht nötig — der Task-Scheduler-Eintrag „Felix
+Whisper Server" startet whisper-server bereits automatisch nach dem Login
+auf Port 8178 (siehe oben). Für einen manuellen Testlauf oder einen
+abweichenden Port: whisper-server manuell starten, z. B.
 `whisper-server-win32-x64.exe -m <Pfad zu ggml-small.bin> -l de --host 127.0.0.1 --port 8399`,
 dann `AI_ROUTER_WHISPER_SERVER_URL=http://127.0.0.1:8399` setzen und den
 Router neu starten.
@@ -814,18 +827,25 @@ etablierte Codes (`answer_model_unavailable`, `answer_provider_unavailable`,
 `PIPER_NOT_CONFIGURED`, `PIPER_UNAVAILABLE`) — keine neue Taxonomie. Kein
 Whisper-Netzwerk-Ping: Voice-Bereitschaft prüft nur Konfigurationspräsenz
 (Whisper) bzw. Konfiguration plus Dateiexistenz auf der Platte (Piper), nie
-einen echten Verbindungsaufbau oder Prozessstart.
+einen echten Verbindungsaufbau oder Prozessstart. Das bleibt bewusst so —
+dieser Endpunkt muss günstig und beliebig oft abfragbar bleiben. Die
+ehrliche „aktiv vs. konfiguriert"-Unterscheidung für Whisper lebt seit
+2026-08-17 in einem eigenen, separaten Endpunkt (siehe „Voice-Status"
+unten), nicht hier.
 
 **`npm run jarvis:start`** ist der empfohlene, Jarvis-spezifische Startweg:
-er ruft `checkJarvisReadiness()` einmal auf (dieselbe Funktion, die auch
-`/api/jarvis/ready` beantwortet — keine zweite, abweichende Prüflogik),
-gibt eine kurze deutsche Zusammenfassung aus und startet den Router
-**nur**, wenn Core nutzbar ist:
+er ruft `checkJarvisReadiness()` **und** `checkJarvisVoiceStatus()` je
+einmal auf (dieselben Funktionen, die auch `/api/jarvis/ready` bzw.
+`/api/jarvis/voice-status` beantworten — keine zweite, abweichende
+Prüflogik), gibt eine kurze deutsche Zusammenfassung aus und startet den
+Router **nur** anhand von `checkJarvisReadiness()`, wenn Core nutzbar ist —
+der Voice-Status beeinflusst diese Startentscheidung nie, nur die
+Anzeige:
 
 | Zustand | Ausgabe (Beispiel) | Router startet? | Exit-Code |
 |---|---|---|---|
-| `ready` | „Jarvis core ready. Voice: bereit." | ja | – (Prozess bleibt laufen) |
-| `partial` | „Jarvis partial:\n  - Sprachausgabe (Piper) ist nicht konfiguriert." | ja | – (Prozess bleibt laufen) |
+| `ready` | „Jarvis core ready.\n\nVoice:\n  Piper TTS: bereit\n  Whisper STT: aktiv" | ja | – (Prozess bleibt laufen) |
+| `partial` | „Jarvis partial:\n  - Spracheingabe (Whisper) ist nicht konfiguriert.\n\nVoice:\n  Piper TTS: bereit\n  Whisper STT: nicht verfügbar" | ja | – (Prozess bleibt laufen) |
 | `unavailable` | „Jarvis unavailable:\n  - Ollama ist nicht erreichbar." | **nein** | `1` |
 
 `npm run jarvis:start` prüft nur — es zieht nie automatisch ein Modell
@@ -837,6 +857,36 @@ die nicht von Ollama oder dem RAG-Index abhängen (z. B.
 `/api/v1/cc/status`), ist das weiterhin der richtige, unmittelbare Weg —
 absichtlich ohne `--force`-Flag an `jarvis:start`, das ist bereits die
 vorhandene Ausweichmöglichkeit.
+
+### Voice-Status (P3, 2026-08-17): `GET /api/jarvis/voice-status`
+
+Read-only, tokenfreier Endpunkt (gleiche Vertrauensstufe wie
+`/api/jarvis/ready`), aber bewusst **separat** von ihm — siehe
+`orchestrator/jarvis-voice-status.js`. Grund: „Voice bereit" hieß bisher nur
+„beide ENV-Variablen sind gesetzt", nie „whisper-server antwortet
+tatsächlich". Ein echter Erreichbarkeits-Check gehört aber nicht in
+`/api/jarvis/ready` (das muss günstig und ping-frei bleiben, s. o.) — daher
+ein zweiter, unabhängiger Endpunkt, den die Jarvis-Seite und
+`npm run jarvis:start` zusätzlich, aber getrennt abfragen.
+
+Antwort: `{ schemaVersion, whisper, piper }`.
+
+- **`whisper`** — `"active"` (URL gesetzt, `GET <URL>/` antwortet mit
+  2xx — kurzer, bounded Timeout von 800 ms, kein `POST /inference`),
+  `"configured"` (URL gesetzt, aber nicht erreichbar oder Timeout) oder
+  `"unavailable"` (keine URL gesetzt).
+- **`piper`** — `"ready"` (Binary- und Modellpfad gesetzt, beide Dateien
+  existieren) oder `"unavailable"` — dieselbe Prüfung wie bisher in
+  `checkJarvisReadiness()`, hier nur separat exponiert. Kein drittes
+  Piper-Reachability-Konzept: Piper hat keinen Dauerprozess (wird pro
+  Anfrage gespawnt, siehe `jarvis-speak-config.js`), also keine
+  „aktiv vs. konfiguriert"-Unterscheidung wie bei Whisper.
+
+Die Jarvis-Seite (`/jarvis`) fragt diesen Endpunkt einmalig beim Laden ab
+(kein Polling, kein WebSocket — dasselbe Muster wie `/api/jarvis/ready`)
+und zeigt zwei getrennte Badges: „Piper TTS: bereit"/„nicht verfügbar" und
+„Whisper STT: aktiv"/„konfiguriert"/„nicht verfügbar" — statt eines
+pauschalen, potenziell irreführenden „Voice bereit".
 
 ## Git-Hooks: Agent-Lock-Absicherung
 

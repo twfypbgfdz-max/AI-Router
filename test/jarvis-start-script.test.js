@@ -26,10 +26,18 @@ test("an unknown reason code falls back to itself rather than disappearing", () 
   assert.equal(describeReason("some_future_code_not_yet_mapped"), "some_future_code_not_yet_mapped");
 });
 
-test("a ready report names Core and Voice as ready, no reasons listed", () => {
+test("a ready report names Core as ready, no reasons listed, and shows both Voice engines when a voice status is supplied", () => {
+  const report = formatReadinessReport(readiness(), { whisper: "active", piper: "ready" });
+  assert.match(report, /Jarvis core ready/);
+  assert.match(report, /Voice:/);
+  assert.match(report, /Piper TTS: bereit/);
+  assert.match(report, /Whisper STT: aktiv/);
+});
+
+test("without a voice status, the report omits the Voice: block entirely rather than guessing", () => {
   const report = formatReadinessReport(readiness());
   assert.match(report, /Jarvis core ready/);
-  assert.match(report, /Voice/i);
+  assert.ok(!/Voice:/.test(report));
 });
 
 test("a partial report is headed 'Jarvis partial:' and lists every reason", () => {
@@ -37,6 +45,15 @@ test("a partial report is headed 'Jarvis partial:' and lists every reason", () =
   assert.match(report, /^Jarvis partial:/);
   assert.match(report, /Spracheingabe \(Whisper\) ist nicht konfiguriert\./);
   assert.match(report, /Sprachausgabe \(Piper\) ist nicht konfiguriert\./);
+});
+
+// The honest-status case this whole change exists for: Whisper's URL is set
+// but the process isn't reachable - the report must say "konfiguriert", not
+// silently imply readiness the way the old flat "Voice: bereit." once did.
+test("Whisper configured but unreachable shows as 'konfiguriert', not as ready", () => {
+  const report = formatReadinessReport(readiness({ state: "partial", coreReady: true, voiceReady: false }), { whisper: "configured", piper: "ready" });
+  assert.match(report, /Whisper STT: konfiguriert/);
+  assert.ok(!/Whisper STT: aktiv/.test(report));
 });
 
 // The required case: index_stale must read as "still usable, last-known-good",
@@ -58,7 +75,7 @@ test("the report never contains a filesystem path or a URL", () => {
     const report = formatReadinessReport(readiness({
       state, coreReady: state !== "unavailable", voiceReady: state === "ready",
       reasons: state === "ready" ? [] : ["answer_provider_unavailable", "WHISPER_NOT_CONFIGURED", "PIPER_UNAVAILABLE"]
-    }));
+    }), { whisper: "configured", piper: "unavailable" });
     assert.ok(!/[A-Za-z]:\\/.test(report));
     assert.ok(!/https?:\/\//.test(report));
   }
@@ -74,6 +91,9 @@ function collector() {
     log: (message) => logs.push(message),
     errorLog: (message) => errors.push(message),
     startServerFn: () => { started.push(true); },
+    // Fixed fake by default so these gating tests never touch the real
+    // network/env - only the dedicated Voice-status tests below override it.
+    checkVoiceStatusFn: async () => Object.freeze({ whisper: "unavailable", piper: "unavailable" }),
     logs, errors, started
   };
 }
@@ -81,7 +101,7 @@ function collector() {
 test("ready: the server is started, nothing is written to exitCode, report goes to stdout", async () => {
   const c = collector();
   process.exitCode = undefined;
-  const result = await runJarvisStart({ checkReadinessFn: async () => readiness(), startServerFn: c.startServerFn, log: c.log, errorLog: c.errorLog });
+  const result = await runJarvisStart({ checkReadinessFn: async () => readiness(), checkVoiceStatusFn: c.checkVoiceStatusFn, startServerFn: c.startServerFn, log: c.log, errorLog: c.errorLog });
   assert.equal(result.started, true);
   assert.equal(c.started.length, 1);
   assert.equal(c.errors.length, 0);
@@ -94,7 +114,7 @@ test("partial (Voice missing): the server is still started, Core stays usable", 
   process.exitCode = undefined;
   const result = await runJarvisStart({
     checkReadinessFn: async () => readiness({ state: "partial", coreReady: true, voiceReady: false, reasons: ["PIPER_NOT_CONFIGURED"] }),
-    startServerFn: c.startServerFn, log: c.log, errorLog: c.errorLog
+    checkVoiceStatusFn: c.checkVoiceStatusFn, startServerFn: c.startServerFn, log: c.log, errorLog: c.errorLog
   });
   assert.equal(result.started, true);
   assert.equal(c.started.length, 1);
@@ -109,7 +129,7 @@ test("partial (index_stale, last-known-good): the server is still started", asyn
   process.exitCode = undefined;
   const result = await runJarvisStart({
     checkReadinessFn: async () => readiness({ state: "partial", coreReady: true, voiceReady: true, reasons: ["index_stale"] }),
-    startServerFn: c.startServerFn, log: c.log, errorLog: c.errorLog
+    checkVoiceStatusFn: c.checkVoiceStatusFn, startServerFn: c.startServerFn, log: c.log, errorLog: c.errorLog
   });
   assert.equal(result.started, true);
   assert.equal(c.started.length, 1);
@@ -121,7 +141,7 @@ test("unavailable: the server is NOT started, exitCode is set to 1, report goes 
   process.exitCode = undefined;
   const result = await runJarvisStart({
     checkReadinessFn: async () => readiness({ state: "unavailable", coreReady: false, voiceReady: false, reasons: ["answer_provider_unavailable"] }),
-    startServerFn: c.startServerFn, log: c.log, errorLog: c.errorLog
+    checkVoiceStatusFn: c.checkVoiceStatusFn, startServerFn: c.startServerFn, log: c.log, errorLog: c.errorLog
   });
   assert.equal(result.started, false);
   assert.equal(c.started.length, 0, "the router must never be started when Core is unavailable");
@@ -137,7 +157,34 @@ test("runJarvisStart calls checkJarvisReadiness exactly once - no duplicated rea
   let calls = 0;
   await runJarvisStart({
     checkReadinessFn: async () => { calls += 1; return readiness(); },
-    startServerFn: c.startServerFn, log: c.log, errorLog: c.errorLog
+    checkVoiceStatusFn: c.checkVoiceStatusFn, startServerFn: c.startServerFn, log: c.log, errorLog: c.errorLog
   });
   assert.equal(calls, 1);
+});
+
+// Whisper/Piper state must never affect whether the router starts - only
+// what the printed report says. The gate stays exclusively on
+// checkReadinessFn's Core verdict.
+test("Voice status never affects the start/no-start gate, even when Core is 'ready'", async () => {
+  const c = collector();
+  process.exitCode = undefined;
+  const result = await runJarvisStart({
+    checkReadinessFn: async () => readiness(),
+    checkVoiceStatusFn: async () => Object.freeze({ whisper: "unavailable", piper: "unavailable" }),
+    startServerFn: c.startServerFn, log: c.log, errorLog: c.errorLog
+  });
+  assert.equal(result.started, true);
+  assert.match(c.logs[0], /Whisper STT: nicht verfügbar/);
+});
+
+test("runJarvisStart's printed report reflects the real Whisper/Piper status, not a guess", async () => {
+  const c = collector();
+  process.exitCode = undefined;
+  await runJarvisStart({
+    checkReadinessFn: async () => readiness(),
+    checkVoiceStatusFn: async () => Object.freeze({ whisper: "active", piper: "ready" }),
+    startServerFn: c.startServerFn, log: c.log, errorLog: c.errorLog
+  });
+  assert.match(c.logs[0], /Whisper STT: aktiv/);
+  assert.match(c.logs[0], /Piper TTS: bereit/);
 });
