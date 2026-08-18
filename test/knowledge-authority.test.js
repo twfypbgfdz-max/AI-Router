@@ -497,7 +497,11 @@ test("an unknown warning is kept but ranks below authority warnings and above pu
 
 test("every entry in the real allowlist carries a known information class", () => {
   const allowlist = loadAllowlist(RAG_ALLOWLIST_FILE);
-  assert.equal(allowlist.documents.length, 10, "the reviewed allowlist holds exactly 10 documents");
+  // F1/F3 (Felix Core Foundation v2, 2026-08-18): DEC-004/005/007/008/009/010
+  // were added to close the RAG-DEC coverage gap (see
+  // orchestrator/knowledge/rag-dec-coverage.js) - 10 -> 16 documents; DEC-011
+  // and DEC-012 (new decisions from F3) were then added on top - 16 -> 18.
+  assert.equal(allowlist.documents.length, 18, "the reviewed allowlist holds exactly 18 documents");
   for (const entry of allowlist.documents) {
     assert.ok(INFORMATION_CLASSES.includes(entry.informationClass),
       `${entry.relativePath} has an unknown information class: ${entry.informationClass}`);

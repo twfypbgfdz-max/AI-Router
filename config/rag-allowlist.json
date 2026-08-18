@@ -19,6 +19,14 @@
     { "relativePath": "90_System/Profil.md", "addedAt": "2026-08-11", "addedBy": "felix", "informationClass": "personal_reference", "reviewedAt": "2026-08-11" },
     { "relativePath": "10_Apps/00_Projektsteuerung.md", "addedAt": "2026-08-11", "addedBy": "felix", "informationClass": "project_context", "reviewedAt": "2026-08-13" },
     { "relativePath": "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md", "addedAt": "2026-08-11", "addedBy": "felix", "informationClass": "architecture_rule" },
-    { "relativePath": "90_System/KI-Router-Regeln.md", "addedAt": "2026-08-11", "addedBy": "felix", "informationClass": "project_context", "reviewedAt": null }
+    { "relativePath": "90_System/KI-Router-Regeln.md", "addedAt": "2026-08-11", "addedBy": "felix", "informationClass": "project_context", "reviewedAt": null },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-004-Felix-Command-Center-Architekturgrenzen.md", "addedAt": "2026-08-18", "addedBy": "felix", "informationClass": "architecture_rule" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-005-Status-Companion-Architektur.md", "addedAt": "2026-08-18", "addedBy": "felix", "informationClass": "architecture_rule" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-007-Jarvis-Response-Architecture.md", "addedAt": "2026-08-18", "addedBy": "felix", "informationClass": "architecture_rule" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-008-Jarvis-Voice-Normalization.md", "addedAt": "2026-08-18", "addedBy": "felix", "informationClass": "architecture_rule" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-009-Jarvis-Communication-Contract.md", "addedAt": "2026-08-18", "addedBy": "felix", "informationClass": "architecture_rule" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-010-Jarvis-Interface-Architecture.md", "addedAt": "2026-08-18", "addedBy": "felix", "informationClass": "architecture_rule" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-011-Aufgaben-Datenhoheit.md", "addedAt": "2026-08-18", "addedBy": "felix", "informationClass": "architecture_rule" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-012-Interaktions-und-Boot-Erlebnis-Grenze.md", "addedAt": "2026-08-18", "addedBy": "felix", "informationClass": "architecture_rule" }
   ]
 }

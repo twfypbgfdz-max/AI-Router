@@ -10,6 +10,7 @@
     "rag:reindex": "node scripts/rag-reindex.js",
     "rag:quality": "node scripts/rag-quality-eval.js",
     "rag:truth": "node scripts/rag-truth-eval.js",
+    "rag:dec-coverage": "node scripts/rag-dec-coverage.js",
     "knowledge:parity": "node scripts/knowledge-parity-check.js"
   }
 }
