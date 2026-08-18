@@ -1,26 +1,31 @@
 // Manual-only entry point: `npm run jarvis:start`. The single recommended
 // way to start Jarvis. Reuses checkJarvisReadiness() (P2-A) as the sole
-// source of truth for the start/no-start gate - this script adds a
-// human-readable report on top of it, nothing else. No duplicated readiness
-// logic, no new reason vocabulary: every gate-relevant string below only
-// re-describes a code checkJarvisReadiness() already produces. The report
-// additionally calls checkJarvisVoiceStatus() (orchestrator/
-// jarvis-voice-status.js) once, purely for honest display - Whisper/Piper
-// state never affects whether the router starts, only what the printed
-// Voice: lines say.
+// source of truth for the printed report - this script adds a
+// human-readable summary on top of it, nothing else. No duplicated
+// readiness logic, no new reason vocabulary: every reason-relevant string
+// below only re-describes a code checkJarvisReadiness() already produces.
+// The report additionally calls checkJarvisVoiceStatus() (orchestrator/
+// jarvis-voice-status.js) once, purely for honest display.
 //
-// Read-only, exactly like the readiness check itself: no model pull, no
-// `npm run rag:reindex`, no starting/stopping Ollama or whisper-server, no
-// spawning Piper. The only side effect on a usable Core is starting the
+// F2 (Felix Core Foundation v2, 2026-08-18): the router process is now
+// ALWAYS started, regardless of readiness state. Before this change, a
+// "core unavailable" readiness (most commonly: Ollama not reachable yet at
+// Windows boot, a real, recurring timing race against the autostart chain -
+// see AI_ROUTER_PROCESS_EXITED in felix-jarvis-launcher's log) meant
+// startServerFn() was never called at all: no port bound, no /api/health,
+// no /api/jarvis/ready reachable - the launcher's only signal was "the
+// process died", indistinguishable from a real crash, forcing it to retry
+// the whole process spawn instead of just waiting for Ollama. That is a
+// process-level fail-closed where a request-level one is correct: the
+// process staying up costs nothing and lets /api/jarvis/ready (still
+// computed fresh, live, on every poll - see jarvis-readiness.js) report the
+// honest degraded state immediately; the first real request after Ollama
+// recovers works without any restart, because nothing here was ever
+// gating on a stale snapshot. Read-only in every other respect: no model
+// pull, no `npm run rag:reindex`, no starting/stopping Ollama or
+// whisper-server, no spawning Piper. The only side effect is starting the
 // already-existing router bootstrap (startRouterServer() in
 // orchestrator/server.js) - the same one `npm start` uses, unchanged.
-//
-// `npm start` remains separately available, ungated, for Command-Center-/
-// router-only use that does not depend on Ollama or the RAG index at all
-// (e.g. /api/router/project-status, /api/router/git-changes,
-// /api/v1/cc/status) - this script exists specifically for Jarvis, and
-// therefore specifically gates on it. Deliberately no --force escape
-// hatch: `npm start` already is that escape hatch, by design, not by flag.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkJarvisReadiness } from "../orchestrator/jarvis-readiness.js";
@@ -81,26 +86,22 @@ export function formatReadinessReport(readiness, voiceStatus) {
   return [...coreLines, "", formatVoiceLines(voiceStatus)].join("\n");
 }
 
-// The one decision point: whether to start the router at all. Every
-// dependency is injectable so this can be tested without a real Ollama, a
-// real index or a real listening socket; the CLI entry point below supplies
-// the real ones.
+// F2: no longer a gate - the router always starts, and the report always
+// goes to `log` (stdout), never to stderr, because it no longer describes a
+// start failure. Every dependency stays injectable so this can be tested
+// without a real Ollama, a real index or a real listening socket; the CLI
+// entry point below supplies the real ones. A caller that still passes an
+// `errorLog` option (e.g. an un-migrated test) is unaffected: object
+// destructuring silently ignores properties this function no longer reads.
 export async function runJarvisStart({
   checkReadinessFn = checkJarvisReadiness,
   checkVoiceStatusFn = checkJarvisVoiceStatus,
   startServerFn = startRouterServer,
-  log = console.log,
-  errorLog = console.error
+  log = console.log
 } = {}) {
   const readiness = await checkReadinessFn();
   const voiceStatus = await checkVoiceStatusFn();
   const report = formatReadinessReport(readiness, voiceStatus);
-
-  if (readiness.state === "unavailable") {
-    errorLog(report);
-    process.exitCode = 1;
-    return { readiness, started: false };
-  }
 
   log(report);
   startServerFn();

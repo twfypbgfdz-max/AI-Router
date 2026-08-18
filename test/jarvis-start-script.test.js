@@ -136,19 +136,23 @@ test("partial (index_stale, last-known-good): the server is still started", asyn
   assert.equal(process.exitCode, undefined);
 });
 
-test("unavailable: the server is NOT started, exitCode is set to 1, report goes to stderr", async () => {
+// F2 (Felix Core Foundation v2): the router process must start regardless
+// of readiness state, so /api/health and /api/jarvis/ready are reachable
+// even while Ollama is not yet up (e.g. a slow-boot race at Windows login)
+// - a request-level degradation (jarvis-readiness.js) replaces what used to
+// be a process-level refusal to start.
+test("unavailable: the server IS started (graceful degradation), report still goes to stdout, no exitCode set", async () => {
   const c = collector();
   process.exitCode = undefined;
   const result = await runJarvisStart({
     checkReadinessFn: async () => readiness({ state: "unavailable", coreReady: false, voiceReady: false, reasons: ["answer_provider_unavailable"] }),
     checkVoiceStatusFn: c.checkVoiceStatusFn, startServerFn: c.startServerFn, log: c.log, errorLog: c.errorLog
   });
-  assert.equal(result.started, false);
-  assert.equal(c.started.length, 0, "the router must never be started when Core is unavailable");
-  assert.equal(process.exitCode, 1);
-  assert.equal(c.logs.length, 0);
-  assert.match(c.errors[0], /^Jarvis unavailable:/);
-  process.exitCode = undefined;
+  assert.equal(result.started, true);
+  assert.equal(c.started.length, 1, "the router must start even when Core is unavailable at boot - readiness degrades per-request, not the process");
+  assert.equal(process.exitCode, undefined);
+  assert.equal(c.errors.length, 0);
+  assert.match(c.logs[0], /^Jarvis unavailable:/);
 });
 
 test("runJarvisStart calls checkJarvisReadiness exactly once - no duplicated readiness logic, no second check", async () => {

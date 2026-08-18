@@ -385,10 +385,14 @@ export function attachServerErrorHandler(server, { port, host, exit = process.ex
 
 // The one canonical way this router process is actually brought up -
 // extracted (P2-B) so `npm start` (via the isDirectRun block below) and
-// `npm run jarvis:start` (scripts/jarvis-start.js, after its own readiness
-// gate) share the exact same bootstrap instead of two near-identical
-// copies. Behavior is unchanged from before the extraction: same port,
-// same host default, same error handler, same SIGINT shutdown.
+// `npm run jarvis:start` (scripts/jarvis-start.js) share the exact same
+// bootstrap instead of two near-identical copies. Since F2 (Felix Core
+// Foundation v2, 2026-08-18), jarvis-start.js always calls this - it prints
+// a readiness report first but no longer gates on it (see the F2 comment at
+// the top of scripts/jarvis-start.js for why a process-level start refusal
+// was replaced with request-level degradation). Behavior of this function
+// itself is unchanged: same port, same host default, same error handler,
+// same SIGINT shutdown.
 export function startRouterServer({ port = 8787, host = "127.0.0.1" } = {}) {
   const server = createRouterServer();
   attachServerErrorHandler(server, { port, host });

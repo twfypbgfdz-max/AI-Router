@@ -259,3 +259,30 @@ test("the result is frozen (no mutation surface for a caller)", async () => {
   assert.ok(Object.isFrozen(result));
   assert.ok(Object.isFrozen(result.reasons));
 });
+
+// F2 (Felix Core Foundation v2, 2026-08-18): the router process no longer
+// gates its own start on this state (see scripts/jarvis-start.js) - instead
+// a still-running process is expected to recover the moment Ollama becomes
+// reachable again, without any restart. That property depends entirely on
+// checkJarvisReadiness() holding no cache or memoized result across calls -
+// every dependency must be re-evaluated fresh each time. This proves it: the
+// exact same injected functions swap their answer between two calls (no
+// process restart, no new AI-Router instance, just Ollama "coming back")
+// and the second call reflects the new reality immediately.
+test("recovers from unavailable to ready across two calls with no restart, once Ollama answers again (F2)", async () => {
+  let ollamaReachable = false;
+  const flakyGetOllamaModelIdentityFn = async () => {
+    if (!ollamaReachable) throw new Error("ECONNREFUSED");
+    return Object.freeze({ model: "qwen2.5:7b-instruct", digest: "sha256:aaa" });
+  };
+
+  const first = await checkJarvisReadiness({ env: baseEnv(), ...baseFns({ getOllamaModelIdentityFn: flakyGetOllamaModelIdentityFn }) });
+  assert.equal(first.state, "unavailable");
+  assert.ok(first.reasons.includes("answer_provider_unavailable"));
+
+  ollamaReachable = true;
+
+  const second = await checkJarvisReadiness({ env: baseEnv(), ...baseFns({ getOllamaModelIdentityFn: flakyGetOllamaModelIdentityFn }) });
+  assert.equal(second.state, "ready");
+  assert.deepEqual(second.reasons, []);
+});
