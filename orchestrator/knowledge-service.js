@@ -235,7 +235,12 @@ export function createKnowledgeService({
   // jarvis-console-proxy.js, from jarvis-daily-context.js. /api/v1/knowledge
   // and cc/knowledge never pass it, so it is always null for them and their
   // behaviour is unchanged by its existence.
-  return async function answerKnowledgeQuestion({ question, context = null, operationalContext = null }) {
+  // sessionContext follows the same "never part of any request contract"
+  // rule as operationalContext above: no route accepts it from a caller,
+  // it is built server-side exclusively by jarvis-console-proxy.js from
+  // orchestrator/session/session-context.js. /api/v1/knowledge and
+  // cc/knowledge never pass it, so it is always null for them.
+  return async function answerKnowledgeQuestion({ question, context = null, operationalContext = null, sessionContext = null }) {
     const knowledge = await retrieveKnowledgeFn(question, { env: scopedEnv });
     const { knowledgeState, results, indexVerification = null } = knowledge;
     const freshnessWarnings = indexWarnings(knowledge);
@@ -245,6 +250,12 @@ export function createKnowledgeService({
     // different authority (see knowledge-authority.js's operational_live
     // class) and must never be merged into one flag or one shape.
     const operationalContextState = operationalContext !== null ? "available" : "unavailable";
+    // Diagnostic-only, like the two above: never influences `state`, never
+    // requires a citation, never suppresses the "no_context_no_knowledge"
+    // exit below - session context is a lower information class (R1 spec,
+    // F4 §8) that may only help resolve a reference in the question, never
+    // stand in for authoritative knowledge.
+    const sessionContextState = sessionContext !== null ? "available" : "unavailable";
     // Evaluated once, on the caller's already-validated question only -
     // never on the retrieved evidence, so a snippet containing the word
     // "aktuell" cannot make an unrelated question look time-dependent.
@@ -261,6 +272,7 @@ export function createKnowledgeService({
         state: payload.state,
         systemContextState: payload.systemContextState,
         operationalContextState,
+        sessionContextState,
         knowledgeState: payload.knowledgeState,
         resultCount: results.length,
         sourceCount: payload.sources.length,
@@ -296,7 +308,7 @@ export function createKnowledgeService({
       }));
     }
 
-    const promptText = buildKnowledgeAnswerPromptText({ question, context, results, presentStateQuestion, implementationAlignmentQuestion, operationalContext });
+    const promptText = buildKnowledgeAnswerPromptText({ question, context, results, presentStateQuestion, implementationAlignmentQuestion, operationalContext, sessionContext });
     const internalRequest = buildInternalRequest(promptText, scopedEnv.AI_ROUTER_INTERNAL_TOKEN, requestIdPrefix);
     const internalResponse = captureResponse();
     // The provider receives the full grounded prompt, but execution intent is

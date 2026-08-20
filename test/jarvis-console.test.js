@@ -95,6 +95,17 @@ test("supplies schemaVersion itself and forwards only the question", async () =>
   assert.deepEqual(spy.seen[0].body, { schemaVersion: "1.0", question: "Frage" });
 });
 
+// R1 (Session/Context Manager): a sessionId in the page's request body must
+// never reach the /api/v1/knowledge contract this proxy carries - it is
+// threaded through a separate, third argument instead (see
+// jarvis-console-session.test.js for the session-wiring behaviour itself).
+test("a sessionId in the request body is never forwarded into the internal knowledge request", async () => {
+  const spy = spyKnowledgeHandler();
+  const handler = createJarvisConsoleHandler({ env: { [KNOWLEDGE_TOKEN_ENV_VAR]: TEST_TOKEN }, knowledgeHandler: spy.handler });
+  await handler(request({ question: "Frage", sessionId: "11111111-1111-4111-8111-111111111111" }), response());
+  assert.deepEqual(spy.seen[0].body, { schemaVersion: "1.0", question: "Frage" });
+});
+
 test("relays the observation payload unchanged", async () => {
   const payload = { schemaVersion: "1.0", state: "partial", answer: "Antwort [K1]", sources: [{ sourceDoc: "a.md" }], warnings: ["index_stale"] };
   const spy = spyKnowledgeHandler({ status: 200, payload });
@@ -277,4 +288,18 @@ test("the page explains every warning the knowledge contract can emit", () => {
 test("the page escapes rendered values instead of injecting raw HTML", () => {
   assert.ok(PAGE.includes("function escapeHtml"));
   assert.ok(/answerEl\.textContent\s*=/.test(PAGE), "the answer must be set as text, never as HTML");
+});
+
+// --- R1: Session/Context Manager (page side) ----------------------------
+
+test("the page generates one session id per load via crypto.randomUUID, never persisted to localStorage", () => {
+  assert.ok(/crypto\.randomUUID/.test(PAGE), "the page must use crypto.randomUUID (with a fallback) to mint a session id");
+  assert.ok(/var jarvisSessionId\s*=\s*generateSessionId\(\)/.test(PAGE), "exactly one session id variable, assigned once at load");
+  assert.ok(!/localStorage\.(setItem|getItem)/.test(PAGE), "a session id must never be persisted - a reload starts a new session on purpose");
+});
+
+test("every /api/jarvis/ask call sends the same jarvisSessionId, so voice and text share one session", () => {
+  assert.equal((PAGE.match(/fetch\(\s*"\/api\/jarvis\/ask"/g) || []).length, 1, "there is exactly one call site to extend");
+  assert.ok(/body:\s*JSON\.stringify\(\{\s*question:\s*question,\s*sessionId:\s*jarvisSessionId\s*\}\)/.test(PAGE),
+    "the ask call must send both question and jarvisSessionId in the same body");
 });

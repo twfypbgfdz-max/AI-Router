@@ -34,6 +34,7 @@ import { handleJarvisSpeakRequest } from "./jarvis-speak-handler.js";
 import { checkJarvisReadiness } from "./jarvis-readiness.js";
 import { handleJarvisToday } from "./jarvis-today-handler.js";
 import { handleJarvisSystem } from "./jarvis-system-handler.js";
+import { handleJarvisSessionStatus } from "./jarvis-session-status-handler.js";
 import { handleJarvisVoiceStatus } from "./jarvis-voice-status-handler.js";
 
 const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_13-test.html");
@@ -98,7 +99,7 @@ function safeFilterValue(value, allowed, maximum = 40) {
 
 function isoOrNull(value) { const parsed = Date.parse(value); return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null; }
 
-export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, ccKnowledgeHandler = handleCcKnowledgeRequest, knowledgeHandler = handleKnowledgeRequest, ccSnapshotHandler = handleCcSnapshotRequest, ccReindexHandler = handleCcReindexRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, jarvisConsoleAskHandler = handleJarvisConsoleAsk, jarvisTranscribeHandler = handleJarvisTranscribeRequest, jarvisSpeakHandler = handleJarvisSpeakRequest, jarvisTodayHandler = handleJarvisToday, jarvisSystemHandler = handleJarvisSystem, jarvisVoiceStatusHandler = handleJarvisVoiceStatus, now = Date.now } = {}) {
+export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, ccKnowledgeHandler = handleCcKnowledgeRequest, knowledgeHandler = handleKnowledgeRequest, ccSnapshotHandler = handleCcSnapshotRequest, ccReindexHandler = handleCcReindexRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, jarvisConsoleAskHandler = handleJarvisConsoleAsk, jarvisTranscribeHandler = handleJarvisTranscribeRequest, jarvisSpeakHandler = handleJarvisSpeakRequest, jarvisTodayHandler = handleJarvisToday, jarvisSystemHandler = handleJarvisSystem, jarvisSessionStatusHandler = handleJarvisSessionStatus, jarvisVoiceStatusHandler = handleJarvisVoiceStatus, now = Date.now } = {}) {
   const serverStartedAt = Date.now();
   const safeLog = (event, safeMetadata = {}) => {
     try { Promise.resolve(eventLogger?.log?.({ event, safeMetadata })).catch(() => {}); } catch { /* logging is non-critical */ }
@@ -210,6 +211,11 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
     // contract (GET /api/companion/status), see
     // orchestrator/command-center-client.js. No new status logic here.
     if (request.method === "GET" && pathname === "/api/jarvis/system") { safeLog("jarvis_system_checked"); return jarvisSystemHandler(request, response); }
+
+    // Read-only, no token, local diagnostic only (R1, Session/Context
+    // Manager) - counts and the closed limit set, never session content
+    // (see jarvis-session-status-handler.js).
+    if (request.method === "GET" && pathname === "/api/jarvis/session-status") { safeLog("jarvis_session_status_checked"); return jarvisSessionStatusHandler(request, response); }
 
     // Read-only, no token: same trust level as /api/jarvis/ready. Separate
     // route on purpose - see orchestrator/jarvis-voice-status.js for why

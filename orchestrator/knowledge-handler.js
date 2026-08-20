@@ -75,6 +75,15 @@ async function noOperationalContext() {
   return null;
 }
 
+// Same shape and same reason as noOperationalContext above: the production
+// /api/v1/knowledge singleton never overrides this, so its behaviour is
+// byte-for-byte what it always was. Only jarvis-console-proxy.js supplies a
+// real sessionContextProviderFn, built from orchestrator/session/ - this
+// generic route never learns about sessions at all.
+async function noSessionContext() {
+  return null;
+}
+
 export function createKnowledgeHandler({
   env = process.env,
   timingSafeEqualFn,
@@ -90,7 +99,10 @@ export function createKnowledgeHandler({
   // Kept as a constructor option purely so a test can build a fully
   // self-contained handler instance without needing to thread the option
   // through every call site.
-  operationalContextProviderFn: defaultOperationalContextProviderFn = noOperationalContext
+  operationalContextProviderFn: defaultOperationalContextProviderFn = noOperationalContext,
+  // Constructor-time fallback only, mirroring operationalContextProviderFn
+  // above - production never overrides this either.
+  sessionContextProviderFn: defaultSessionContextProviderFn = noSessionContext
 } = {}) {
   const answerKnowledgeQuestion = createKnowledgeService({
     env,
@@ -114,7 +126,10 @@ export function createKnowledgeHandler({
   // always undefined there and defaultOperationalContextProviderFn (a
   // permanent no-op for the production singleton) applies - this route's
   // behaviour is unchanged.
-  return async function handleKnowledge(request, response, { operationalContextProviderFn = defaultOperationalContextProviderFn } = {}) {
+  return async function handleKnowledge(request, response, {
+    operationalContextProviderFn = defaultOperationalContextProviderFn,
+    sessionContextProviderFn = defaultSessionContextProviderFn
+  } = {}) {
     setHeaders(response);
     if (request.headers?.origin) {
       const payload = transportFailure({ code: "ORIGIN_NOT_ALLOWED" });
@@ -177,7 +192,17 @@ export function createKnowledgeHandler({
       operationalContext = null;
     }
 
-    const { payload, safeMetadata } = await answerKnowledgeQuestion({ question: normalized.question, operationalContext });
+    // Same never-throw-never-hang contract as operationalContext above: a
+    // session store lookup failing or taking too long must degrade to "no
+    // session context", never break knowledge answering.
+    let sessionContext = null;
+    try {
+      sessionContext = (await sessionContextProviderFn(normalized.question)) || null;
+    } catch {
+      sessionContext = null;
+    }
+
+    const { payload, safeMetadata } = await answerKnowledgeQuestion({ question: normalized.question, operationalContext, sessionContext });
 
     safeLog(eventLogger, "knowledge_observed", { durationMs: Date.now() - startedAt, safeMetadata });
     return sendJson(response, knowledgeAnswerObservationHttpStatus(payload.warnings), payload);

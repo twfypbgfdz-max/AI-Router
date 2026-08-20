@@ -5,6 +5,8 @@ import { KNOWLEDGE_TOKEN_ENV_VAR } from "./knowledge-config.js";
 import { fetchCockpitStatus } from "./cockpit-client.js";
 import { matchJarvisDailyIntent } from "./jarvis-daily-intent.js";
 import { buildJarvisDailyContext } from "./jarvis-daily-context.js";
+import { sessionStore as defaultSessionStore } from "./session/session-store.js";
+import { buildSessionContext } from "./session/session-context.js";
 
 // Bridges the browser-facing /jarvis page to POST /api/v1/knowledge.
 //
@@ -43,6 +45,16 @@ export async function jarvisOperationalContextProvider(question, { env = process
   if (!intent) return null;
   const cockpitStatus = await fetchCockpitStatus({ env, fetchImpl });
   return buildJarvisDailyContext({ cockpitStatus, intent });
+}
+
+// R1 (Session/Context Manager, Felix Core Foundation v2). Pure RAM lookup,
+// never throws by construction (session-store.js's getSession() already
+// returns null instead of throwing for a missing/invalid/expired session,
+// and buildSessionContext() returns null for a null/empty session) - the
+// try/catch in knowledge-handler.js around this provider is defense in
+// depth, not something this function relies on.
+function jarvisSessionContextProvider(sessionId, { sessionStore }) {
+  return buildSessionContext(sessionStore.getSession(sessionId));
 }
 
 // The page posts {question}; the knowledge contract wants
@@ -106,9 +118,16 @@ async function readRawBody(request, maxBytes) {
 // routes now genuinely throttle each other again, exactly as they did
 // before P6-A, when jarvis-console-proxy.js happened to call the same
 // function reference for an unrelated reason.
+// callOptions is a third, per-call-only argument (R1 addition) merged on
+// top of the fixed operationalContextProviderFn below - it is how a single
+// request's sessionContextProviderFn reaches handleKnowledgeRequest without
+// baking a specific session into this handler's construction-time closure.
+// server.js's own /api/v1/knowledge route never supplies a third argument
+// to its own handler call, so that route is unaffected either way.
 function defaultJarvisKnowledgeHandler(env, fetchImpl) {
-  return (request, response) => handleKnowledgeRequest(request, response, {
-    operationalContextProviderFn: (question) => jarvisOperationalContextProvider(question, { env, fetchImpl })
+  return (request, response, callOptions = {}) => handleKnowledgeRequest(request, response, {
+    operationalContextProviderFn: (question) => jarvisOperationalContextProvider(question, { env, fetchImpl }),
+    ...callOptions
   });
 }
 
@@ -119,14 +138,25 @@ export function createJarvisConsoleHandler({
   // make (the Cockpit GET), without needing to override the whole
   // knowledgeHandler and reimplement its transport logic.
   fetchImpl = globalThis.fetch,
-  knowledgeHandler = defaultJarvisKnowledgeHandler(env, fetchImpl)
+  knowledgeHandler = defaultJarvisKnowledgeHandler(env, fetchImpl),
+  // Test-only seam, same reasoning as fetchImpl above: production always
+  // uses the one process-wide RAM store (session/session-store.js).
+  sessionStore = defaultSessionStore
 } = {}) {
   return async function handleJarvisConsoleAsk(request, response) {
     let question = "";
+    let sessionId = null;
     try {
       const raw = await readRawBody(request, MAX_CONSOLE_BODY_BYTES);
       const parsed = JSON.parse(raw);
       question = typeof parsed?.question === "string" ? parsed.question : "";
+      // Optional (R1): existing clients that never send sessionId keep
+      // working exactly as before - sessionId stays null, no session
+      // wiring runs at all. An invalid or unknown-shaped value is silently
+      // treated as "no session" rather than rejected, matching F4 §8's
+      // "a broken session id is never interpreted, only discarded" rule.
+      const rawSessionId = typeof parsed?.sessionId === "string" ? parsed.sessionId : null;
+      sessionId = rawSessionId && sessionStore.isValidSessionId(rawSessionId) ? rawSessionId : null;
     } catch {
       return sendJson(response, 400, {
         schemaVersion: "1.0",
@@ -140,7 +170,14 @@ export function createJarvisConsoleHandler({
     // AUTH_NOT_CONFIGURED rather than a silent empty header.
     const internalRequest = internalRequestFor(question, env[KNOWLEDGE_TOKEN_ENV_VAR]);
     const internalResponse = captureResponse();
-    await knowledgeHandler(internalRequest, internalResponse);
+    // sessionId never reaches internalRequestFor above: the /api/v1/knowledge
+    // contract this internal request carries is unchanged by R1 (see
+    // internalRequestFor's own comment) - session context is threaded in
+    // only through this third, Jarvis-only argument.
+    const callOptions = sessionId
+      ? { sessionContextProviderFn: () => jarvisSessionContextProvider(sessionId, { sessionStore }) }
+      : {};
+    await knowledgeHandler(internalRequest, internalResponse, callOptions);
 
     let payload;
     try {
@@ -151,6 +188,21 @@ export function createJarvisConsoleHandler({
         error: { code: "INTERNAL_ERROR", message: "The knowledge request could not be completed." }
       });
     }
+
+    // Only a genuinely answered request becomes a stored turn (R1 §10): a
+    // transport failure (payload.error) or an "unavailable" knowledge state
+    // never carries a non-empty payload.answer, so both are excluded by
+    // this one check without needing to inspect payload.state separately.
+    // Storage failure must never turn an already-successful answer into a
+    // failed response - hence the catch below, not a return.
+    if (sessionId && typeof payload.answer === "string" && payload.answer.length > 0) {
+      try {
+        await sessionStore.appendTurn(sessionId, { question, answer: payload.answer });
+      } catch {
+        // Never break an already-successful answer over session storage.
+      }
+    }
+
     return sendJson(response, internalResponse.statusCode, payload);
   };
 }

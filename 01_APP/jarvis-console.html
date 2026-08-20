@@ -660,6 +660,22 @@
   // Limit, verlängert sich diese kurze Wartezeit von selbst.
   var COOLDOWN_RETRY_SECONDS = 5;
 
+  // R1 (Session/Context Manager, Felix Core Foundation v2): one session id
+  // per page load, held only in this JS variable - never localStorage, so
+  // a reload deliberately starts a new session (F4 §8 "Neustart"). Voice
+  // and text share this same id: every /api/jarvis/ask call below sends it
+  // regardless of whether the question came from typing or from a
+  // transcribed recording, so a text follow-up to a voice question (and
+  // vice versa) sees the same GESPRÄCHSVERLAUF.
+  function generateSessionId() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+    // Fallback for a browser without crypto.randomUUID: same shape, not
+    // cryptographically random, sufficient for a purely local RAM-store key
+    // that is never used for anything security-relevant.
+    return "sess-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+  }
+  var jarvisSessionId = generateSessionId();
+
   var askBtn = document.getElementById("ask-btn");
   var micBtn = document.getElementById("mic-btn");
   var statusEl = document.getElementById("ask-status");
@@ -1246,7 +1262,7 @@
       response = await fetch("/api/jarvis/ask", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: question })
+        body: JSON.stringify({ question: question, sessionId: jarvisSessionId })
       });
       try { payload = await response.json(); } catch (e) { payload = null; }
     } catch (e) {
