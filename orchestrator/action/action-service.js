@@ -159,8 +159,14 @@ export function createActionService({ registry = actionRegistry, audit = actionA
       } catch (error) {
         // An executor's own error text is never trusted verbatim in a
         // response: it is masked and bounded like every other adapter
-        // output in this repository.
-        return fail(request, "ACTION_EXECUTION_FAILED", sanitizeText(error?.message, 160) || "Die Action konnte nicht abgeschlossen werden.");
+        // output in this repository. Its `.code`, if set, IS trusted when
+        // (and only when) it is one of the closed ACTION_ERROR_CODES - that
+        // is a structured signal from code in this repository (e.g.
+        // app-launcher.js), not caller-controlled text, so preserving it
+        // gives a caller APP_NOT_INSTALLED instead of a generic
+        // ACTION_EXECUTION_FAILED without weakening the masking rule above.
+        const code = ERROR_CODE_SET.has(error?.code) ? error.code : "ACTION_EXECUTION_FAILED";
+        return fail(request, code, sanitizeText(error?.message, 160) || "Die Action konnte nicht abgeschlossen werden.");
       }
     }
   };

@@ -36,7 +36,8 @@ const ACTION_VERB_ALIASES = Object.freeze({
 const ACTION_PARAMETER_ALIASES = Object.freeze({
   "app.open": Object.freeze({
     target: Object.freeze({
-      spotify: Object.freeze(["spotify"])
+      spotify: Object.freeze(["spotify"]),
+      obsidian: Object.freeze(["obsidian"])
     })
   })
 });

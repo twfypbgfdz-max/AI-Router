@@ -21,6 +21,13 @@ test("an allowed verb alias resolves to the same known action", () => {
   assert.deepEqual(result.params, { target: "spotify" });
 });
 
+test("R6: an unambiguous request for obsidian resolves to the known action", () => {
+  const result = resolveActionIntent("Öffne Obsidian.", actionRegistry);
+  assert.equal(result.resolution, "resolved");
+  assert.equal(result.actionId, "app.open");
+  assert.deepEqual(result.params, { target: "obsidian" });
+});
+
 test("an unknown app name is unresolved, never guessed", () => {
   const result = resolveActionIntent("Öffne Notepad.", actionRegistry);
   assert.equal(result.resolution, "unresolved");

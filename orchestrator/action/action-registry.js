@@ -18,6 +18,7 @@
 // this is the Jarvis action layer, that one is the Router API allowlist.
 import { RouterError } from "../contracts.js";
 import { ACTION_RISK_LEVELS, isValidActionId } from "./action-types.js";
+import { appLauncher } from "./app-launcher.js";
 
 const MAX_ENUM_VALUES = 32;
 const MAX_ENUM_VALUE_LENGTH = 64;
@@ -150,18 +151,21 @@ const DEFAULT_DEFINITIONS = [
     executor: (_parameters, { registry }) => ({ actions: registry.describe() })
   },
   {
-    // Declared, validated, approval-gated - and deliberately NOT executable.
-    // R4 builds the foundation for opening an app; actually launching a
-    // Windows process is the Remote Agent's job (R5+), so this entry has no
-    // executor and fails closed with ACTION_EXECUTOR_UNAVAILABLE even after
-    // an approval. It exists so the approval path and the executor boundary
-    // are exercised by a real registry entry rather than a test fixture.
+    // R6 - First Safe Executor. Now genuinely executable, but only for the
+    // two apps app-launcher.js's fixed allowlist knows about - adding a
+    // third target here without a matching app-launcher.js entry would just
+    // turn it into an APP_NOT_ALLOWED failure at execution time, not a
+    // security hole (app-launcher.js re-checks its own allowlist rather than
+    // trusting this parameter). The executor call is exactly
+    // `appLauncher.launch(parameters.target)` - a fixed, code-defined
+    // function call with a closed enum value as its only input, never a
+    // command string, path or shell invocation.
     id: "app.open",
-    description: "Oeffnet eine bekannte Anwendung. In R4 registriert und freigabepflichtig, aber bewusst ohne Executor.",
+    description: "Oeffnet eine bekannte Anwendung (Spotify oder Obsidian). Freigabepflichtig.",
     risk: "medium",
     requiresApproval: true,
-    parameters: { target: { type: "enum", required: true, values: ["spotify"] } },
-    executor: null
+    parameters: { target: { type: "enum", required: true, values: ["spotify", "obsidian"] } },
+    executor: (parameters) => appLauncher.launch(parameters.target)
   }
 ];
 

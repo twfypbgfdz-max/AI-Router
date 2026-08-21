@@ -75,7 +75,14 @@ export const ACTION_ERROR_CODES = Object.freeze([
   "ACTION_APPROVAL_REJECTED",
   "ACTION_EXECUTOR_UNAVAILABLE",
   "ACTION_EXECUTION_FAILED",
-  "ACTION_REQUEST_INVALID"
+  "ACTION_REQUEST_INVALID",
+  // R6 - First Safe Executor (app.open). Structured launch-failure codes an
+  // executor may throw with `.code` set; action-service.js's executor catch
+  // preserves them instead of collapsing everything to
+  // ACTION_EXECUTION_FAILED, see app-launcher.js.
+  "APP_NOT_ALLOWED",
+  "APP_NOT_INSTALLED",
+  "APP_LAUNCH_FAILED"
 ]);
 
 // Only these namespaces exist. A definition outside them is a registry

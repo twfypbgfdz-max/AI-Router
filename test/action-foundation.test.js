@@ -408,7 +408,7 @@ test("the audit never writes the executor result and never breaks a decision", a
 
 test("the action audit events and error codes are registered in the central lists", () => {
   for (const event of ACTION_AUDIT_EVENTS) assert.ok(KNOWN_LOG_EVENTS.includes(event), `missing log event ${event}`);
-  for (const code of ["ACTION_NOT_REGISTERED", "ACTION_PARAMETERS_INVALID", "ACTION_APPROVAL_REQUIRED", "ACTION_APPROVAL_REJECTED", "ACTION_EXECUTOR_UNAVAILABLE", "ACTION_EXECUTION_FAILED", "ACTION_REQUEST_INVALID"]) {
+  for (const code of ["ACTION_NOT_REGISTERED", "ACTION_PARAMETERS_INVALID", "ACTION_APPROVAL_REQUIRED", "ACTION_APPROVAL_REJECTED", "ACTION_EXECUTOR_UNAVAILABLE", "ACTION_EXECUTION_FAILED", "ACTION_REQUEST_INVALID", "APP_NOT_ALLOWED", "APP_NOT_INSTALLED", "APP_LAUNCH_FAILED"]) {
     assert.ok(ERROR_CODES.includes(code), `missing error code ${code}`);
   }
 });

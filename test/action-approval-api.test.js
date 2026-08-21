@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { appLauncher } from "../orchestrator/action/app-launcher.js";
 
 // R5 - the HTTP surface for the approval decision: POST /api/actions/:id/approval
 // and GET /api/actions/:id. Isolated DATA_DIR per test run, same pattern
@@ -52,6 +53,21 @@ test("a resolved, approval-gated action is persisted and reachable via GET /api/
 });
 
 test("POST .../approval with decision=approve resumes and executes the persisted request", async (t) => {
+  // R6 - app.open now has a real executor that launches a real Windows
+  // process (app-launcher.js). This is an HTTP-level pipeline test, not a
+  // launcher test (app-launcher.test.js covers spawn/allowlist behaviour in
+  // isolation with an injected spawnImpl) - so only the leaf OS call is
+  // substituted here, via the same exported singleton the production
+  // registry calls at execution time (action-registry.js's app.open
+  // executor does a live `appLauncher.launch(...)` lookup, and this test's
+  // plain, non-cache-busted import resolves to the identical module
+  // instance the freshly-imported server.js transitively uses). Everything
+  // above the launcher - intent resolution, approval, resume, audit - runs
+  // for real.
+  const originalLaunch = appLauncher.launch;
+  appLauncher.launch = async (app) => ({ ok: true, app, state: "opened" });
+  t.after(() => { appLauncher.launch = originalLaunch; });
+
   await withServer(t, async (baseUrl) => {
     const ask = await askOpenSpotify(baseUrl);
     const response = await fetch(`${baseUrl}/api/actions/${ask.actionRequestId}/approval`, {
@@ -61,11 +77,10 @@ test("POST .../approval with decision=approve resumes and executes the persisted
     });
     assert.equal(response.status, 200);
     const body = await response.json();
-    // app.open has no real executor in R5 - approval must lead to a closed
-    // failure (ACTION_EXECUTOR_UNAVAILABLE), never a fabricated success.
-    assert.equal(body.status, "failed");
-    assert.equal(body.executed, false);
-    assert.equal(body.error.code, "ACTION_EXECUTOR_UNAVAILABLE");
+    assert.equal(body.status, "completed");
+    assert.equal(body.executed, true);
+    assert.equal(body.error, null);
+    assert.deepEqual(body.result, { ok: true, app: "spotify", state: "opened" });
 
     // Replay is blocked afterwards.
     const replay = await fetch(`${baseUrl}/api/actions/${ask.actionRequestId}/approval`, {
@@ -76,6 +91,30 @@ test("POST .../approval with decision=approve resumes and executes the persisted
     assert.equal(replay.status, 409);
     const replayBody = await replay.json();
     assert.equal(replayBody.error.code, "ACTION_PENDING_ALREADY_DECIDED");
+  });
+});
+
+test("POST .../approval with decision=approve normalizes a real launch failure without a fabricated success", async (t) => {
+  const originalLaunch = appLauncher.launch;
+  appLauncher.launch = async () => {
+    const error = new Error("app-launcher.js unit tests cover the real spawn path; this is APP_NOT_INSTALLED simulated at the HTTP level.");
+    error.code = "APP_NOT_INSTALLED";
+    throw error;
+  };
+  t.after(() => { appLauncher.launch = originalLaunch; });
+
+  await withServer(t, async (baseUrl) => {
+    const ask = await askOpenSpotify(baseUrl);
+    const response = await fetch(`${baseUrl}/api/actions/${ask.actionRequestId}/approval`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision: "approve", decidedBy: "felix" })
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.status, "failed");
+    assert.equal(body.executed, false);
+    assert.equal(body.error.code, "APP_NOT_INSTALLED");
   });
 });
 
