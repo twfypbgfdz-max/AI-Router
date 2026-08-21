@@ -7,6 +7,7 @@ import { matchJarvisDailyIntent } from "./jarvis-daily-intent.js";
 import { buildJarvisDailyContext } from "./jarvis-daily-context.js";
 import { sessionStore as defaultSessionStore } from "./session/session-store.js";
 import { buildSessionContext } from "./session/session-context.js";
+import { classifyIntent } from "./intent/intent-router.js";
 
 // Bridges the browser-facing /jarvis page to POST /api/v1/knowledge.
 //
@@ -164,6 +165,34 @@ export function createJarvisConsoleHandler({
       });
     }
 
+    // R2 (Intent Consolidation). Classified before any RAG/Cockpit work
+    // starts (spec §9) - the session context used here is the same,
+    // already-cheap RAM lookup jarvisSessionContextProvider below performs
+    // anyway, just read once so the classifier can see it too.
+    const sessionContextForIntent = sessionId ? buildSessionContext(sessionStore.getSession(sessionId)) : null;
+    const classification = classifyIntent({
+      question,
+      sessionContext: sessionContextForIntent,
+      routeContext: { route: "ask" }
+    });
+
+    // Fail-closed by design (spec §11/§21): an action is recognized, never
+    // executed. No Cockpit call, no RAG search, no knowledge-route budget
+    // spent on a question this path can never actually fulfil - the
+    // explanation itself is the entire response.
+    if (classification.intent === "action") {
+      const payload = {
+        schemaVersion: "1.0",
+        state: "unavailable",
+        warnings: [],
+        sources: [],
+        answer: "Ich habe eine Handlungsanfrage erkannt (z. B. senden, löschen, öffnen, erstellen, ausführen, verschieben, ändern). Die Ausführung von Aktionen ist noch nicht Teil dieses Pfads - diese Anfrage wurde erkannt, aber nicht ausgeführt.",
+        intent: classification.intent,
+        executionAvailable: false
+      };
+      return sendJson(response, 200, payload);
+    }
+
     // The token is read per request rather than captured at module load so
     // that a token set after the process started is still picked up, and so
     // a missing one surfaces as the knowledge route's own
@@ -202,6 +231,14 @@ export function createJarvisConsoleHandler({
         // Never break an already-successful answer over session storage.
       }
     }
+
+    // R2 spec §12 evaluated adding classification.intent as a response
+    // field here and deliberately did not: this proxy's own existing
+    // contract is "relays the observation payload unchanged" (see
+    // "relays the observation payload unchanged" in jarvis-console.test.js)
+    // - that invariant is worth more than one metadata field, so intent
+    // stays internal to this handler (used above only to decide the action
+    // short-circuit) rather than being spliced into the relayed payload.
 
     return sendJson(response, internalResponse.statusCode, payload);
   };
