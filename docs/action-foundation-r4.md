@@ -194,3 +194,7 @@ unmöglich, Audit-Eintrag je Übergang, Lifecycle-Übergänge, R2→R4-Naht.
 - Erste echte Executoren (Remote Agent / Windows Executor) als eigenes,
   abgesichertes Modul.
 - Entscheidung, ob die Router-API-Allowlist in diese Schicht überführt wird.
+
+**Umgesetzt in R5** (siehe [Action Resolution + Approval Resume (R5)](action-resolution-approval-r5.md)):
+Auflösung und Wiederaufnahme. Weiterhin offen: echte Executoren, Router-API-
+Zusammenlegung.

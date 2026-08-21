@@ -44,6 +44,16 @@ export const RECOMMENDATION_MAX_WORKFLOWS = 30;
 export const RECOMMENDATION_MAX_ALERTS = 30;
 export const RECOMMENDATION_MAX_AI_JOBS = 20;
 export const RECOMMENDATION_MAX_ALTERNATIVES = 2;
+// R5 - Action Resolution + Approval Resume. A pending action request (one
+// awaiting a human decision) is persisted so it can be resumed by a later,
+// unrelated HTTP call - unlike run-service.js's in-memory-only approval,
+// which deliberately does not survive a process restart. TTL is short: this
+// is a local, single-operator approval gate, not a long-lived workflow
+// queue, and a stale pending request is a security liability, not a
+// convenience.
+export const ACTION_PENDING_DIR = path.join(DATA_DIR, "actions", "pending");
+export const ACTION_PENDING_TTL_MS = 15 * 60_000;
+
 export const ROUTER_ALLOWED_ORIGINS = Object.freeze([
   "http://127.0.0.1:8787",
   "http://127.0.0.1:3000",

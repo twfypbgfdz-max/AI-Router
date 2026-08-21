@@ -15,7 +15,9 @@ export const ERROR_CODES = Object.freeze(["INVALID_REQUEST", "UNSUPPORTED_SCHEMA
   // parallel list so that the existing diagnostics and cockpit surfaces
   // (diagnostics.js, cockpit-status.js) keep recognising them as safe codes.
   "ACTION_NOT_REGISTERED", "ACTION_PARAMETERS_INVALID", "ACTION_APPROVAL_REQUIRED", "ACTION_APPROVAL_REJECTED",
-  "ACTION_EXECUTOR_UNAVAILABLE", "ACTION_EXECUTION_FAILED", "ACTION_REQUEST_INVALID"]);
+  "ACTION_EXECUTOR_UNAVAILABLE", "ACTION_EXECUTION_FAILED", "ACTION_REQUEST_INVALID",
+  // R5 action resolution + approval resume error codes.
+  "ACTION_PENDING_NOT_FOUND", "ACTION_PENDING_EXPIRED", "ACTION_PENDING_ALREADY_DECIDED"]);
 
 // --- v0.13 provider layer allowlists (central, closed sets). ---
 // Only mock-local and codex-local-readonly are ever technically executable.

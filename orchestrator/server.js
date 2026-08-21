@@ -29,6 +29,7 @@ import { handleCcSnapshotRequest } from "./cc-snapshot-handler.js";
 import { handleCcReindexRequest } from "./cc-reindex-handler.js";
 import { handleRouterConsoleRespond } from "./router-console-proxy.js";
 import { handleJarvisConsoleAsk } from "./jarvis-console-proxy.js";
+import { actionApprovalService } from "./action/action-approval-service.js";
 import { handleJarvisTranscribeRequest } from "./jarvis-transcribe-handler.js";
 import { handleJarvisSpeakRequest } from "./jarvis-speak-handler.js";
 import { checkJarvisReadiness } from "./jarvis-readiness.js";
@@ -358,6 +359,39 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
     if (request.method === "POST" && approvalMatch) {
       if (!isTrustedMutation(request)) return sendJson(response, 403, buildResponse(null, new RouterError("INVALID_REQUEST", "Untrusted local request.")));
       return sendJson(response, 200, buildResponse(await service.decideApproval(approvalMatch[1], await readJsonBody(request))));
+    }
+
+    // R5 - Action Resolution + Approval Resume. Human decision endpoint for
+    // a request action-service.js left at "approval_required" (see
+    // action/action-pending-store.js). Mirrors /api/runs/:id/approval's
+    // shape and trust check; approve/reject/resume are collapsed into this
+    // one call - see action/action-approval-service.js's own header for why.
+    const actionApprovalMatch = pathname.match(/^\/api\/actions\/([^/]+)\/approval$/);
+    if (request.method === "POST" && actionApprovalMatch) {
+      if (!isTrustedMutation(request)) return sendJson(response, 403, buildResponse(null, new RouterError("INVALID_REQUEST", "Untrusted local request.")));
+      const requestId = decodeURIComponent(actionApprovalMatch[1]);
+      const body = await readJsonBody(request);
+      try {
+        const result = await actionApprovalService.decide(requestId, body);
+        // action-service.js's own publicView() shape - not run-service.js's
+        // buildResponse() projector, which is shaped for adapter runs
+        // (routePlan/workflow/provider) and does not apply here.
+        return sendJson(response, 200, { schemaVersion: "1.0", ...result });
+      } catch (error) {
+        if (error?.code === "ACTION_PENDING_NOT_FOUND") return sendJson(response, 404, { schemaVersion: "1.0", error: errorPayload(error) });
+        if (error?.code === "ACTION_PENDING_EXPIRED") return sendJson(response, 410, { schemaVersion: "1.0", error: errorPayload(error) });
+        if (error?.code === "ACTION_PENDING_ALREADY_DECIDED") return sendJson(response, 409, { schemaVersion: "1.0", error: errorPayload(error) });
+        throw error;
+      }
+    }
+
+    // Read-only lookup of a pending (or already-decided) action request -
+    // no execution, no state change.
+    const actionPendingMatch = pathname.match(/^\/api\/actions\/([^/]+)$/);
+    if (request.method === "GET" && actionPendingMatch) {
+      const pending = await actionApprovalService.get(decodeURIComponent(actionPendingMatch[1]));
+      if (!pending) return sendJson(response, 404, { schemaVersion: "1.0", error: errorPayload(new RouterError("ACTION_PENDING_NOT_FOUND", "No pending action request with this id.")) });
+      return sendJson(response, 200, { schemaVersion: "1.0", pending });
     }
 
     return sendJson(response, 404, buildResponse(null, new RouterError("INVALID_REQUEST", "Not found.")));

@@ -10,6 +10,8 @@ import { buildSessionContext } from "./session/session-context.js";
 import { classifyIntent } from "./intent/intent-router.js";
 import { actionService as defaultActionService } from "./action/action-service.js";
 import { buildActionRequestFromIntent } from "./action/action-intent-bridge.js";
+import { actionPendingStore as defaultActionPendingStore } from "./action/action-pending-store.js";
+import { logger as defaultLogger } from "./logger.js";
 
 // Bridges the browser-facing /jarvis page to POST /api/v1/knowledge.
 //
@@ -147,7 +149,10 @@ export function createJarvisConsoleHandler({
   sessionStore = defaultSessionStore,
   // R4 (Action Foundation). Test-only seam: production always uses the one
   // process-wide service over the default registry (action/action-service.js).
-  actionService = defaultActionService
+  actionService = defaultActionService,
+  // R5 (Action Resolution + Approval Resume). Same test-only-seam reasoning.
+  actionPendingStore = defaultActionPendingStore,
+  logger = defaultLogger
 } = {}) {
   return async function handleJarvisConsoleAsk(request, response) {
     let question = "";
@@ -182,40 +187,99 @@ export function createJarvisConsoleHandler({
     });
 
     // Fail-closed by design (R2 spec §11/§21): an action is recognized, never
-    // executed. No Cockpit call, no RAG search, no knowledge-route budget
-    // spent on a question this path can never actually fulfil.
+    // executed inline. No Cockpit call, no RAG search, no knowledge-route
+    // budget spent on a question this path can never fulfil by itself.
     //
-    // R4 (Action Foundation) changes how the denial is produced, not
-    // whether it happens: instead of returning a fixed string, the request
-    // now goes through the real action pipeline (registry -> policy ->
-    // executor boundary -> audit). Because R4 deliberately has no free-text
-    // -> actionId mapping (see action/action-intent-bridge.js), it arrives
-    // unresolved and is denied by the registry's default-deny rule - but it
-    // is denied *by the layer that will later allow things*, with a real
-    // request id and a real audit entry, rather than by a special case.
-    // executionAvailable therefore stays false here for every question.
+    // R4 (Action Foundation) changed how the denial is produced: instead of
+    // a fixed string, the request goes through the real action pipeline
+    // (registry -> policy -> executor boundary -> audit).
+    //
+    // R5 (Action Resolution) adds one more step ahead of that: the bridge
+    // now asks action-resolver.js whether the question deterministically
+    // matches exactly one registered action (see
+    // action/action-intent-bridge.js). A resolved request can therefore
+    // reach approval_required or even completed here - but it never claims
+    // a false success: executionAvailable only ever reflects whether an
+    // executor actually ran (action-service.js's own `executed` flag), and
+    // an approval-gated request is reported as such, never as done.
     if (classification.intent === "action") {
+      // The resolver must be anchored to the exact same registry
+      // action-service.js is about to resolve against (actionService.registry)
+      // - never a module-level default that could silently drift from
+      // whichever actionService instance was injected (production vs. a
+      // test's fixture registry).
+      const built = buildActionRequestFromIntent(classification, { question, registry: actionService.registry });
       let actionRequest = null;
       try {
-        actionRequest = await actionService.submit(buildActionRequestFromIntent(classification));
+        actionRequest = await actionService.submit(built);
       } catch {
         // A malformed envelope is a bug in the bridge, not something a
         // question can cause; degrade to the plain denial rather than
         // turning a recognized action into a 500.
       }
+
+      // R5: audit the resolution outcome itself (never the question text),
+      // separately from action-service.js's own lifecycle audit trail.
+      const resolutionKind = built?.resolution?.resolution ?? "invalid";
+      if (resolutionKind === "resolved" || resolutionKind === "ambiguous" || resolutionKind === "unresolved") {
+        try {
+          await logger.log({
+            level: "info",
+            event: `action_resolution_${resolutionKind}`,
+            requestId: actionRequest?.requestId ?? null,
+            safeMetadata: resolutionKind === "resolved" ? { actionId: built.resolution.actionId } : {}
+          });
+        } catch { /* audit never changes the outcome */ }
+      }
+
+      // R5: a request that stopped at approval_required is persisted so a
+      // later, separate HTTP call can resume it (see
+      // action/action-pending-store.js and action/action-approval-service.js).
+      // Never persisted for an already-terminal outcome (rejected/completed/
+      // failed) - there is nothing left to resume.
+      if (actionRequest?.status === "approval_required") {
+        try {
+          await actionPendingStore.create({
+            requestId: actionRequest.requestId,
+            actionId: actionRequest.actionId,
+            parameters: actionRequest.parameters,
+            origin: actionRequest.origin,
+            risk: actionRequest.risk
+          });
+          await logger.log({ level: "info", event: "action_pending_stored", requestId: actionRequest.requestId, safeMetadata: { actionId: actionRequest.actionId } });
+        } catch {
+          // Persistence failing must not turn an already-produced, correctly
+          // audited approval_required response into a 500 - the caller can
+          // still see approvalRequired: true, it just cannot be resumed
+          // later if the write genuinely failed.
+        }
+      }
+
+      // R5: the answer text must never claim a success that did not happen,
+      // and must never claim "not executed" for a request that genuinely
+      // was (see R5 spec §13 - "keine falsche Erfolgsmeldung" cuts both
+      // ways). Three honest shapes, chosen by action-service.js's own
+      // status/executed fields - never guessed here.
+      const answer = actionRequest?.executed === true
+        ? "Die erkannte Aktion wurde ausgeführt."
+        : actionRequest?.status === "approval_required"
+          ? "Ich habe eine Handlungsanfrage erkannt. Diese Aktion erfordert eine Freigabe, bevor sie ausgeführt werden kann; die Anfrage wurde gespeichert und wartet auf Freigabe."
+          : "Ich habe eine Handlungsanfrage erkannt (z. B. senden, löschen, öffnen, erstellen, ausführen, verschieben, ändern). Die Ausführung von Aktionen ist noch nicht Teil dieses Pfads - diese Anfrage wurde erkannt, aber nicht ausgeführt.";
+
       const payload = {
         schemaVersion: "1.0",
         state: "unavailable",
         warnings: [],
         sources: [],
-        answer: "Ich habe eine Handlungsanfrage erkannt (z. B. senden, löschen, öffnen, erstellen, ausführen, verschieben, ändern). Die Ausführung von Aktionen ist noch nicht Teil dieses Pfads - diese Anfrage wurde erkannt, aber nicht ausgeführt.",
+        answer,
         intent: classification.intent,
-        executionAvailable: false,
-        // Audit handle for this denial. Null only if the pipeline itself
+        executionAvailable: actionRequest?.executed === true,
+        // Audit handle for this request. Null only if the pipeline itself
         // could not be entered at all.
         actionRequestId: actionRequest?.requestId ?? null,
         actionStatus: actionRequest?.status ?? null,
-        actionErrorCode: actionRequest?.error?.code ?? null
+        actionErrorCode: actionRequest?.error?.code ?? null,
+        approvalRequired: actionRequest?.approval?.required === true
       };
       return sendJson(response, 200, payload);
     }

@@ -24,7 +24,11 @@ export const KNOWN_LOG_EVENTS = Object.freeze([
   // safe error code; never the question, never an executor result.
   "action_request_created", "action_request_validated", "action_request_approval_required",
   "action_request_approved", "action_request_rejected", "action_request_executing",
-  "action_request_completed", "action_request_failed"
+  "action_request_completed", "action_request_failed",
+  // R5 action resolution + approval resume events. Metadata only - never
+  // the question text, never raw resolver candidates.
+  "action_resolution_resolved", "action_resolution_ambiguous", "action_resolution_unresolved",
+  "action_pending_stored", "action_pending_resumed", "action_pending_expired", "action_pending_replay_blocked"
 ]);
 
 const SAFE_TOKEN = (value, maximum = 60) => (typeof value === "string" ? value.replace(/[^A-Za-z0-9_:.-]/g, "").slice(0, maximum) || null : null);
