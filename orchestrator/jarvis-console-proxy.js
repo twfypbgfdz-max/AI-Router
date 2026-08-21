@@ -8,6 +8,8 @@ import { buildJarvisDailyContext } from "./jarvis-daily-context.js";
 import { sessionStore as defaultSessionStore } from "./session/session-store.js";
 import { buildSessionContext } from "./session/session-context.js";
 import { classifyIntent } from "./intent/intent-router.js";
+import { actionService as defaultActionService } from "./action/action-service.js";
+import { buildActionRequestFromIntent } from "./action/action-intent-bridge.js";
 
 // Bridges the browser-facing /jarvis page to POST /api/v1/knowledge.
 //
@@ -142,7 +144,10 @@ export function createJarvisConsoleHandler({
   knowledgeHandler = defaultJarvisKnowledgeHandler(env, fetchImpl),
   // Test-only seam, same reasoning as fetchImpl above: production always
   // uses the one process-wide RAM store (session/session-store.js).
-  sessionStore = defaultSessionStore
+  sessionStore = defaultSessionStore,
+  // R4 (Action Foundation). Test-only seam: production always uses the one
+  // process-wide service over the default registry (action/action-service.js).
+  actionService = defaultActionService
 } = {}) {
   return async function handleJarvisConsoleAsk(request, response) {
     let question = "";
@@ -176,11 +181,28 @@ export function createJarvisConsoleHandler({
       routeContext: { route: "ask" }
     });
 
-    // Fail-closed by design (spec §11/§21): an action is recognized, never
+    // Fail-closed by design (R2 spec §11/§21): an action is recognized, never
     // executed. No Cockpit call, no RAG search, no knowledge-route budget
-    // spent on a question this path can never actually fulfil - the
-    // explanation itself is the entire response.
+    // spent on a question this path can never actually fulfil.
+    //
+    // R4 (Action Foundation) changes how the denial is produced, not
+    // whether it happens: instead of returning a fixed string, the request
+    // now goes through the real action pipeline (registry -> policy ->
+    // executor boundary -> audit). Because R4 deliberately has no free-text
+    // -> actionId mapping (see action/action-intent-bridge.js), it arrives
+    // unresolved and is denied by the registry's default-deny rule - but it
+    // is denied *by the layer that will later allow things*, with a real
+    // request id and a real audit entry, rather than by a special case.
+    // executionAvailable therefore stays false here for every question.
     if (classification.intent === "action") {
+      let actionRequest = null;
+      try {
+        actionRequest = await actionService.submit(buildActionRequestFromIntent(classification));
+      } catch {
+        // A malformed envelope is a bug in the bridge, not something a
+        // question can cause; degrade to the plain denial rather than
+        // turning a recognized action into a 500.
+      }
       const payload = {
         schemaVersion: "1.0",
         state: "unavailable",
@@ -188,7 +210,12 @@ export function createJarvisConsoleHandler({
         sources: [],
         answer: "Ich habe eine Handlungsanfrage erkannt (z. B. senden, löschen, öffnen, erstellen, ausführen, verschieben, ändern). Die Ausführung von Aktionen ist noch nicht Teil dieses Pfads - diese Anfrage wurde erkannt, aber nicht ausgeführt.",
         intent: classification.intent,
-        executionAvailable: false
+        executionAvailable: false,
+        // Audit handle for this denial. Null only if the pipeline itself
+        // could not be entered at all.
+        actionRequestId: actionRequest?.requestId ?? null,
+        actionStatus: actionRequest?.status ?? null,
+        actionErrorCode: actionRequest?.error?.code ?? null
       };
       return sendJson(response, 200, payload);
     }
