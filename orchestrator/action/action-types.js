@@ -82,7 +82,13 @@ export const ACTION_ERROR_CODES = Object.freeze([
   // ACTION_EXECUTION_FAILED, see app-launcher.js.
   "APP_NOT_ALLOWED",
   "APP_NOT_INSTALLED",
-  "APP_LAUNCH_FAILED"
+  "APP_LAUNCH_FAILED",
+  // R7 - Approval Source Hardening + Action Rate Limit. Thrown by the HTTP
+  // layer (server.js) in front of action-approval-service.js, never by the
+  // approval service itself - see docs/approval-source-hardening-r7.md.
+  "APPROVAL_AUTH_REQUIRED",
+  "APPROVAL_SOURCE_UNTRUSTED",
+  "ACTION_RATE_LIMITED"
 ]);
 
 // Only these namespaces exist. A definition outside them is a registry

@@ -2,7 +2,7 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT, RECOMMENDATION_MAX_BODY_BYTES, REPOSITORY_ROOT, ROUTER_ALLOWED_ORIGINS, ROUTER_API_DEFAULT_MODE, ROUTER_API_MAX_BODY_BYTES, ROUTER_API_TIMEOUT_MS, ROUTER_VERSION } from "./config.js";
+import { ACTION_APPROVAL_MAX_EXECUTIONS_PER_WINDOW, ACTION_APPROVAL_RATE_WINDOW_MS, DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT, RECOMMENDATION_MAX_BODY_BYTES, REPOSITORY_ROOT, ROUTER_ALLOWED_ORIGINS, ROUTER_API_DEFAULT_MODE, ROUTER_API_MAX_BODY_BYTES, ROUTER_API_TIMEOUT_MS, ROUTER_VERSION } from "./config.js";
 import { RunService } from "./run-service.js";
 import { getRunSummary, historySnapshot, listRuns, loadLatestRun, storageHealth } from "./run-store.js";
 import { projectCockpitStatus } from "./cockpit-status.js";
@@ -30,6 +30,8 @@ import { handleCcReindexRequest } from "./cc-reindex-handler.js";
 import { handleRouterConsoleRespond } from "./router-console-proxy.js";
 import { handleJarvisConsoleAsk } from "./jarvis-console-proxy.js";
 import { actionApprovalService } from "./action/action-approval-service.js";
+import { authenticateInternalRequest } from "./internal-auth.js";
+import { createRateLimiter } from "./rate-limiter.js";
 import { handleJarvisTranscribeRequest } from "./jarvis-transcribe-handler.js";
 import { handleJarvisSpeakRequest } from "./jarvis-speak-handler.js";
 import { checkJarvisReadiness } from "./jarvis-readiness.js";
@@ -100,10 +102,25 @@ function safeFilterValue(value, allowed, maximum = 40) {
 
 function isoOrNull(value) { const parsed = Date.parse(value); return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null; }
 
-export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, ccKnowledgeHandler = handleCcKnowledgeRequest, knowledgeHandler = handleKnowledgeRequest, ccSnapshotHandler = handleCcSnapshotRequest, ccReindexHandler = handleCcReindexRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, jarvisConsoleAskHandler = handleJarvisConsoleAsk, jarvisTranscribeHandler = handleJarvisTranscribeRequest, jarvisSpeakHandler = handleJarvisSpeakRequest, jarvisTodayHandler = handleJarvisToday, jarvisSystemHandler = handleJarvisSystem, jarvisSessionStatusHandler = handleJarvisSessionStatus, jarvisVoiceStatusHandler = handleJarvisVoiceStatus, now = Date.now } = {}) {
+export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, ccKnowledgeHandler = handleCcKnowledgeRequest, knowledgeHandler = handleKnowledgeRequest, ccSnapshotHandler = handleCcSnapshotRequest, ccReindexHandler = handleCcReindexRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, jarvisConsoleAskHandler = handleJarvisConsoleAsk, jarvisTranscribeHandler = handleJarvisTranscribeRequest, jarvisSpeakHandler = handleJarvisSpeakRequest, jarvisTodayHandler = handleJarvisToday, jarvisSystemHandler = handleJarvisSystem, jarvisSessionStatusHandler = handleJarvisSessionStatus, jarvisVoiceStatusHandler = handleJarvisVoiceStatus, now = Date.now, timingSafeEqualFn } = {}) {
   const serverStartedAt = Date.now();
   const safeLog = (event, safeMetadata = {}) => {
     try { Promise.resolve(eventLogger?.log?.({ event, safeMetadata })).catch(() => {}); } catch { /* logging is non-critical */ }
+  };
+  // R7 - Approval Source Hardening + Action Rate Limit. One shared limiter
+  // per server instance (not per request) - built lazily so `now` (test
+  // clock injection) is captured at first use, same pattern as
+  // cc-reindex-handler.js's protectionState().
+  let actionApprovalRateLimiterInstance = null;
+  const actionApprovalRateLimiter = () => {
+    if (!actionApprovalRateLimiterInstance) {
+      actionApprovalRateLimiterInstance = createRateLimiter({
+        maximum: ACTION_APPROVAL_MAX_EXECUTIONS_PER_WINDOW,
+        windowMs: ACTION_APPROVAL_RATE_WINDOW_MS,
+        now
+      });
+    }
+    return actionApprovalRateLimiterInstance;
   };
   const buildHealth = async () => {
     service.adapterStatus.refresh().catch(() => {});
@@ -366,11 +383,68 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
     // action/action-pending-store.js). Mirrors /api/runs/:id/approval's
     // shape and trust check; approve/reject/resume are collapsed into this
     // one call - see action/action-approval-service.js's own header for why.
+    //
+    // R7 - Approval Source Hardening + Action Rate Limit
+    // (docs/approval-source-hardening-r7.md). isTrustedMutation() alone
+    // (same-origin-or-no-origin) let any local caller approve any action -
+    // two more gates now sit in front of actionApprovalService.decide(),
+    // strictly in this order, and a request that fails either one never
+    // reaches decide() (and so never reaches the executor):
+    //   1. authenticateInternalRequest() - the caller must present a valid
+    //      AI_ROUTER_APPROVAL_TOKEN bearer token. source/actor are fixed,
+    //      server-derived constants applied only once this check has
+    //      passed - never read from the request body, so a client cannot
+    //      spoof either.
+    //   2. a rate limiter, keyed by the verified token's identityFingerprint
+    //      (never a client-supplied actor), consulted only for decision
+    //      "approve" and only when the request is still genuinely
+    //      "approval_required" right now - replaying an already-decided id,
+    //      retrying an expired id, or an unknown id never consumes budget
+    //      and never turns into ACTION_RATE_LIMITED (their existing
+    //      404/410/409 responses below are unchanged).
     const actionApprovalMatch = pathname.match(/^\/api\/actions\/([^/]+)\/approval$/);
     if (request.method === "POST" && actionApprovalMatch) {
       if (!isTrustedMutation(request)) return sendJson(response, 403, buildResponse(null, new RouterError("INVALID_REQUEST", "Untrusted local request.")));
       const requestId = decodeURIComponent(actionApprovalMatch[1]);
+
+      let auth;
+      try {
+        auth = authenticateInternalRequest(request.headers.authorization, {
+          expectedToken: process.env.AI_ROUTER_APPROVAL_TOKEN,
+          timingSafeEqualFn
+        });
+      } catch (authError) {
+        // AUTH_NOT_CONFIGURED is folded into the same untrusted-source
+        // response as AUTH_INVALID on purpose - a caller must never be able
+        // to tell "no token configured on the server" apart from "wrong
+        // token", which would leak server configuration state.
+        const httpStatus = authError.code === "AUTH_REQUIRED" ? 401 : 403;
+        const code = authError.code === "AUTH_REQUIRED" ? "APPROVAL_AUTH_REQUIRED" : "APPROVAL_SOURCE_UNTRUSTED";
+        safeLog("action_approval_rejected_auth", { requestId, reason: authError.code || "UNKNOWN" });
+        return sendJson(response, httpStatus, { schemaVersion: "1.0", error: errorPayload(new RouterError(code, "The approval source could not be verified.")) });
+      }
+
+      safeLog("action_approval_received", { requestId, source: "jarvis-ui", actor: "local-user" });
+
       const body = await readJsonBody(request);
+      if (body?.decision === "approve") {
+        const pendingBeforeDecision = await actionApprovalService.get(requestId);
+        if (pendingBeforeDecision?.status === "approval_required") {
+          const rate = actionApprovalRateLimiter().consume(auth.identityFingerprint);
+          if (!rate.allowed) {
+            response.setHeader("retry-after", String(Math.max(1, Math.ceil(rate.retryAfterMs / 1000))));
+            safeLog("action_rate_limited", { requestId, retryAfterMs: rate.retryAfterMs });
+            return sendJson(response, 429, {
+              schemaVersion: "1.0",
+              error: errorPayload(new RouterError("ACTION_RATE_LIMITED", "Too many action approvals in a short time.", { retryable: true })),
+              retryAfterMs: rate.retryAfterMs
+            });
+          }
+        }
+      }
+
+      safeLog("action_approval_accepted", { requestId, decision: typeof body?.decision === "string" ? body.decision : null });
+
       try {
         const result = await actionApprovalService.decide(requestId, body);
         // action-service.js's own publicView() shape - not run-service.js's

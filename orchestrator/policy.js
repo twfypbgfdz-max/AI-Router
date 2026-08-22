@@ -19,7 +19,9 @@ export const ERROR_CODES = Object.freeze(["INVALID_REQUEST", "UNSUPPORTED_SCHEMA
   // R5 action resolution + approval resume error codes.
   "ACTION_PENDING_NOT_FOUND", "ACTION_PENDING_EXPIRED", "ACTION_PENDING_ALREADY_DECIDED",
   // R6 first safe executor (app.open) error codes.
-  "APP_NOT_ALLOWED", "APP_NOT_INSTALLED", "APP_LAUNCH_FAILED"]);
+  "APP_NOT_ALLOWED", "APP_NOT_INSTALLED", "APP_LAUNCH_FAILED",
+  // R7 - Approval Source Hardening + Action Rate Limit error codes.
+  "APPROVAL_AUTH_REQUIRED", "APPROVAL_SOURCE_UNTRUSTED", "ACTION_RATE_LIMITED"]);
 
 // --- v0.13 provider layer allowlists (central, closed sets). ---
 // Only mock-local and codex-local-readonly are ever technically executable.

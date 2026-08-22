@@ -5,14 +5,27 @@ import os from "node:os";
 import path from "node:path";
 import { appLauncher } from "../orchestrator/action/app-launcher.js";
 
+// R7 - a fixed 32+ char test token, same shape authenticateInternalRequest
+// requires for every other internal-auth-gated surface in this repo (see
+// test/internal-auth.test.js). Every approval request in this file must now
+// carry it - see test/action-approval-auth.test.js for the tests that cover
+// what happens when it is missing/wrong.
+const TEST_APPROVAL_TOKEN = "test-approval-token-0123456789abcdef";
+
+function approvalHeaders() {
+  return { "content-type": "application/json", authorization: `Bearer ${TEST_APPROVAL_TOKEN}` };
+}
+
 // R5 - the HTTP surface for the approval decision: POST /api/actions/:id/approval
 // and GET /api/actions/:id. Isolated DATA_DIR per test run, same pattern
 // test/cc-status.test.js's "existing router endpoints remain unchanged" test
 // already uses, so real disk-backed pending records never leak between runs.
 async function withServer(t, fn) {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "ai-router-action-api-"));
-  const previous = process.env.AI_ROUTER_DATA_DIR;
+  const previousDataDir = process.env.AI_ROUTER_DATA_DIR;
+  const previousApprovalToken = process.env.AI_ROUTER_APPROVAL_TOKEN;
   process.env.AI_ROUTER_DATA_DIR = dataDir;
+  process.env.AI_ROUTER_APPROVAL_TOKEN = TEST_APPROVAL_TOKEN;
   const { createRouterServer } = await import(`../orchestrator/server.js?t=${Date.now()}_${Math.random()}`);
   const server = createRouterServer({ eventLogger: { log: async () => {} } });
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
@@ -22,7 +35,8 @@ async function withServer(t, fn) {
     await fn(baseUrl);
   } finally {
     await new Promise((resolve) => { server.close(resolve); server.closeAllConnections?.(); });
-    if (previous === undefined) delete process.env.AI_ROUTER_DATA_DIR; else process.env.AI_ROUTER_DATA_DIR = previous;
+    if (previousDataDir === undefined) delete process.env.AI_ROUTER_DATA_DIR; else process.env.AI_ROUTER_DATA_DIR = previousDataDir;
+    if (previousApprovalToken === undefined) delete process.env.AI_ROUTER_APPROVAL_TOKEN; else process.env.AI_ROUTER_APPROVAL_TOKEN = previousApprovalToken;
     await fs.rm(dataDir, { recursive: true, force: true });
   }
 }
@@ -72,7 +86,7 @@ test("POST .../approval with decision=approve resumes and executes the persisted
     const ask = await askOpenSpotify(baseUrl);
     const response = await fetch(`${baseUrl}/api/actions/${ask.actionRequestId}/approval`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: approvalHeaders(),
       body: JSON.stringify({ decision: "approve", decidedBy: "felix" })
     });
     assert.equal(response.status, 200);
@@ -85,7 +99,7 @@ test("POST .../approval with decision=approve resumes and executes the persisted
     // Replay is blocked afterwards.
     const replay = await fetch(`${baseUrl}/api/actions/${ask.actionRequestId}/approval`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: approvalHeaders(),
       body: JSON.stringify({ decision: "approve", decidedBy: "felix" })
     });
     assert.equal(replay.status, 409);
@@ -107,7 +121,7 @@ test("POST .../approval with decision=approve normalizes a real launch failure w
     const ask = await askOpenSpotify(baseUrl);
     const response = await fetch(`${baseUrl}/api/actions/${ask.actionRequestId}/approval`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: approvalHeaders(),
       body: JSON.stringify({ decision: "approve", decidedBy: "felix" })
     });
     assert.equal(response.status, 200);
@@ -123,7 +137,7 @@ test("POST .../approval with decision=reject terminates the request without exec
     const ask = await askOpenSpotify(baseUrl);
     const response = await fetch(`${baseUrl}/api/actions/${ask.actionRequestId}/approval`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: approvalHeaders(),
       body: JSON.stringify({ decision: "reject", decidedBy: "felix", note: "nicht jetzt" })
     });
     assert.equal(response.status, 200);
@@ -137,7 +151,7 @@ test("a decision for an unknown action request id returns 404", async (t) => {
   await withServer(t, async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/actions/act_1_deadbeef/approval`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: approvalHeaders(),
       body: JSON.stringify({ decision: "approve", decidedBy: "felix" })
     });
     assert.equal(response.status, 404);

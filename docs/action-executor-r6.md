@@ -148,7 +148,9 @@ Shell-Bypass, keine zweite/direkte Ausführung außerhalb dieser einen Kette.
 
 * `app.close` / Fenster-Fokussierung einer bereits laufenden Instanz.
 * Weitere Allowlist-Einträge (nur nach derselben Verifikation wie hier).
-* Authentifizierte Approval-Quelle (weiterhin nur lokale Same-Origin-Grenze,
-  siehe R5 "Offen für R6"/"Nicht Teil von R5").
+* ~~Authentifizierte Approval-Quelle~~ — erledigt in
+  [Approval Source Hardening + Action Rate Limit (R7)](approval-source-hardening-r7.md):
+  `POST /api/actions/:id/approval` verlangt jetzt einen gültigen
+  `AI_ROUTER_APPROVAL_TOKEN`, plus ein Rate-Limit für echte Ausführung.
 * Aufräumen abgelaufener/terminaler Pending-Dateien (weiterhin unverändert
-  offen aus R5).
+  offen, jetzt für R8).

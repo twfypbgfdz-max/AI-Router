@@ -54,6 +54,15 @@ export const RECOMMENDATION_MAX_ALTERNATIVES = 2;
 export const ACTION_PENDING_DIR = path.join(DATA_DIR, "actions", "pending");
 export const ACTION_PENDING_TTL_MS = 15 * 60_000;
 
+// R7 - Approval Source Hardening + Action Rate Limit. Guards real action
+// execution (POST /api/actions/:id/approval with decision "approve") against
+// spam/automated repeat-approval, on top of R5's replay protection (which
+// prevents the SAME request id from ever running twice, regardless of this
+// limit). Deliberately generous for normal local, single-operator use - see
+// docs/approval-source-hardening-r7.md for why these numbers were chosen.
+export const ACTION_APPROVAL_MAX_EXECUTIONS_PER_WINDOW = 5;
+export const ACTION_APPROVAL_RATE_WINDOW_MS = 60_000;
+
 export const ROUTER_ALLOWED_ORIGINS = Object.freeze([
   "http://127.0.0.1:8787",
   "http://127.0.0.1:3000",
