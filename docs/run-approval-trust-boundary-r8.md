@@ -108,13 +108,14 @@ Architekturentscheid, kein Bestandteil von R8.
 * Keine neuen Fehlercodes, keine neuen Audit-Events, keine Tests.
 * R7 (`/api/actions/:id/approval`) unverändert.
 
-## 6. Offen für R9
+## 6. Offen für R9 - erledigt
 
-* Backend-/BFF-Grenze für die Root-UI entwerfen und entscheiden (siehe
-  Abschnitt 4), bevor `/api/runs/:id/approval` denselben Schutz wie R7
-  bekommen kann.
-* Bis dahin gilt: jeder lokale Prozess auf der Maschine kann einen
-  wartenden Run freigeben oder ablehnen (Blast Radius aktuell begrenzt auf
-  eine "sichere Simulation", kein echter Executor-Aufruf).
-* Übrige R7-Restpunkte (Multi-Actor-Unterscheidung, Router-API-Allowlist-
-  Migration) bleiben ebenfalls offen, unverändert durch R8.
+Umgesetzt in [Run-Approval BFF (R9)](run-approval-bff-r9.md): ein enger
+BFF-Endpoint im selben AI-Router-Prozess (`POST /api/runs/:id/approval/ui`)
+hält `AI_ROUTER_APPROVAL_TOKEN` serverseitig; die harte Route `POST
+/api/runs/:id/approval` verlangt jetzt denselben Bearer-Token wie R7s
+Action-Approval. Details, Browser-Trust-Boundary (Single-Use-Nonce) und
+Tests siehe dort.
+
+Übrige R7-Restpunkte (Multi-Actor-Unterscheidung, Router-API-Allowlist-
+Migration) bleiben weiterhin offen, unverändert durch R8/R9.

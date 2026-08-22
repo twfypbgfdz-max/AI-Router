@@ -33,13 +33,15 @@ function consoleHandlerWithAdapter({ adapter, env = textProviderEnv() } = {}) {
   return createRouterConsoleRespondHandler({ env, textResponseHandler });
 }
 
-test("GET / still serves the untouched legacy simulation UI, unchanged", async () => {
-  const expected = await fs.readFile(legacyUiFile, "utf8");
+test("GET / still serves the untouched legacy simulation UI, unchanged apart from its R9 approval nonce", async () => {
+  const template = await fs.readFile(legacyUiFile, "utf8");
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/`);
     assert.equal(response.status, 200);
     const body = await response.text();
-    assert.equal(body, expected);
+    const match = /name="approval-nonce" content="([0-9a-f]{64})"/.exec(body);
+    assert.ok(match, "served page must embed a hex approval nonce");
+    assert.equal(body, template.replace("__APPROVAL_NONCE__", match[1]));
   });
 });
 

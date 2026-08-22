@@ -21,7 +21,10 @@ export const ERROR_CODES = Object.freeze(["INVALID_REQUEST", "UNSUPPORTED_SCHEMA
   // R6 first safe executor (app.open) error codes.
   "APP_NOT_ALLOWED", "APP_NOT_INSTALLED", "APP_LAUNCH_FAILED",
   // R7 - Approval Source Hardening + Action Rate Limit error codes.
-  "APPROVAL_AUTH_REQUIRED", "APPROVAL_SOURCE_UNTRUSTED", "ACTION_RATE_LIMITED"]);
+  "APPROVAL_AUTH_REQUIRED", "APPROVAL_SOURCE_UNTRUSTED", "ACTION_RATE_LIMITED",
+  // R9 - Run-Approval BFF error code. Missing/invalid/expired/reused nonce
+  // on POST /api/runs/:id/approval/ui.
+  "APPROVAL_NONCE_INVALID"]);
 
 // --- v0.13 provider layer allowlists (central, closed sets). ---
 // Only mock-local and codex-local-readonly are ever technically executable.

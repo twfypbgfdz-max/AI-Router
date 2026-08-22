@@ -31,6 +31,7 @@ import { handleRouterConsoleRespond } from "./router-console-proxy.js";
 import { handleJarvisConsoleAsk } from "./jarvis-console-proxy.js";
 import { actionApprovalService } from "./action/action-approval-service.js";
 import { authenticateInternalRequest } from "./internal-auth.js";
+import { approvalNonceStore } from "./approval-nonce-store.js";
 import { createRateLimiter } from "./rate-limiter.js";
 import { handleJarvisTranscribeRequest } from "./jarvis-transcribe-handler.js";
 import { handleJarvisSpeakRequest } from "./jarvis-speak-handler.js";
@@ -170,7 +171,13 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
       if (request.method === "OPTIONS") { response.writeHead(204); return response.end(); }
     }
 
-    if (request.method === "GET" && pathname === "/") return sendText(response, 200, await fs.readFile(uiFile, "utf8"), "text/html; charset=utf-8");
+    // R9 - Run-Approval BFF. The nonce embedded here is the browser trust
+    // boundary for POST /api/runs/:id/approval/ui below - see
+    // approval-nonce-store.js's header for why this, not a cookie, and
+    // docs/run-approval-bff-r9.md for the full design. A fresh nonce every
+    // GET / is intentional: reloading the page is exactly the "prove you're
+    // a browser that just loaded this server's own page" step.
+    if (request.method === "GET" && pathname === "/") return sendText(response, 200, (await fs.readFile(uiFile, "utf8")).replace("__APPROVAL_NONCE__", approvalNonceStore.issue()), "text/html; charset=utf-8");
 
     if (request.method === "GET" && pathname === "/router-console") return sendText(response, 200, await fs.readFile(routerConsoleUiFile, "utf8"), "text/html; charset=utf-8");
 
@@ -372,10 +379,70 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
       return run ? sendJson(response, 200, buildResponse(run)) : sendJson(response, 409, buildResponse(null, new RouterError("RUN_ALREADY_FINISHED", "Run cannot be cancelled.")));
     }
 
+    // R9 - Run-Approval BFF (docs/run-approval-bff-r9.md). Before this,
+    // isTrustedMutation() alone protected this route - any local caller
+    // without an Origin header could approve or reject any waiting run (see
+    // docs/run-approval-trust-boundary-r8.md, section 1). Same auth
+    // semantics as R7's /api/actions/:id/approval now applies here: a valid
+    // AI_ROUTER_APPROVAL_TOKEN bearer token is required, same error codes,
+    // no new token family. The browser page never calls this route
+    // directly any more (see decide() in the served HTML) - it goes
+    // through the narrow BFF route below, which holds the token
+    // server-side and forwards internally.
     const approvalMatch = pathname.match(/^\/api\/runs\/([^/]+)\/approval$/);
     if (request.method === "POST" && approvalMatch) {
       if (!isTrustedMutation(request)) return sendJson(response, 403, buildResponse(null, new RouterError("INVALID_REQUEST", "Untrusted local request.")));
+      try {
+        authenticateInternalRequest(request.headers.authorization, { expectedToken: process.env.AI_ROUTER_APPROVAL_TOKEN, timingSafeEqualFn });
+      } catch (authError) {
+        const httpStatus = authError.code === "AUTH_REQUIRED" ? 401 : 403;
+        const code = authError.code === "AUTH_REQUIRED" ? "APPROVAL_AUTH_REQUIRED" : "APPROVAL_SOURCE_UNTRUSTED";
+        safeLog("run_approval_rejected_auth", { runId: approvalMatch[1], reason: authError.code || "UNKNOWN" });
+        return sendJson(response, httpStatus, buildResponse(null, new RouterError(code, "The approval source could not be verified.")));
+      }
+      safeLog("run_approval_received", { runId: approvalMatch[1], source: "operator-token" });
       return sendJson(response, 200, buildResponse(await service.decideApproval(approvalMatch[1], await readJsonBody(request))));
+    }
+
+    // R9 - Run-Approval BFF. The only route the browser page itself is
+    // allowed to call. AI_ROUTER_APPROVAL_TOKEN never reaches the client:
+    // this handler holds it in process.env and forwards to the exact same
+    // decideApproval() the hardened route above uses, entirely in-process -
+    // never a second HTTP hop, so there is nothing to intercept between the
+    // two. Browser trust here is same-origin (isTrustedMutation, reused
+    // from every other browser-facing mutation in this file) PLUS a
+    // single-use nonce (approval-nonce-store.js) minted only when this
+    // server itself served the page at GET / - a bare curl/script call has
+    // neither. The nonce is consumed unconditionally the moment it is
+    // checked, valid or not, so one failed attempt always requires a fresh
+    // page load; only a *successful* decision hands back a fresh nonce (in
+    // `approvalNonce`) so a still-open page can decide a later run too.
+    // Client body is read for exactly three fields (decision, decisionNote,
+    // nonce) - nothing else is ever interpreted, so this cannot become a
+    // generic proxy.
+    const approvalUiMatch = pathname.match(/^\/api\/runs\/([^/]+)\/approval\/ui$/);
+    if (request.method === "POST" && approvalUiMatch) {
+      if (!isTrustedMutation(request)) return sendJson(response, 403, buildResponse(null, new RouterError("INVALID_REQUEST", "Untrusted local request.")));
+      const runId = approvalUiMatch[1];
+      const body = await readJsonBody(request);
+      if (!approvalNonceStore.consume(body?.nonce)) {
+        safeLog("run_approval_ui_rejected_nonce", { runId });
+        return sendJson(response, 401, buildResponse(null, new RouterError("APPROVAL_NONCE_INVALID", "The approval request could not be verified.")));
+      }
+      // Fail closed: an unconfigured or too-short token denies every
+      // browser decision, never falls back to an unauthenticated forward.
+      // Folded into the same APPROVAL_SOURCE_UNTRUSTED code the hardened
+      // route above uses for a wrong token - a caller must never learn "no
+      // token configured" as information distinct from "untrusted source".
+      const approvalToken = process.env.AI_ROUTER_APPROVAL_TOKEN;
+      if (typeof approvalToken !== "string" || approvalToken.length < 32) {
+        safeLog("run_approval_ui_rejected_auth", { runId, reason: "AUTH_NOT_CONFIGURED" });
+        return sendJson(response, 403, buildResponse(null, new RouterError("APPROVAL_SOURCE_UNTRUSTED", "The approval source could not be verified.")));
+      }
+      safeLog("run_approval_ui_received", { runId, source: "browser-ui" });
+      const result = buildResponse(await service.decideApproval(runId, { decision: body?.decision, decisionNote: body?.decisionNote }));
+      safeLog("run_approval_ui_forwarded", { runId, decision: typeof body?.decision === "string" ? body.decision : null });
+      return sendJson(response, 200, { ...result, approvalNonce: approvalNonceStore.issue() });
     }
 
     // R5 - Action Resolution + Approval Resume. Human decision endpoint for
