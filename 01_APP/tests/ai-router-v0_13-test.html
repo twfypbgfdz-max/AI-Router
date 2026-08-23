@@ -97,5 +97,16 @@ get('cancel').onclick=async()=>{if(!activeRunId)return;await fetch('/api/runs/'+
 let approvalNonce=document.querySelector('meta[name="approval-nonce"]').content;
 async function decide(decision){if(!activeRunId)return;approve.disabled=true;reject.disabled=true;try{const response=await fetch('/api/runs/'+encodeURIComponent(activeRunId)+'/approval/ui',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({decision,decisionNote:note.value,nonce:approvalNonce})});const run=await response.json();if(typeof run.approvalNonce==='string')approvalNonce=run.approvalNonce;if(!response.ok)throw new Error((run.error&&run.error.message)||'Entscheidung fehlgeschlagen');render(run);if(!terminal(run.status))poll(run.runId)}catch(error){result.textContent=safe(error.message,300)}}
 approve.onclick=()=>decide('approve');reject.onclick=()=>decide('reject');
-statusFilterOptions();loadHealth();loadHistory();loadProviders();
+// R12 - Run Resume/Reattach after reload: a page reload used to lose
+// activeRunId even though the server (RunService.activeRunId + the
+// persisted latest-run file) still had the run alive. GET /api/runs/latest
+// is already the server's source of truth for "which run was last touched"
+// and is rewritten on every status transition, so no new endpoint or client
+// storage is needed - only truly finished runs (matching RunService's own
+// TERMINAL set) are excluded, so this rediscovers a running/queued/
+// validating/awaiting_approval run and resumes it via the exact same
+// poll()/decide() path a fresh start would use.
+const RESOLVED_RUN_STATUSES=['succeeded','failed','cancelled','timed_out'];
+async function reattach(){try{const response=await fetch('/api/runs/latest');if(!response.ok)return;const latest=await response.json();if(!latest||!latest.runId||RESOLVED_RUN_STATUSES.includes(latest.status))return;activeRunId=latest.runId;poll(activeRunId)}catch(e){}}
+statusFilterOptions();loadHealth();loadHistory();loadProviders();reattach();
 </script></body></html>
