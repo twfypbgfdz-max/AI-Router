@@ -32,6 +32,41 @@ function projectProvider(run) {
   };
 }
 
+// Safe, bounded approval view for a run response. The browser UI's
+// showApproval(run) reads exactly these two objects off the HTTP body to
+// decide whether to render the approve/reject panel (R11) - without this
+// projection the panel stays hidden even though the run is correctly
+// awaiting_approval server-side.
+function projectApproval(run) {
+  const approval = run?.approval;
+  if (!approval || typeof approval !== "object") return null;
+  return {
+    required: approval.required === true,
+    status: approval.status || null,
+    requestedAt: approval.requestedAt || null,
+    decidedAt: approval.decidedAt || null,
+    decision: approval.decision || null,
+    decisionNote: sanitizeText(approval.decisionNote, 500),
+    approvedAction: sanitizeText(approval.approvedAction, 300),
+    consumed: approval.consumed === true
+  };
+}
+
+function projectApprovalContext(run) {
+  const context = run?.approvalContext;
+  if (!context || typeof context !== "object") return null;
+  const list = (values) => Array.isArray(values) ? values.map((v) => sanitizeText(v, 300)).filter(Boolean).slice(0, 10) : [];
+  return {
+    plannedAction: sanitizeText(context.plannedAction, 300),
+    whyApprovalRequired: sanitizeText(context.whyApprovalRequired, 200),
+    possibleConsequences: list(context.possibleConsequences),
+    affectedSystems: list(context.affectedSystems),
+    affectedResources: list(context.affectedResources),
+    reversibility: context.reversibility || null,
+    warnings: list(context.warnings)
+  };
+}
+
 function projectSynthesis(run) {
   const s = run?.providerSynthesis;
   if (!s || typeof s !== "object") return null;
@@ -54,7 +89,7 @@ export function buildResponse(run, error = null) {
   const generatedCode = ERROR_CODES.includes(run?.errorCode) ? run.errorCode : fallbackCode;
   const generated = ["failed", "timed_out"].includes(run?.status) ? errorPayload({ code: generatedCode, message: run.errorSummary || "The router run failed.", retryable: false }) : null;
   const failure = error ? errorPayload(error, run?.requestId) : (run?.error || generated);
-  const payload = { schemaVersion: 1, requestId: run?.requestId || null, runId: run?.runId || null, status: run?.status || "failed", success: !failure && run?.status !== "failed" && run?.status !== "timed_out", routePlan: run?.routePlan || null, workflow: run?.workflow || null, provider: projectProvider(run), providerSynthesis: projectSynthesis(run), result: failure ? null : (run?.resultSummary ? { summary: sanitizeText(run.resultSummary, 1_000) } : null), error: failure, warnings: Array.isArray(run?.warnings) ? run.warnings.map((value) => sanitizeText(value, 200)).filter(Boolean).slice(0, 10) : [], timestamps: { createdAt: run?.createdAt || null, startedAt: run?.startedAt || null, finishedAt: run?.finishedAt || null, updatedAt: run?.updatedAt || new Date().toISOString(), durationMs: Number.isFinite(run?.durationMs) ? run.durationMs : null }, routerVersion: ROUTER_VERSION };
+  const payload = { schemaVersion: 1, requestId: run?.requestId || null, runId: run?.runId || null, status: run?.status || "failed", success: !failure && run?.status !== "failed" && run?.status !== "timed_out", routePlan: run?.routePlan || null, workflow: run?.workflow || null, provider: projectProvider(run), approval: projectApproval(run), approvalContext: projectApprovalContext(run), providerSynthesis: projectSynthesis(run), result: failure ? null : (run?.resultSummary ? { summary: sanitizeText(run.resultSummary, 1_000) } : null), error: failure, warnings: Array.isArray(run?.warnings) ? run.warnings.map((value) => sanitizeText(value, 200)).filter(Boolean).slice(0, 10) : [], timestamps: { createdAt: run?.createdAt || null, startedAt: run?.startedAt || null, finishedAt: run?.finishedAt || null, updatedAt: run?.updatedAt || new Date().toISOString(), durationMs: Number.isFinite(run?.durationMs) ? run.durationMs : null }, routerVersion: ROUTER_VERSION };
   const serialized = JSON.stringify(payload);
   return serialized.length <= MAX_RESPONSE_LENGTH ? payload : { ...payload, routePlan: null, workflow: null, providerSynthesis: null, warnings: ["Response was reduced to its safe size limit."], result: payload.result ? { summary: "Result available but omitted because of response size limit." } : null };
 }

@@ -97,6 +97,61 @@ test("GET / never embeds the approval token anywhere in the page", async (t) => 
   });
 });
 
+// R11 - the browser UI's showApproval(run) (01_APP/tests/ai-router-v0_13-test.html)
+// reads run.approval and run.approvalContext straight off the HTTP JSON body to
+// decide whether to render the approve/reject panel. Before this test, buildResponse()
+// never projected either field, so the panel stayed permanently hidden for a real
+// browser user even though the nonce/token/state-machine boundaries below all work
+// correctly - service.get(id).approval was always right, only the HTTP envelope was
+// missing it. This test hits the same GET /api/runs/:id endpoint the UI polls, not
+// the internal service object, so it fails closed if that projection regresses again.
+test("GET /api/runs/:id exposes approval and approvalContext so the browser can render the approve/reject panel", async (t) => {
+  await withServer(t, async (baseUrl, service) => {
+    const waiting = await waitingRun(service, "Lösche alle Dateien und pushe auf main");
+    const response = await fetch(`${baseUrl}/api/runs/${encodeURIComponent(waiting.runId)}`);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.status, "awaiting_approval");
+
+    assert.ok(body.approval, "HTTP response must include an approval object");
+    assert.equal(body.approval.required, true);
+    assert.equal(body.approval.status, "pending");
+    assert.equal(body.approval.consumed, false);
+
+    assert.ok(body.approvalContext, "HTTP response must include an approvalContext object");
+    assert.equal(typeof body.approvalContext.plannedAction, "string");
+    assert.ok(body.approvalContext.plannedAction.length > 0);
+    assert.equal(typeof body.approvalContext.whyApprovalRequired, "string");
+    assert.ok(Array.isArray(body.approvalContext.possibleConsequences));
+    assert.ok(body.approvalContext.possibleConsequences.length > 0);
+    assert.ok(Array.isArray(body.approvalContext.affectedSystems));
+    assert.ok(Array.isArray(body.approvalContext.affectedResources));
+    assert.equal(typeof body.approvalContext.reversibility, "string");
+
+    // no auth secret ever leaks through this projection
+    assert.equal(JSON.stringify(body).includes(TEST_APPROVAL_TOKEN), false);
+  });
+});
+
+test("GET /api/runs/:id reflects the decision on approval after approve, still via the HTTP body", async (t) => {
+  await withServer(t, async (baseUrl, service) => {
+    const waiting = await waitingRun(service);
+    const { nonce } = await fetchNoncePage(baseUrl);
+    const decision = await postUiApproval(baseUrl, waiting.runId, { decision: "approve", decisionNote: "R11 projection test", nonce });
+    assert.equal(decision.status, 200);
+    const decisionBody = await decision.json();
+    assert.ok(decisionBody.approval, "the decision response itself must also expose approval");
+    assert.equal(decisionBody.approval.status, "approved");
+    assert.equal(decisionBody.approval.consumed, true);
+    assert.equal(decisionBody.approval.decisionNote, "R11 projection test");
+
+    const after = await fetch(`${baseUrl}/api/runs/${encodeURIComponent(waiting.runId)}`);
+    const afterBody = await after.json();
+    assert.equal(afterBody.approval.status, "approved");
+    assert.equal(afterBody.approval.consumed, true);
+  });
+});
+
 test("BFF: valid nonce + same-origin approves the run and never needs a token", async (t) => {
   await withServer(t, async (baseUrl, service) => {
     const waiting = await waitingRun(service);
