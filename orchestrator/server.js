@@ -39,6 +39,7 @@ import { checkJarvisReadiness } from "./jarvis-readiness.js";
 import { handleJarvisToday } from "./jarvis-today-handler.js";
 import { handleJarvisSystem } from "./jarvis-system-handler.js";
 import { handleJarvisSessionStatus } from "./jarvis-session-status-handler.js";
+import { handleJarvisSessionSummary } from "./jarvis-session-summary-handler.js";
 import { handleJarvisVoiceStatus } from "./jarvis-voice-status-handler.js";
 
 const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_13-test.html");
@@ -103,7 +104,7 @@ function safeFilterValue(value, allowed, maximum = 40) {
 
 function isoOrNull(value) { const parsed = Date.parse(value); return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null; }
 
-export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, ccKnowledgeHandler = handleCcKnowledgeRequest, knowledgeHandler = handleKnowledgeRequest, ccSnapshotHandler = handleCcSnapshotRequest, ccReindexHandler = handleCcReindexRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, jarvisConsoleAskHandler = handleJarvisConsoleAsk, jarvisTranscribeHandler = handleJarvisTranscribeRequest, jarvisSpeakHandler = handleJarvisSpeakRequest, jarvisTodayHandler = handleJarvisToday, jarvisSystemHandler = handleJarvisSystem, jarvisSessionStatusHandler = handleJarvisSessionStatus, jarvisVoiceStatusHandler = handleJarvisVoiceStatus, now = Date.now, timingSafeEqualFn } = {}) {
+export function createRouterServer({ service = new RunService(), eventLogger = logger, allowedRouterOrigins = ROUTER_ALLOWED_ORIGINS, routerTimeoutMs = ROUTER_API_TIMEOUT_MS, routerProcessor = processRouterRequest, textResponseHandler = handleTextResponseRequest, projectStatusHandler = handleProjectStatusRequest, gitChangeHandler = handleGitChangeRequest, ccStatusHandler = handleCcStatusRequest, ccSummaryHandler = handleCcSummaryRequest, ccKnowledgeHandler = handleCcKnowledgeRequest, knowledgeHandler = handleKnowledgeRequest, ccSnapshotHandler = handleCcSnapshotRequest, ccReindexHandler = handleCcReindexRequest, routerConsoleRespondHandler = handleRouterConsoleRespond, jarvisConsoleAskHandler = handleJarvisConsoleAsk, jarvisTranscribeHandler = handleJarvisTranscribeRequest, jarvisSpeakHandler = handleJarvisSpeakRequest, jarvisTodayHandler = handleJarvisToday, jarvisSystemHandler = handleJarvisSystem, jarvisSessionStatusHandler = handleJarvisSessionStatus, jarvisSessionSummaryHandler = handleJarvisSessionSummary, jarvisVoiceStatusHandler = handleJarvisVoiceStatus, now = Date.now, timingSafeEqualFn } = {}) {
   const serverStartedAt = Date.now();
   const safeLog = (event, safeMetadata = {}) => {
     try { Promise.resolve(eventLogger?.log?.({ event, safeMetadata })).catch(() => {}); } catch { /* logging is non-critical */ }
@@ -241,6 +242,16 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
     // Manager) - counts and the closed limit set, never session content
     // (see jarvis-session-status-handler.js).
     if (request.method === "GET" && pathname === "/api/jarvis/session-status") { safeLog("jarvis_session_status_checked"); return jarvisSessionStatusHandler(request, response); }
+
+    // Same-origin gate as /api/jarvis/ask (M2, Session Summary Layer): the
+    // sessionId in the body is the same value already trusted there, and
+    // the returned content is exactly what that session already exchanged
+    // over that same route - see jarvis-session-summary-handler.js.
+    if (request.method === "POST" && pathname === "/api/jarvis/session/summary") {
+      if (!isTrustedMutation(request)) return sendJson(response, 403, { code: "INVALID_REQUEST", message: "Untrusted local request." });
+      safeLog("jarvis_session_summary_requested");
+      return jarvisSessionSummaryHandler(request, response);
+    }
 
     // Read-only, no token: same trust level as /api/jarvis/ready. Separate
     // route on purpose - see orchestrator/jarvis-voice-status.js for why
