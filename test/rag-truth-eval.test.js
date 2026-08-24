@@ -87,12 +87,12 @@ test("a numeric truth concept can robustly accept a standalone markdown-formatte
   assert.equal(evaluated.verdict, "pass");
 });
 
-function t02Fixture(answer, { sourceDoc = "10_Apps/01_Aktive-Projekte/AI-Router.md" } = {}) {
+function t02Fixture(answer, { sourceDoc = "10_Apps/90_Entscheidungen/DEC-012-Interaktions-und-Boot-Erlebnis-Grenze.md" } = {}) {
   const allowedDocuments = new Set(loadAllowlist(RAG_ALLOWLIST_FILE).documents.map((entry) => entry.relativePath));
   const testCase = loadTruthSet(RAG_TRUTH_SET_FILE, { allowedDocuments }).cases.find((entry) => entry.id === "T02");
   const source = {
     sourceDoc,
-    section: "AI-Router > Aktueller fachlicher Projektstand",
+    section: "DEC-012 > Entscheidung > Wem das Boot-Erlebnis gehört",
     similarity: 0.7
   };
   return {
@@ -108,19 +108,17 @@ function t02Fixture(answer, { sourceDoc = "10_Apps/01_Aktive-Projekte/AI-Router.
       knowledgeState: "available",
       results: [{
         ...source,
-        informationClass: "project_context",
+        informationClass: "architecture_rule",
         sectionValidity: "current"
       }]
     }
   };
 }
 
-test("T02 accepts grammatically unusual but unequivocal inclusion statements", () => {
+test("T02 accepts the Command-Center-Autostart as owner of the boot experience", () => {
   const accepted = [
-    "Ja, DEC-006 in der RAG-Allowlist enthalten ist.",
-    "DEC-006 wurde in die RAG-Allowlist aufgenommen.",
-    "DEC-006 ist Bestandteil der RAG-Allowlist.",
-    "Zur RAG-Allowlist gehört DEC-006 als fester Teil."
+    "Das gesamte Boot-Erlebnis gehört dem Command-Center-Autostart.",
+    "Der Command Center-Autostart besitzt das Boot-Erlebnis."
   ];
   for (const answer of accepted) {
     const fixture = t02Fixture(answer);
@@ -128,23 +126,21 @@ test("T02 accepts grammatically unusual but unequivocal inclusion statements", (
   }
 });
 
-test("T02 still rejects negated, unclear or qualified inclusion statements", () => {
+test("T02 rejects assigning the boot experience to Jarvis or Status Companion", () => {
   const rejected = [
-    "DEC-006 ist nicht in der RAG-Allowlist enthalten.",
-    "DEC-006 ist nicht als Bestandteil der RAG-Allowlist dokumentiert.",
-    "Ob DEC-006 in der RAG-Allowlist enthalten ist, ist unklar.",
-    "DEC-006 ist wahrscheinlich in der RAG-Allowlist enthalten."
+    "Das Boot-Erlebnis gehört zu Jarvis.",
+    "Das Boot-Erlebnis ist Teil von Status Companion."
   ];
   for (const answer of rejected) {
     const fixture = t02Fixture(answer);
     const evaluated = evaluateTruthSample(fixture.testCase, fixture);
     assert.equal(evaluated.verdict, "fail", answer);
-    assert.ok(evaluated.failedAssertions.includes("forbidden:dec006_not_clearly_included"), answer);
+    assert.ok(evaluated.failedAssertions.includes("forbidden:boot_experience_assigned_to_wrong_product"), answer);
   }
 });
 
-test("T02 keeps requiring the server-validated AI-Router evidence source", () => {
-  const fixture = t02Fixture("Ja, DEC-006 in der RAG-Allowlist enthalten ist.", { sourceDoc: "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md" });
+test("T02 keeps requiring the server-validated DEC-012 evidence source", () => {
+  const fixture = t02Fixture("Das Boot-Erlebnis gehört dem Command-Center-Autostart.", { sourceDoc: "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md" });
   const evaluated = evaluateTruthSample(fixture.testCase, fixture);
   assert.equal(evaluated.verdict, "fail");
   assert.ok(evaluated.failedAssertions.includes("cited_evidence"));

@@ -9,50 +9,53 @@
   "cases": [
     {
       "id": "T01",
-      "question": "Was dokumentiert die AI-Router-Projektnotiz vom 13.08.2026 zur Anzahl der RAG-Allowlist-Dokumente?",
+      "question": "Aus wie vielen Accepted DECs und Nicht-DEC-Dokumenten besteht laut AI-Router-Projektnotiz die seit 18.08.2026 dokumentierte 18-Dokumente-RAG-Allowlist?",
       "expected": {
         "states": ["partial"],
         "knowledgeStates": ["available"],
         "warningIncludes": [],
-        "warningExcludes": ["current_state_not_verified"],
+        "warningExcludes": [],
         "evidenceAnyOf": [
+          { "sourceDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md", "informationClass": "project_context", "sectionValidity": "current" },
           { "sourceDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md", "informationClass": "project_context", "sectionValidity": "current", "sectionIncludes": "Aktueller fachlicher Projektstand" },
-          { "sourceDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md", "informationClass": "project_context", "sectionValidity": "current", "sectionIncludes": "Fortschritt und nächster Schritt" }
+          { "sourceDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md", "informationClass": "project_context", "sectionValidity": "current", "sectionIncludes": "Fortschritt und nächster Schritt" },
+          { "sourceDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md", "informationClass": "project_context", "sectionValidity": "current", "sectionIncludes": "Blocker und Risiken" }
         ],
         "answer": {
           "concepts": [
-            { "id": "allowlist_has_ten_documents", "anyOf": ["10 dokumente", "zehn dokumente"], "patterns": ["\\b10\\b"] }
+            { "id": "allowlist_has_eighteen_documents", "anyOf": ["18 dokumente", "achtzehn dokumente"], "patterns": ["\\b18\\b"] },
+            { "id": "allowlist_has_twelve_decs", "anyOf": ["12 decs", "zwölf decs", "zwolf decs", "zwölf accepted decs", "zwolf accepted decs"], "patterns": ["\\b12\\s*(?:accepted\\s*)?decs?\\b"] }
           ],
           "forbiddenPatterns": [
-            { "id": "allowlist_affirmed_as_seven", "pattern": "\\b(?:die )?allowlist (?:umfasst|enthalt) 7\\b" }
+            { "id": "allowlist_affirmed_as_old_size", "pattern": "\\b(?:die )?allowlist (?:umfasst|enthalt\\w*) (?:7|10)\\b" }
           ]
         }
       }
     },
     {
       "id": "T02",
-      "question": "Was dokumentiert die AI-Router-Projektnotiz vom 13.08.2026 dazu, ob DEC-006 in der RAG-Allowlist enthalten ist?",
+      "question": "Wem gehört das gesamte Boot-Erlebnis laut DEC-012: Jarvis, Status Companion oder dem Command-Center-Autostart?",
       "expected": {
         "states": ["partial"],
         "knowledgeStates": ["available"],
         "warningIncludes": [],
-        "warningExcludes": ["current_state_not_verified"],
+        "warningExcludes": [],
         "evidenceAnyOf": [
-          { "sourceDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md", "informationClass": "project_context", "sectionValidity": "current", "sectionIncludes": "Aktueller fachlicher Projektstand" },
-          { "sourceDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md", "informationClass": "project_context", "sectionValidity": "current", "sectionIncludes": "Fortschritt und nächster Schritt" }
+          { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-012-Interaktions-und-Boot-Erlebnis-Grenze.md", "informationClass": "architecture_rule", "sectionValidity": "current", "sectionIncludes": "Wem das Boot-Erlebnis gehört" },
+          { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-012-Interaktions-und-Boot-Erlebnis-Grenze.md", "informationClass": "architecture_rule", "sectionValidity": "current", "sectionIncludes": "Vier getrennte Rollen" }
         ],
         "answer": {
           "concepts": [
             {
-              "id": "dec006_is_included",
-              "anyOf": [],
-              "patterns": ["(?=[^.!?\\n]*\\bdec-0*6\\b)(?=[^.!?\\n]*\\ballowlist\\b)[^.!?\\n]*\\b(?:enthalt\\w*|aufgenommen\\w*|bestandteil|teil)\\b"]
+              "id": "boot_experience_belongs_to_command_center_autostart",
+              "anyOf": ["command-center-autostart", "command center-autostart", "command-center autostart"],
+              "patterns": ["\\bboot-erlebnis\\b[^.!?\\n]{0,80}\\bcommand[- ]center[- ]autostart\\b", "\\bcommand[- ]center[- ]autostart\\b[^.!?\\n]{0,80}\\bboot-erlebnis\\b"]
             }
           ],
           "forbiddenPatterns": [
             {
-              "id": "dec006_not_clearly_included",
-              "pattern": "(?=[^.!?\\n]*\\bdec-0*6\\b)(?=[^.!?\\n]*\\ballowlist\\b)[^.!?\\n]*(?:\\bnicht\\b[^.!?\\n]{0,40}\\b(?:enthalt\\w*|aufgenommen\\w*|dokumentiert\\w*|belegt\\w*|bestandteil|teil)\\b|\\bkein\\w*\\s+(?:bestandteil|teil)\\b|\\b(?:unklar|unbekannt|offen|moglicherweise|vermutlich|wahrscheinlich|anscheinend)\\b)"
+              "id": "boot_experience_assigned_to_wrong_product",
+              "pattern": "\\bboot-erlebnis\\b\\s+(?:gehort|ist teil von)\\s+(?:zu[mr]?|de[mr]?)?\\s*(?:jarvis|status companion)\\b"
             }
           ]
         }
@@ -93,8 +96,8 @@
         ],
         "answer": {
           "concepts": [
-            { "id": "clear_no", "anyOf": ["nein", "nicht ausschliesslich", "nicht nur"] },
-            { "id": "whole_system_wins", "anyOf": ["gesamtes personliches jarvis-system", "gesamtes jarvis-system", "gesamte jarvis-system", "personliches jarvis-system", "gesamtsystem"], "patterns": ["\\bgesam\\w* (?:personlich\\w* )?jarvis-system\\b"] }
+            { "id": "clear_no", "anyOf": ["nein", "nicht ausschliesslich", "nicht mehr ausschliesslich", "nicht nur"] },
+            { "id": "whole_system_wins", "anyOf": ["gesamtes personliches jarvis-system", "gesamten personal jarvis-system", "gesamtes jarvis-system", "gesamte jarvis-system", "personliches jarvis-system", "gesamtsystem"], "patterns": ["\\bgesam\\w* (?:personlich\\w* |personal )?jarvis-system\\b", "\\bumfasst\\b[^.!?\\n]{0,80}\\bbausteine\\b[^.!?\\n]{0,80}\\bwissensschicht\\b"] }
           ],
           "forbiddenPatterns": [
             { "id": "historical_definition_wins", "pattern": "\\bfelix core ist (?:ausschliesslich|nur) (?:die )?vertragsebene\\b" }
@@ -104,20 +107,21 @@
     },
     {
       "id": "T05",
-      "question": "Ist das Command Center die einzige Wissensoberfläche von Felix Core?",
+      "question": "Bestätigt DEC-006 Version 1.2 nur einen Wissens-Consumer, oder welchen alternativen read-only Wissenszugang erlaubt sie neben dem Command Center?",
       "expected": {
         "states": ["partial"],
         "knowledgeStates": ["available"],
         "warningIncludes": [],
         "warningExcludes": ["current_state_not_verified"],
         "evidenceAnyOf": [
+          { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md", "informationClass": "architecture_rule", "sectionValidity": "current" },
           { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md", "informationClass": "architecture_rule", "sectionValidity": "current", "sectionIncludes": "Jarvis-Dialogoberfläche" },
           { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md", "informationClass": "architecture_rule", "sectionValidity": "current", "sectionIncludes": "Mehrverbraucher-Wissenszugriff" }
         ],
         "answer": {
           "concepts": [
-            { "id": "clear_no", "anyOf": ["nein", "nicht die einzige", "mehrere consumer"] },
-            { "id": "concrete_alternative_knowledge_access", "anyOf": ["ai-router", "jarvis-dialogoberflache", "lokale dialogoberflache", "/api/v1/knowledge"], "patterns": ["\\bgenerisch\\w* read-only vertrag\\b.{0,100}\\bmehrverbraucher-wissenszugriff\\b", "\\bmehrverbraucher-wissenszugriff\\b.{0,100}\\bgenerisch\\w* read-only vertrag\\b"] }
+            { "id": "clear_no", "anyOf": ["nein", "nicht die einzige", "nicht nur den command center", "nicht nur einen", "mehrere consumer", "mehrere wissens-consumer", "mehrere wissens-zugriff", "zusatzlich verfugbar", "zusatzliche wissensoberflache"] },
+            { "id": "concrete_alternative_knowledge_access", "anyOf": ["ai-router", "jarvis-dialogoberflache", "lokale dialogoberflache", "/api/v1/knowledge", "v1/knowledge", "frage an felix_system", "mehrere consumer", "mehrere wissens-consumer"], "patterns": ["\\bgenerisch\\w* read-only vertrag\\b.{0,100}\\bmehrverbraucher-wissenszugriff\\b", "\\bmehrverbraucher-wissenszugriff\\b.{0,100}\\bgenerisch\\w* read-only vertrag\\b"] }
           ],
           "forbiddenPatterns": [
             { "id": "command_center_only_surface", "pattern": "\\bcommand center ist die einzige (?:wissens|knowledge)" }
@@ -127,41 +131,42 @@
     },
     {
       "id": "T06",
-      "question": "Auf welchem Commit steht der AI-Router aktuell?",
+      "question": "Welche Primärquelle legen DEC-001 und DEC-006 für Code- und Git-Zustände fest?",
       "expected": {
         "states": ["partial"],
         "knowledgeStates": ["available"],
-        "warningIncludes": ["current_state_not_verified"],
+        "warningIncludes": [],
         "warningExcludes": [],
         "evidenceAnyOf": [
-          { "sourceDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md", "informationClass": "project_context", "sectionValidity": "current" }
+          { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-001-Rollen-Verantwortlichkeiten-Grenzen.md", "informationClass": "architecture_rule", "sectionValidity": "current" },
+          { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md", "informationClass": "architecture_rule", "sectionValidity": "current", "sectionIncludes": "Single-Source-of-Truth" }
         ],
         "answer": {
           "concepts": [
-            { "id": "current_head_not_verified", "anyOf": ["nicht verifiziert", "nicht belegt", "nicht sicher ableitbar", "nicht ermittelbar", "keinen aktuellen"] },
-            { "id": "live_source_required", "anyOf": ["repository", "technischen system", "git"] }
+            { "id": "repository_is_primary", "anyOf": ["repository", "git-repository"] },
+            { "id": "covers_code_or_git_state", "anyOf": ["code", "git-zustand", "technischen ist-zustand", "branch", "commit"] }
           ],
           "forbiddenPatterns": [],
-          "currentCommitPolicy": "no_verified_current_commit_without_live_source"
+          "currentCommitPolicy": null
         }
       }
     },
     {
       "id": "T07",
-      "question": "Welchen Funktionsstand dokumentiert die AI-Router-Projektnotiz für den 13.08.2026?",
+      "question": "War Voice v1 laut AI-Router-Projektnotiz am 16.08.2026 nur angebunden oder real Ende-zu-Ende verifiziert?",
       "expected": {
         "states": ["partial"],
         "knowledgeStates": ["available"],
         "warningIncludes": [],
         "warningExcludes": ["current_state_not_verified"],
         "evidenceAnyOf": [
-          { "sourceDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md", "informationClass": "project_context", "sectionValidity": "current", "sectionIncludes": "Aktueller fachlicher Projektstand" }
+          { "sourceDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md", "informationClass": "project_context", "sectionValidity": "current" },
+          { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-008-Jarvis-Voice-Normalization.md", "informationClass": "architecture_rule", "sectionValidity": "current" }
         ],
         "answer": {
           "concepts": [
-            { "id": "local_rag_or_knowledge", "anyOf": ["rag", "knowledge-answer", "wissens"] },
-            { "id": "jarvis_dialog", "anyOf": ["jarvis-dialog", "dialogoberflache"] },
-            { "id": "voice_v1", "anyOf": ["voice v1", "spracheingabe", "sprachausgabe"] }
+            { "id": "voice_v1_scope", "anyOf": ["voice v1", "voice-pfad", "voice-integration", "voice integration"] },
+            { "id": "end_to_end_verification", "anyOf": ["ende-zu-ende verifiziert", "ende-zu-ende getestet", "browser-test", "browser test", "komplette voice-pfad"] }
           ],
           "forbiddenPatterns": []
         }
@@ -169,11 +174,11 @@
     },
     {
       "id": "T08",
-      "question": "Welches Projekt ist heute mein Fokusprojekt?",
+      "question": "Ist das heutige Fokusprojekt in der Vault-Projektsteuerung belastbar bestätigt, und wo werden operative Tagesprioritäten geführt?",
       "expected": {
         "states": ["partial"],
         "knowledgeStates": ["available"],
-        "warningIncludes": ["current_state_not_verified"],
+        "warningIncludes": [],
         "warningExcludes": [],
         "evidenceAnyOf": [
           { "sourceDoc": "10_Apps/00_Projektsteuerung.md", "informationClass": "project_context", "sectionValidity": "current", "sectionIncludes": "Aktuelles Fokusprojekt" },
@@ -182,7 +187,7 @@
         "answer": {
           "concepts": [
             { "id": "today_not_confirmed", "anyOf": ["nicht belastbar bestatigt", "nicht verifiziert", "nicht belegt", "nicht sicher ableitbar", "heute zu prufen", "stand ist historisch", "historischer stand"], "patterns": ["\\baktuell\\w* fokus\\b.{0,50}\\b(?:unbekannt|nicht (?:bekannt|bestatigt|belegt|verifiziert))\\b", "\\b(?:fokusprojektstatus|fokusprojekt|fokus)\\b.{0,30}\\bheute\\b.{0,30}\\bunbekannt\\b"] },
-            { "id": "daily_control_source", "anyOf": ["felix-cockpit", "cockpit", "tagessteuerung", "tagesprioritaten", "operative tagesaufgaben"] }
+            { "id": "daily_control_source", "anyOf": ["felix-cockpit", "cockpit", "tagessteuerung", "tagesprioritaten", "operative tagesaufgaben", "fuhrenden projektsteuerung"] }
           ],
           "forbiddenPatterns": [
             { "id": "historical_focus_as_today", "pattern": "\\b(?:das )?heutige fokusprojekt (?:ist|lautet) plateau-brecher\\b" }
@@ -203,7 +208,7 @@
         ],
         "answer": {
           "concepts": [
-            { "id": "router_does_not_act_autonomously", "anyOf": ["nicht autonom", "keine autonomen", "nicht eigenstandig", "empfiehlt"] },
+            { "id": "router_does_not_act_autonomously", "anyOf": ["nicht autonom", "keine autonomen", "keine autonom folgenreichen", "nicht eigenstandig", "empfiehlt"] },
             { "id": "deterministic_implementation_limit", "anyOf": ["nicht sicher ableitbar"] },
             { "id": "repository_check", "anyOf": ["repository", "technischen system"] }
           ],
@@ -224,8 +229,8 @@
         ],
         "answer": {
           "concepts": [
-            { "id": "fitness_trainer_license", "anyOf": ["fitnesstrainer b-lizenz"] },
-            { "id": "nutrition_trainer_license", "anyOf": ["ernahrungstrainer b-lizenz"] }
+            { "id": "fitness_trainer_license", "anyOf": ["fitnesstrainer b-lizenz", "b-lizenz als fitnesstrainer", "b-lizenz fur fitnesstrainer"] },
+            { "id": "nutrition_trainer_license", "anyOf": ["ernahrungstrainer b-lizenz", "b-lizenz als ernahrungstrainer", "b-lizenz fur ernahrungstrainer"] }
           ],
           "forbiddenPatterns": []
         }
