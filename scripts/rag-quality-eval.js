@@ -19,11 +19,12 @@ import { assertEmbeddingModelAvailable, embedText } from "../orchestrator/knowle
 import { readAllChunks, readIndexMeta } from "../orchestrator/knowledge/rag-index-store.js";
 import { searchKnowledgeChunks } from "../orchestrator/knowledge/rag-search.js";
 import { loadQualitySet } from "../orchestrator/knowledge/rag-quality-set.js";
-import { evaluateQualityCase, summarizeQualityEvaluation } from "../orchestrator/knowledge/rag-quality-eval.js";
+import { evaluateQualitySearchCase, summarizeQualityEvaluation } from "../orchestrator/knowledge/rag-quality-eval.js";
 import {
   RAG_ALLOWLIST_FILE,
   RAG_DEFAULT_MIN_SIMILARITY,
   RAG_DEFAULT_TOP_K,
+  RAG_MAX_COMBINED_SNIPPET_CHARS,
   RAG_QUALITY_SET_FILE,
   loadOllamaEmbeddingProviderConfig
 } from "../orchestrator/knowledge/rag-config.js";
@@ -72,9 +73,9 @@ function printCaseTable(caseResults) {
   }
 }
 
-function printSummary(minSimilarity, summary) {
+function printSummary(minSimilarity, summary, label) {
   console.log("");
-  console.log(`  Schwelle ${minSimilarity.toFixed(2)}  |  ${summary.positiveCases} positive, ${summary.negativeCases} negative Fälle`);
+  console.log(`  ${label} · Schwelle ${minSimilarity.toFixed(2)}  |  ${summary.positiveCases} positive, ${summary.negativeCases} negative Fälle`);
   console.log(`    Top-1-Trefferquote   ${formatRate(summary.top1Rate)}   (${summary.counts.hit_top1}/${summary.positiveCases})`);
   console.log(`    Top-K-Trefferquote   ${formatRate(summary.top3Rate)}   (${summary.counts.hit_top1 + summary.counts.hit_topk}/${summary.positiveCases})`);
   console.log(`    falsches Dokument    ${formatRate(summary.wrongDocRate)}   (${summary.counts.miss_wrong_doc}/${summary.positiveCases})`);
@@ -110,24 +111,32 @@ async function main() {
 
   const runs = [];
   for (const minSimilarity of args.minSimilarities) {
-    const caseResults = qualitySet.cases.map((testCase, index) => {
-      const { results } = searchKnowledgeChunks(embeddings[index], chunks, {
+    const evaluatedCases = qualitySet.cases.map((testCase, index) => {
+      const searchResult = searchKnowledgeChunks(embeddings[index], chunks, {
         minSimilarity,
         topK: args.topK,
-        // The real endpoint truncates the combined snippet text to keep the
-        // prompt inside budget. That is an answer-side constraint; measuring
-        // retrieval through it would let a long chunk hide a correct match
-        // behind a truncation, so it is lifted here on purpose.
-        maxCombinedChars: Number.MAX_SAFE_INTEGER
+        maxCombinedChars: RAG_MAX_COMBINED_SNIPPET_CHARS
       });
-      return evaluateQualityCase(testCase, results);
+      return evaluateQualitySearchCase(testCase, searchResult);
     });
+    const caseResults = evaluatedCases.map((entry) => entry.retrieval);
+    const packedCaseResults = evaluatedCases.map((entry) => entry.packed);
     const summary = summarizeQualityEvaluation(caseResults);
-    runs.push({ minSimilarity, topK: args.topK, summary, cases: caseResults });
+    const packedSummary = summarizeQualityEvaluation(packedCaseResults);
+    runs.push({
+      minSimilarity,
+      topK: args.topK,
+      summary,
+      packedSummary,
+      cases: caseResults,
+      packedCases: packedCaseResults,
+      llmSources: evaluatedCases.map((entry) => ({ id: entry.retrieval.id, sources: entry.llmSources }))
+    });
 
     if (!args.json) {
       if (args.minSimilarities.length === 1) printCaseTable(caseResults);
-      printSummary(minSimilarity, summary);
+      printSummary(minSimilarity, summary, "Retrieval");
+      printSummary(minSimilarity, packedSummary, "LLM-Kontext (nach Packing)");
     }
   }
 

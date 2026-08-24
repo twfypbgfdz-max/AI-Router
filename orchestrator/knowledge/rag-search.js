@@ -1,156 +1,11 @@
-import { RAG_DEFAULT_MIN_SIMILARITY, RAG_DEFAULT_TOP_K, RAG_MAX_COMBINED_SNIPPET_CHARS, RAG_MAX_TOP_K } from "./rag-config.js";
-
-const RAG_DIVERSITY_SENTENCE_MAX_CHARS = 96;
-
-const QUERY_STOP_WORDS = new Set([
-  "als", "auf", "aus", "bei", "bereits", "das", "dazu", "dem", "den", "der", "des", "die", "ein", "eine",
-  "einer", "eines", "einem", "einen", "fur", "hat", "haben", "heute", "im", "in", "ist", "laut", "mein",
-  "mit", "nach", "ob", "oder", "sich", "sind", "steht", "und", "vom", "von", "was", "welche", "welcher",
-  "welches", "welchem", "wie", "zu", "zur"
-]);
-
-function normalizeWords(value) {
-  return String(value)
-    .normalize("NFKD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/ß/g, "ss")
-    .replace(/\bdec-0*(\d+)\b/g, "dec$1");
-}
-
-function stemWord(word) {
-  if (word.length > 6 && word.endsWith("en")) return word.slice(0, -2);
-  if (word.length > 5 && word.endsWith("e")) return word.slice(0, -1);
-  return word;
-}
-
-function wordsOf(value) {
-  return (normalizeWords(value).match(/[a-z0-9]+/g) || []).map(stemWord);
-}
-
-function queryTermsOf(queryText) {
-  return new Set(wordsOf(queryText).filter((word) => (
-    word.length > 1 && !/^\d+$/.test(word) && !QUERY_STOP_WORDS.has(word)
-  )));
-}
-
-function matchingQueryTermCount(sentence, queryTerms) {
-  const sentenceWords = new Set(wordsOf(sentence));
-  let matches = 0;
-  for (const term of queryTerms) {
-    if (sentenceWords.has(term)) matches += 1;
-  }
-  return matches;
-}
-
-function nextNonWhitespaceIndex(text, from) {
-  let index = from;
-  while (index < text.length && /\s/u.test(text[index])) index += 1;
-  return index;
-}
-
-function isDatePeriod(text, index, sentenceStart) {
-  if (/\d/u.test(text[index - 1] || "") && /\d/u.test(text[index + 1] || "")) return true;
-  const before = text.slice(sentenceStart, index + 1);
-  const dateAtEnd = /\b(?:\d{1,2}\.){1,2}\d{0,4}\.$/u.test(before);
-  if (!dateAtEnd) return false;
-  const nextIndex = nextNonWhitespaceIndex(text, index + 1);
-  return nextIndex < text.length && /\p{Ll}/u.test(text[nextIndex]);
-}
-
-function sentenceBoundaryEnd(text, index, sentenceStart, insideCode) {
-  const punctuation = text[index];
-  if (insideCode || !".!?".includes(punctuation)) return null;
-  if (punctuation === "." && isDatePeriod(text, index, sentenceStart)) return null;
-
-  let end = index + 1;
-  while (end < text.length && "*_`])}".includes(text[end])) end += 1;
-  return end;
-}
-
-function hasEvenMarkerCount(text, marker) {
-  return text.split(marker).length % 2 === 1;
-}
-
-function hasBalancedDelimiters(text) {
-  let round = 0;
-  let square = 0;
-  for (const character of text) {
-    if (character === "(") round += 1;
-    if (character === ")") round -= 1;
-    if (character === "[") square += 1;
-    if (character === "]") square -= 1;
-    if (round < 0 || square < 0) return false;
-  }
-  return round === 0 && square === 0;
-}
-
-function isCompleteSafeSentence(sentence) {
-  const trimmed = sentence.trim();
-  if (!trimmed || !/[.!?](?:[*_`\])}]*)$/u.test(trimmed)) return false;
-  if (trimmed.includes("```")) return false;
-  if (!hasEvenMarkerCount(trimmed, "`") || !hasEvenMarkerCount(trimmed, "**") || !hasEvenMarkerCount(trimmed, "__")) return false;
-  if (!hasBalancedDelimiters(trimmed)) return false;
-
-  const visibleStart = trimmed.replace(/^(?:[-+>#]\s*|\*\s+)*(?:\*\*|__|`)?/u, "");
-  if (!/^[\p{Lu}\d]/u.test(visibleStart)) return false;
-
-  const lexicalWords = wordsOf(trimmed).filter((word) => !["nein", "nicht", "kein", "keine", "keiner"].includes(word));
-  return lexicalWords.length >= 2;
-}
-
-function completeSentencesOf(text) {
-  const sentences = [];
-  let sentenceStart = 0;
-  let insideCode = false;
-  for (let index = 0; index < text.length; index += 1) {
-    if (text[index] === "`") {
-      let runLength = 1;
-      while (text[index + runLength] === "`") runLength += 1;
-      if (runLength === 1) insideCode = !insideCode;
-      index += runLength - 1;
-      continue;
-    }
-    const end = sentenceBoundaryEnd(text, index, sentenceStart, insideCode);
-    if (end === null) continue;
-    const sentence = text.slice(sentenceStart, end).trim();
-    if (isCompleteSafeSentence(sentence)) sentences.push(sentence);
-    sentenceStart = nextNonWhitespaceIndex(text, end);
-    index = sentenceStart - 1;
-  }
-  return sentences;
-}
-
-function bestSentenceScore(text, queryTerms) {
-  let best = 0;
-  for (const sentence of completeSentencesOf(text)) {
-    best = Math.max(best, matchingQueryTermCount(sentence, queryTerms));
-  }
-  return best;
-}
-
-function bestDiversitySentence(scored, excludedFrom, queryText, existingResults, remainingChars) {
-  if (!queryText || remainingChars <= 0) return null;
-  const queryTerms = queryTermsOf(queryText);
-  if (queryTerms.size === 0) return null;
-
-  let existingBest = 0;
-  for (const result of existingResults) {
-    existingBest = Math.max(existingBest, bestSentenceScore(result.snippet, queryTerms));
-  }
-
-  const sentenceLimit = Math.min(RAG_DIVERSITY_SENTENCE_MAX_CHARS, remainingChars);
-  let best = null;
-  for (let rank = excludedFrom; rank < scored.length; rank += 1) {
-    for (const sentence of completeSentencesOf(scored[rank].chunk.text)) {
-      if (sentence.length > sentenceLimit) continue;
-      const score = matchingQueryTermCount(sentence, queryTerms);
-      if (score <= existingBest || (best && score <= best.score)) continue;
-      best = { ...scored[rank], sentence, score, rank };
-    }
-  }
-  return best;
-}
+import {
+  RAG_CANDIDATE_POOL_MULTIPLIER,
+  RAG_DEFAULT_MIN_SIMILARITY,
+  RAG_DEFAULT_TOP_K,
+  RAG_MAX_COMBINED_SNIPPET_CHARS,
+  RAG_MAX_TOP_K,
+  RAG_MIN_PACKED_CHARS_PER_SOURCE
+} from "./rag-config.js";
 
 // Pure in-memory cosine similarity - no external vector-DB dependency. At
 // the small chunk counts this feature is scoped to (explicit allowlist, no
@@ -174,72 +29,118 @@ function freshnessOf(indexedAt, maxAgeMs, now) {
   return now - Date.parse(indexedAt) > maxAgeMs ? "stale" : "fresh";
 }
 
-// Not wired into the answer pipeline yet (Commit C) - this module is a
-// standalone, independently testable search function over the chunks the
-// indexer already wrote.
+// Keep the strongest hit first. Then prefer the strongest not-yet-selected
+// document from the larger internal pool before filling any remaining slots
+// with duplicate-document chunks in their original similarity order.
+function diversifyCandidates(candidates, limit) {
+  const selected = [];
+  const selectedRanks = new Set();
+  const selectedDocuments = new Set();
+
+  for (const candidate of candidates) {
+    if (selectedDocuments.has(candidate.chunk.sourceDoc)) continue;
+    selected.push(candidate);
+    selectedRanks.add(candidate.rank);
+    selectedDocuments.add(candidate.chunk.sourceDoc);
+    if (selected.length === limit) return selected;
+  }
+
+  for (const candidate of candidates) {
+    if (selectedRanks.has(candidate.rank)) continue;
+    selected.push(candidate);
+    if (selected.length === limit) break;
+  }
+  return selected;
+}
+
+function resultFromCandidate(candidate, freshnessMaxAgeMs, now) {
+  const { chunk, similarity } = candidate;
+  return Object.freeze({
+    sourceDoc: chunk.sourceDoc,
+    section: chunk.section,
+    docStatus: chunk.docStatus,
+    docVersion: chunk.docVersion,
+    similarity,
+    snippet: chunk.text,
+    indexedAt: chunk.indexedAt,
+    freshness: freshnessOf(chunk.indexedAt, freshnessMaxAgeMs, now)
+  });
+}
+
+function boundedPrefix(text, maxChars) {
+  if (text.length <= maxChars) return text;
+  if (maxChars <= 0) return "";
+  if (maxChars === 1) return "…";
+
+  const contentLimit = maxChars - 1;
+  const raw = text.slice(0, contentLimit);
+  const minimumBoundary = Math.floor(contentLimit * 0.6);
+  const newlineBoundary = raw.lastIndexOf("\n");
+  const whitespaceBoundary = raw.search(/\s+\S*$/u);
+  const boundary = newlineBoundary >= minimumBoundary
+    ? newlineBoundary
+    : whitespaceBoundary >= minimumBoundary ? whitespaceBoundary : contentLimit;
+  return `${raw.slice(0, boundary).trimEnd()}…`;
+}
+
+// Reserve a small deterministic share for every later source before the
+// current source is packed. Short early snippets leave their unused budget to
+// later sources; a long first snippet can no longer consume all 2,000 chars.
+function packRankedResults(rankedResults, maxCombinedChars) {
+  const finiteBudget = Number.isFinite(maxCombinedChars)
+    ? Math.max(0, Math.floor(maxCombinedChars))
+    : Number.MAX_SAFE_INTEGER;
+  const usableCount = Math.min(rankedResults.length, finiteBudget);
+  const results = [];
+  let remaining = finiteBudget;
+  let truncated = usableCount < rankedResults.length;
+
+  for (let index = 0; index < usableCount; index += 1) {
+    const ranked = rankedResults[index];
+    const remainingSources = usableCount - index;
+    const fairShare = Math.floor(remaining / remainingSources);
+    const reservedPerLaterSource = Math.min(RAG_MIN_PACKED_CHARS_PER_SOURCE, fairShare);
+    const allowance = remaining - (remainingSources - 1) * reservedPerLaterSource;
+    const snippet = boundedPrefix(ranked.snippet, allowance);
+    if (snippet.length < ranked.snippet.length) truncated = true;
+    remaining -= snippet.length;
+    results.push(Object.freeze({ ...ranked, snippet }));
+  }
+
+  return Object.freeze({ results: Object.freeze(results), truncated });
+}
+
 export function searchKnowledgeChunks(queryEmbedding, chunks, {
   minSimilarity = RAG_DEFAULT_MIN_SIMILARITY,
   topK = RAG_DEFAULT_TOP_K,
   maxCombinedChars = RAG_MAX_COMBINED_SNIPPET_CHARS,
-  queryText = "",
   freshnessMaxAgeMs = 24 * 60 * 60_000,
   now = Date.now()
 } = {}) {
   const effectiveTopK = Math.min(Math.max(1, topK), RAG_MAX_TOP_K);
-  const scored = chunks
-    .map((chunk) => ({ chunk, similarity: cosineSimilarity(queryEmbedding, chunk.embedding) }))
+  const candidatePoolSize = effectiveTopK * RAG_CANDIDATE_POOL_MULTIPLIER;
+  const candidates = chunks
+    .map((chunk, rank) => ({ chunk, rank, similarity: cosineSimilarity(queryEmbedding, chunk.embedding) }))
     .filter(({ similarity }) => similarity >= minSimilarity)
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, effectiveTopK);
+    .sort((a, b) => b.similarity - a.similarity || a.rank - b.rank)
+    .slice(0, candidatePoolSize);
 
-  if (scored.length === 0) {
-    return Object.freeze({ results: Object.freeze([]), truncated: false });
+  if (candidates.length === 0) {
+    return Object.freeze({
+      results: Object.freeze([]),
+      rankedResults: Object.freeze([]),
+      truncated: false
+    });
   }
 
-  const results = [];
-  let combinedChars = 0;
-  let truncated = false;
-  let excludedFrom = scored.length;
-  for (let rank = 0; rank < scored.length; rank += 1) {
-    const { chunk, similarity } = scored[rank];
-    if (combinedChars + chunk.text.length > maxCombinedChars) {
-      truncated = true;
-      excludedFrom = rank;
-      break;
-    }
-    combinedChars += chunk.text.length;
-    results.push(Object.freeze({
-      sourceDoc: chunk.sourceDoc,
-      section: chunk.section,
-      docStatus: chunk.docStatus,
-      docVersion: chunk.docVersion,
-      similarity,
-      snippet: chunk.text,
-      indexedAt: chunk.indexedAt,
-      freshness: freshnessOf(chunk.indexedAt, freshnessMaxAgeMs, now)
-    }));
-  }
-
-  const diversity = bestDiversitySentence(
-    scored,
-    excludedFrom,
-    queryText,
-    results,
-    maxCombinedChars - combinedChars
+  const diversified = diversifyCandidates(candidates, effectiveTopK);
+  const rankedResults = Object.freeze(
+    diversified.map((candidate) => resultFromCandidate(candidate, freshnessMaxAgeMs, now))
   );
-  if (diversity) {
-    combinedChars += diversity.sentence.length;
-    results.push(Object.freeze({
-      sourceDoc: diversity.chunk.sourceDoc,
-      section: diversity.chunk.section,
-      docStatus: diversity.chunk.docStatus,
-      docVersion: diversity.chunk.docVersion,
-      similarity: diversity.similarity,
-      snippet: diversity.sentence,
-      indexedAt: diversity.chunk.indexedAt,
-      freshness: freshnessOf(diversity.chunk.indexedAt, freshnessMaxAgeMs, now)
-    }));
-  }
-
-  return Object.freeze({ results: Object.freeze(results), truncated });
+  const packed = packRankedResults(rankedResults, maxCombinedChars);
+  return Object.freeze({
+    results: packed.results,
+    rankedResults,
+    truncated: packed.truncated
+  });
 }

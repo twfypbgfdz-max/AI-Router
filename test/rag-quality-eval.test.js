@@ -5,6 +5,7 @@ import { loadQualitySet } from "../orchestrator/knowledge/rag-quality-set.js";
 import { RagQualityError } from "../orchestrator/knowledge/rag-quality-error.js";
 import { loadAllowlist } from "../orchestrator/knowledge/document-allowlist.js";
 import { RAG_ALLOWLIST_FILE } from "../orchestrator/knowledge/rag-config.js";
+import * as qualityEvaluation from "../orchestrator/knowledge/rag-quality-eval.js";
 
 function result(sourceDoc, similarity = 0.8) {
   return { sourceDoc, section: null, docStatus: null, docVersion: null, similarity, snippet: "t", indexedAt: null, freshness: "fresh" };
@@ -92,6 +93,17 @@ test("an empty evaluation reports no rates instead of dividing by zero", () => {
   assert.equal(summary.top1Rate, null);
 });
 
+test("quality evaluation can score retrieval and the sources actually packed for the LLM separately", () => {
+  assert.equal(typeof qualityEvaluation.evaluateQualitySearchCase, "function");
+  const evaluated = qualityEvaluation.evaluateQualitySearchCase(positiveCase("b.md"), {
+    rankedResults: [result("a.md"), result("b.md")],
+    results: [result("a.md")]
+  });
+  assert.equal(evaluated.retrieval.verdict, "hit_topk");
+  assert.equal(evaluated.packed.verdict, "miss_wrong_doc");
+  assert.deepEqual(evaluated.llmSources, [{ sourceDoc: "a.md", section: null, similarity: 0.8, snippetChars: 1 }]);
+});
+
 // --- loadQualitySet -----------------------------------------------------
 
 function loadFrom(payload, options = {}) {
@@ -171,6 +183,16 @@ test("the committed question set loads and contains both positive and negative c
 test("every expected document of the committed set is still in the committed allowlist", () => {
   const allowedDocuments = new Set(loadAllowlist(RAG_ALLOWLIST_FILE).documents.map((entry) => entry.relativePath));
   assert.doesNotThrow(() => loadQualitySet(undefined, { allowedDocuments }));
+});
+
+test("every allowlisted document has a positive quality case", () => {
+  const allowedDocuments = new Set(loadAllowlist(RAG_ALLOWLIST_FILE).documents.map((entry) => entry.relativePath));
+  const coveredDocuments = new Set(
+    loadQualitySet(undefined, { allowedDocuments }).cases
+      .map((entry) => entry.expectedDoc)
+      .filter(Boolean)
+  );
+  assert.deepEqual(coveredDocuments, allowedDocuments);
 });
 
 test("Q18 remains unchanged in retrieval quality rather than moving into truth quality", () => {

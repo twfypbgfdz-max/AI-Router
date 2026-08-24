@@ -4,7 +4,8 @@
     "Measurement input for `npm run rag:quality`. Never read by the server, the indexer or the knowledge endpoint.",
     "Each case names the ONE document that should answer it. Questions are worded so that exactly one allowlisted document can answer them - a question two documents could legitimately answer measures the question set, not the retrieval.",
     "expectedDoc: null marks a negative case. Those must return no match at all; they exist so that lowering the similarity threshold cannot silently buy hit rate with false matches.",
-    "Every expectedDoc must be present in config/rag-allowlist.json - the loader enforces this so a stale question set fails loudly instead of looking like a retrieval regression."
+    "Every expectedDoc must be present in config/rag-allowlist.json - the loader enforces this so a stale question set fails loudly instead of looking like a retrieval regression.",
+    "Every allowlisted document has at least one positive case so ranking regressions cannot hide in uncovered sources."
   ],
   "cases": [
     {
@@ -96,6 +97,46 @@
       "id": "Q18",
       "question": "Wie ist die Arbeitsteilung zwischen den verschiedenen KI-Werkzeugen geregelt?",
       "expectedDoc": "90_System/KI-Router-Regeln.md"
+    },
+    {
+      "id": "Q19",
+      "question": "Welche Architekturgrenze trennt das Felix Command Center von persönlicher Tagesplanung und Training?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-004-Felix-Command-Center-Architekturgrenzen.md"
+    },
+    {
+      "id": "Q20",
+      "question": "Welche Rolle hat der Status Companion und welche Informationen oder Aktionen sind ihm nicht erlaubt?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-005-Status-Companion-Architektur.md"
+    },
+    {
+      "id": "Q21",
+      "question": "Welche zwei Response Profiles unterscheidet die Jarvis Response Architecture für Tagesfragen und Wissensfragen?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-007-Jarvis-Response-Architecture.md"
+    },
+    {
+      "id": "Q22",
+      "question": "Was darf die serverseitige Jarvis Voice Normalization an Antwortinhalt und Quellenangaben verändern und was nicht?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-008-Jarvis-Voice-Normalization.md"
+    },
+    {
+      "id": "Q23",
+      "question": "Welche globale Antwortstruktur, Persönlichkeit und Unsicherheitsregeln legt der Jarvis Communication Contract fest?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-009-Jarvis-Communication-Contract.md"
+    },
+    {
+      "id": "Q24",
+      "question": "Warum ist die Jarvis-Oberfläche Voice-first statt Dashboard-first und welche Technologie soll sie verwenden?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-010-Jarvis-Interface-Architecture.md"
+    },
+    {
+      "id": "Q25",
+      "question": "Welche drei getrennten Datenklassen für Projektaufgaben, Tagesfokus und persönliche Aufgaben definiert DEC-011?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-011-Aufgaben-Datenhoheit.md"
+    },
+    {
+      "id": "Q26",
+      "question": "Wem gehören laut DEC-012 das Boot-Erlebnis und der Status Companion, und wer spricht dabei mit Felix?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-012-Interaktions-und-Boot-Erlebnis-Grenze.md"
     },
     {
       "id": "N01",

@@ -59,8 +59,9 @@ export const RAG_MAX_CHUNKS_PER_DOCUMENT = 200;
 // Recalibrated 2026-08-11 after the allowlist grew from 6 to 10 documents
 // (109 -> 158 chunks), which the previous comment named as the trigger to
 // revisit. Measured reproducibly with `npm run rag:quality` against the
-// committed 22-case set (18 positive, 4 negative) in
-// config/rag-quality-set.json:
+// then-current 22-case set (18 positive, 4 negative). The committed set has
+// since been expanded; these historical numbers document only why 0.55 was
+// selected:
 //
 //   Schwelle   Top-1    Top-3    kein Treffer   Fehltreffer (negativ)
 //   0.65       22.2%    22.2%       77.8%              0/4
@@ -80,15 +81,16 @@ export const RAG_MAX_CHUNKS_PER_DOCUMENT = 200;
 // is the deliberate choice; the negative sample is too small to justify
 // spending that margin for one extra question.
 //
-// Known residual weaknesses at any threshold (see the report in the vault):
-// one question finds its document only at rank 4 (outranked, not missed),
-// and one short 4-chunk document is not retrieved into the top 5 at all.
-// Both are ranking problems that a threshold cannot fix and are recorded as
-// open points rather than papered over here.
+// The two ranking weaknesses found in that calibration became the input for
+// Option A (larger internal candidate pool plus deterministic document
+// diversity). They are intentionally addressed without changing this
+// threshold; current results always come from the committed quality set.
 export const RAG_DEFAULT_MIN_SIMILARITY = 0.55;
 export const RAG_DEFAULT_TOP_K = 3;
 export const RAG_MAX_TOP_K = 5;
+export const RAG_CANDIDATE_POOL_MULTIPLIER = 3;
 export const RAG_MAX_COMBINED_SNIPPET_CHARS = 2_000;
+export const RAG_MIN_PACKED_CHARS_PER_SOURCE = 256;
 
 export const RAG_EMBEDDING_TIMEOUT_MS = 15_000;
 export const RAG_EMBEDDING_MAX_BODY_BYTES = 2 * 1024 * 1024;

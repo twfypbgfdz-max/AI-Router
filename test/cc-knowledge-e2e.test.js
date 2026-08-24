@@ -109,8 +109,8 @@ test("context + RAG path, citing K2 then K1: sources[] reflects citation order",
   assert.notEqual(body.sources[0].sourceDoc, body.sources[1].sourceDoc);
 });
 
-test("a diversity sentence keeps its source metadata and is validated under its final positional K-id", async () => {
-  const { adapter } = structuredAdapter({ answer: "DEC-006 ist enthalten. [K2]", citedSources: ["K2"] });
+test("fair packing keeps a later source's metadata and validates its final positional K-id", async () => {
+  const { adapter } = structuredAdapter({ answer: "DEC-006 ist enthalten. [K3]", citedSources: ["K3"] });
   const r1Text = "DEC-006 wurde beschlossen. ".padEnd(1_600, "x");
   const handler = createCcKnowledgeHandler({
     env: ccKnowledgeEnv(),

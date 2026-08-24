@@ -63,6 +63,26 @@ export function evaluateQualityCase(testCase, results) {
   });
 }
 
+// Measures both stages of the production search contract. rankedResults are
+// the final diversified Top-K before the context budget is applied; results
+// are the snippets that are actually packed into the LLM prompt.
+export function evaluateQualitySearchCase(testCase, searchResult) {
+  const packedResults = Array.isArray(searchResult?.results) ? searchResult.results : [];
+  const retrievalResults = Array.isArray(searchResult?.rankedResults)
+    ? searchResult.rankedResults
+    : packedResults;
+  return Object.freeze({
+    retrieval: evaluateQualityCase(testCase, retrievalResults),
+    packed: evaluateQualityCase(testCase, packedResults),
+    llmSources: Object.freeze(packedResults.map((result) => Object.freeze({
+      sourceDoc: result.sourceDoc,
+      section: result.section ?? null,
+      similarity: result.similarity ?? null,
+      snippetChars: typeof result.snippet === "string" ? result.snippet.length : 0
+    })))
+  });
+}
+
 function rate(part, total) {
   return total === 0 ? null : Number((part / total).toFixed(4));
 }

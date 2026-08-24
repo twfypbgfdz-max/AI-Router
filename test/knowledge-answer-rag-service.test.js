@@ -253,7 +253,8 @@ test("the production retrieval path enforces the real 2000-character combined sn
     embedTextFn: async () => [1, 0, 0]
   });
   assert.equal(result.knowledgeState, "available");
-  assert.equal(result.results.length, 1);
+  assert.deepEqual(result.results.map((entry) => entry.sourceDoc), ["a.md", "b.md"]);
+  assert.ok(result.results.every((entry) => entry.snippet.length > 0));
   assert.ok(result.results.reduce((sum, entry) => sum + entry.snippet.length, 0) <= 2_000);
 });
 
