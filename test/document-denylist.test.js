@@ -11,6 +11,12 @@ test("denies each configured prefix", () => {
   assert.equal(isDeniedPath(".claude/settings.json"), true);
 });
 
+test("denies Windows path prefixes case-insensitively", () => {
+  assert.equal(isDeniedPath("60_Finanzen/Geldanlage.md"), true);
+  assert.equal(isDeniedPath("60_finanzen/Geldanlage.md"), true);
+  assert.equal(isDeniedPath("60_FiNaNzEn/Geldanlage.md"), true);
+});
+
 test("allows a path outside every denied prefix", () => {
   assert.equal(isDeniedPath("10_Apps/90_Entscheidungen/DEC-002.md"), false);
 });

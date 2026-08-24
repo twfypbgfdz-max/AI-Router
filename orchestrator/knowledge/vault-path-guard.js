@@ -51,5 +51,8 @@ export function resolveSafeVaultPath(vaultRoot, relativePath) {
   if (escapesRoot) {
     throw new RagError("ALLOWLIST_ENTRY_UNSAFE_PATH", "Resolved document target is outside the vault root.", { safeDetails: { relativePath } });
   }
+  if (isDeniedPath(relativeFromRoot)) {
+    throw new RagError("ALLOWLIST_ENTRY_DENIED", "Resolved document target falls under a denied path prefix.", { safeDetails: { relativePath } });
+  }
   return { exists: true, absolutePath: realCandidate };
 }

@@ -42,6 +42,11 @@ test("resolveSafeVaultPath resolves an existing file inside the vault root", () 
   assert.equal(fs.realpathSync(resolved.absolutePath), resolved.absolutePath);
 });
 
+test("resolveSafeVaultPath keeps a legitimate allowed path allowed", () => {
+  const vaultRoot = tempVault();
+  assert.doesNotThrow(() => resolveSafeVaultPath(vaultRoot, "10_Apps/doc.md"));
+});
+
 test("resolveSafeVaultPath reports a missing file without throwing", () => {
   const vaultRoot = tempVault();
   const resolved = resolveSafeVaultPath(vaultRoot, "10_Apps/missing.md");
@@ -61,4 +66,22 @@ test("resolveSafeVaultPath rejects a symlink escaping the vault root", (t) => {
     return;
   }
   assert.throws(() => resolveSafeVaultPath(vaultRoot, "10_Apps/escape.md"), (error) => error.code === "ALLOWLIST_ENTRY_UNSAFE_PATH");
+});
+
+test("resolveSafeVaultPath rejects an allowed alias whose canonical target is denied", (t) => {
+  const vaultRoot = tempVault();
+  const deniedDir = path.join(vaultRoot, "60_Finanzen");
+  fs.mkdirSync(deniedDir);
+  fs.writeFileSync(path.join(deniedDir, "secret.md"), "# Secret");
+  const aliasDir = path.join(vaultRoot, "10_Apps", "allowed-alias");
+  try {
+    fs.symlinkSync(deniedDir, aliasDir, "junction");
+  } catch {
+    t.skip("Symlink creation not permitted in this environment.");
+    return;
+  }
+  assert.throws(
+    () => resolveSafeVaultPath(vaultRoot, "10_Apps/allowed-alias/secret.md"),
+    (error) => error.code === "ALLOWLIST_ENTRY_DENIED"
+  );
 });

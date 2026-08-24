@@ -6,8 +6,8 @@ import { RAG_DENIED_PATH_PREFIXES } from "./rag-config.js";
 // allowlist validation.
 export function isDeniedPath(relativePath) {
   if (typeof relativePath !== "string" || !relativePath) return true;
-  const normalized = relativePath.replace(/\\/g, "/");
-  return RAG_DENIED_PATH_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+  const normalized = relativePath.replace(/\\/g, "/").toLowerCase();
+  return RAG_DENIED_PATH_PREFIXES.some((prefix) => normalized.startsWith(prefix.toLowerCase()));
 }
 
 export { RAG_DENIED_PATH_PREFIXES as DENIED_PATH_PREFIXES };
