@@ -182,7 +182,12 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
 
     if (request.method === "GET" && pathname === "/router-console") return sendText(response, 200, await fs.readFile(routerConsoleUiFile, "utf8"), "text/html; charset=utf-8");
 
-    if (request.method === "GET" && pathname === "/jarvis") return sendText(response, 200, await fs.readFile(jarvisConsoleUiFile, "utf8"), "text/html; charset=utf-8");
+    // U3 - same nonce injection as GET / above, now also for /jarvis: the
+    // Jarvis console's run/approval panel reuses the existing R9 BFF route
+    // (POST /api/runs/:id/approval/ui) and that route requires this nonce.
+    // No new trust boundary - same approvalNonceStore, same single-use
+    // semantics, just also embedded into this page.
+    if (request.method === "GET" && pathname === "/jarvis") return sendText(response, 200, (await fs.readFile(jarvisConsoleUiFile, "utf8")).replace("__APPROVAL_NONCE__", approvalNonceStore.issue()), "text/html; charset=utf-8");
 
     // Server-side bridge for the Jarvis page. /api/v1/knowledge refuses any
     // browser Origin and needs a bearer token, so the page cannot call it

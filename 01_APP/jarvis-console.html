@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="approval-nonce" content="__APPROVAL_NONCE__">
 <title>Felix Core – Jarvis</title>
 <style>
   :root {
@@ -282,6 +283,20 @@
   @media (prefers-reduced-motion: reduce) {
     .disclosure-body, .disclosure-icon, .panel.panel-enter { transition: none !important; animation: none !important; }
   }
+
+  /* U3: Freigabeentscheidung für einen wartenden Agenten-Lauf - visuell
+     eindeutig (Warn-Farbe wie überall sonst im System für "wartet"), aber
+     kein eigener, alarmistischer Kartenstil. Wiederverwendung von .notice
+     statt einer neuen Komponente. */
+  .approval-list { margin: 4px 0 var(--space-3); padding-left: 20px; font-size: var(--text-sm); color: var(--text-muted); }
+  .approval-list li { margin: 2px 0; }
+  .field-input {
+    width: 100%; font: inherit; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: 9px 12px; margin-top: 6px;
+  }
+  .field-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .run-actions button.secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
 
   /* U2.5, Priorität H: der Auto-Vorlesen-Schalter (bisher eine nackte
      Browser-Checkbox mit Inline-Styles) als richtiger Toggle im Look der
@@ -691,6 +706,38 @@
 </section>
 
 <section id="panel-verlauf" role="tabpanel" aria-labelledby="tab-verlauf" class="panel" hidden>
+  <section class="card">
+    <h2>Agenten-Läufe</h2>
+    <p class="card-hint" id="run-status-hint">Wird geladen …</p>
+    <p class="notice fail" id="run-status-error" role="status" aria-live="polite" hidden></p>
+    <div id="run-status-content"></div>
+
+    <div class="notice warn" id="run-approval-block" hidden>
+      <strong>Freigabeentscheidung</strong>
+      <div id="run-approval-context"></div>
+      <p class="card-hint" style="margin:10px 0 4px;">Mögliche Folgen</p>
+      <ul class="approval-list" id="run-approval-consequences"></ul>
+      <p class="card-hint" style="margin:10px 0 4px;">Warnungen</p>
+      <ul class="approval-list" id="run-approval-warnings"></ul>
+      <label for="run-approval-note">Entscheidungsnotiz (optional)</label>
+      <input class="field-input" id="run-approval-note" maxlength="1000" autocomplete="off">
+      <div class="row run-actions">
+        <button id="run-approve-btn" type="button">Freigeben</button>
+        <button id="run-reject-btn" class="secondary" type="button">Ablehnen</button>
+      </div>
+    </div>
+
+    <div class="disclosure" data-disclosure>
+      <button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="disc-runs">
+        <span>Wie funktionieren Agenten-Läufe?</span>
+        <span class="disclosure-icon" aria-hidden="true">⌄</span>
+      </button>
+      <div class="disclosure-body" id="disc-runs" aria-hidden="true">
+        <div><p>Zeigt den letzten bzw. aktuellen Agenten-Lauf auf diesem Server (GET /api/runs/latest, GET /api/runs/:id) – dieselbe Datenquelle wie die bestehende Router-Testoberfläche. Eine Freigabe läuft ausschließlich über die bestehende, gesicherte Route mit einmalig gültigem Nonce; das Freigabe-Token verlässt den Server nie und ist hier nicht sichtbar. Ein Neuladen der Seite unterbricht einen wartenden oder laufenden Agenten-Lauf nicht – er wird automatisch wiedergefunden.</p></div>
+      </div>
+    </div>
+  </section>
+
   <section class="card">
     <h2>Verlauf</h2>
     <p class="card-hint" id="verlauf-hint">Noch keine Einträge in dieser Sitzung.</p>
@@ -1978,6 +2025,7 @@
         // Hintergrundabruf, kein Caching - jede Aktivierung fragt frisch ab.
         if (other.id === "tab-heute") loadHeute();
         if (other.id === "tab-system") loadSystem();
+        if (other.id === "tab-verlauf") reattachRun();
       } else {
         panel.hidden = true;
         panel.classList.remove("panel-enter");
@@ -2285,6 +2333,214 @@
   if (answerEl && window.MutationObserver) {
     new MutationObserver(captureAnswerIfNew).observe(answerEl, { childList: true, characterData: true, subtree: true });
   }
+
+  // --- Agenten-Läufe (U3, Run-/Approval-Anzeige) ---------------------------
+  //
+  // Portiert 1:1 die bereits bestehende, geprüfte Poll-/Reattach-/Approval-
+  // Logik aus 01_APP/tests/ai-router-v0_13-test.html (R9/R12) - keine neue
+  // Architektur, keine zweite Run-State-Verwaltung im Browser. Datenquelle
+  // ist ausschließlich der Server (GET /api/runs/latest, GET /api/runs/:id);
+  // es gibt kein localStorage/sessionStorage für den Run-Zustand. Eine
+  // Freigabe geht ausschließlich über die bestehende R9-BFF-Route
+  // (POST /api/runs/:id/approval/ui) mit dem hier eingebetteten Single-Use-
+  // Nonce (Meta-Tag oben, von server.js beim Ausliefern von /jarvis gesetzt)
+  // - das serverseitige AI_ROUTER_APPROVAL_TOKEN erscheint an keiner Stelle
+  // in diesem Skript.
+  var runStatusHint = document.getElementById("run-status-hint");
+  var runStatusError = document.getElementById("run-status-error");
+  var runStatusContent = document.getElementById("run-status-content");
+  var runApprovalBlock = document.getElementById("run-approval-block");
+  var runApprovalContext = document.getElementById("run-approval-context");
+  var runApprovalConsequences = document.getElementById("run-approval-consequences");
+  var runApprovalWarnings = document.getElementById("run-approval-warnings");
+  var runApprovalNote = document.getElementById("run-approval-note");
+  var runApproveBtn = document.getElementById("run-approve-btn");
+  var runRejectBtn = document.getElementById("run-reject-btn");
+  var approvalNonceMeta = document.querySelector('meta[name="approval-nonce"]');
+  var approvalNonce = approvalNonceMeta ? approvalNonceMeta.content : "";
+
+  var RUN_STATUS_TEXT = { created: "Erstellt", validating: "Wird geprüft", queued: "In Warteschlange", running: "Läuft", awaiting_approval: "Wartet auf Freigabe", succeeded: "Erfolgreich", failed: "Fehlgeschlagen", cancelled: "Abgebrochen", timed_out: "Zeitüberschreitung" };
+  var RUN_STATUS_BADGE = { succeeded: "ok", failed: "fail", timed_out: "fail", awaiting_approval: "warn", cancelled: "warn", running: "pending", queued: "pending", validating: "pending", created: "pending" };
+  // Deckt sich bewusst mit terminal() aus der Test-Oberfläche: ein
+  // wartender Lauf braucht kein Polling, solange niemand entscheidet - erst
+  // decideApproval() unten startet danach gezielt neu.
+  var POLL_STOP_STATUSES = ["succeeded", "failed", "cancelled", "timed_out", "awaiting_approval"];
+  var RESOLVED_RUN_STATUSES = ["succeeded", "failed", "cancelled", "timed_out"];
+  var TASK_TYPE_TEXT = { code: "Code", research: "Recherche", planning: "Planung", unknown: "Unbekannt" };
+
+  var activeRunId = null;
+  var runPollTimer = null;
+
+  function showRunError(message) {
+    if (!runStatusError) return;
+    if (!message) { runStatusError.hidden = true; return; }
+    runStatusError.textContent = message;
+    runStatusError.hidden = false;
+  }
+
+  // Keine Rohaufgabentext-Anzeige (siehe orchestrator/response-builder.js -
+  // der Server liefert ihn nirgends aus); nur bereits sichere, abgeleitete
+  // Felder.
+  function goalSummary(run) {
+    if (run.approvalContext && run.approvalContext.plannedAction) return run.approvalContext.plannedAction;
+    if (run.routePlan && run.routePlan.taskType) return TASK_TYPE_TEXT[run.routePlan.taskType] || run.routePlan.taskType;
+    return "–";
+  }
+
+  function resultOrError(run) {
+    if (run.result && run.result.summary) return run.result.summary;
+    if (run.error && run.error.message) return "Fehler: " + run.error.message;
+    return "–";
+  }
+
+  function showRunApproval(run) {
+    if (!runApprovalBlock) return;
+    var approval = run.approval, context = run.approvalContext;
+    var visible = run.status === "awaiting_approval" && approval && approval.status === "pending" && approval.consumed !== true;
+    runApprovalBlock.hidden = !visible;
+    if (!visible) return;
+    clearChildren(runApprovalContext);
+    addInfoPanel(runApprovalContext, [
+      ["Run", run.runId],
+      ["Was wird freigegeben", (context && context.plannedAction) || "–"],
+      ["Warum nötig", (context && context.whyApprovalRequired) || "–"],
+      ["Rückgängig machbar", (context && context.reversibility) || "–"]
+    ], function (pair) { return pair; });
+    clearChildren(runApprovalConsequences);
+    ((context && context.possibleConsequences) || []).forEach(function (c) {
+      var li = document.createElement("li"); li.textContent = c; runApprovalConsequences.appendChild(li);
+    });
+    clearChildren(runApprovalWarnings);
+    ((context && context.warnings) || []).forEach(function (w) {
+      var li = document.createElement("li"); li.textContent = w; runApprovalWarnings.appendChild(li);
+    });
+    if (runApproveBtn) runApproveBtn.disabled = false;
+    if (runRejectBtn) runRejectBtn.disabled = false;
+  }
+
+  function renderRunStatus(run) {
+    if (!runStatusContent) return;
+    clearChildren(runStatusContent);
+    if (!run || !run.runId) {
+      if (runStatusHint) { runStatusHint.textContent = "Noch kein Agenten-Lauf auf diesem Server."; runStatusHint.hidden = false; }
+      if (runApprovalBlock) runApprovalBlock.hidden = true;
+      return;
+    }
+    if (runStatusHint) runStatusHint.hidden = true;
+
+    var head = document.createElement("p");
+    var badge = document.createElement("span");
+    badge.className = "badge " + (RUN_STATUS_BADGE[run.status] || "pending");
+    badge.textContent = RUN_STATUS_TEXT[run.status] || run.status;
+    head.appendChild(badge);
+    runStatusContent.appendChild(head);
+
+    addInfoPanel(runStatusContent, [
+      ["Start", run.timestamps && run.timestamps.startedAt ? formatAbsoluteTime(run.timestamps.startedAt) : "–"],
+      ["Aufgabe/Ziel", goalSummary(run)],
+      ["Freigabe erforderlich", run.approval && run.approval.required ? "Ja" : "Nein"],
+      ["Ergebnis oder Fehler", resultOrError(run)]
+    ], function (pair) { return pair; });
+
+    showRunApproval(run);
+  }
+
+  function stopRunPoll() {
+    if (runPollTimer) { clearTimeout(runPollTimer); runPollTimer = null; }
+  }
+
+  function pollRun(id) {
+    stopRunPoll();
+    fetch("/api/runs/" + encodeURIComponent(id))
+      .then(function (response) { return response.json(); })
+      .then(function (run) {
+        // GET /api/runs/:id always answers 200, even for an unknown id - it
+        // reports RUN_NOT_FOUND as a runId:null error payload in the body
+        // instead (orchestrator/server.js), so the HTTP status can't be
+        // used to detect this.
+        if (!run || !run.runId) {
+          showRunError("Dieser Lauf ist nicht mehr vorhanden.");
+          activeRunId = null;
+          renderRunStatus(null);
+          return;
+        }
+        showRunError(null);
+        renderRunStatus(run);
+        if (!POLL_STOP_STATUSES.includes(run.status)) {
+          runPollTimer = setTimeout(function () { pollRun(id); }, 1000);
+        } else if (run.status !== "awaiting_approval") {
+          activeRunId = null;
+        }
+      })
+      .catch(function () { showRunError("Laufstatus gerade nicht abrufbar – läuft der Router noch?"); });
+  }
+
+  // R12-Reattach, unverändert übernommen: /api/runs/latest ist bereits die
+  // serverseitige Quelle der Wahrheit für "welcher Lauf zuletzt lief" und
+  // wird bei jedem Statuswechsel neu geschrieben - kein Browser-Speicher
+  // nötig, ein Neuladen der Seite verliert den Bezug nicht.
+  function reattachRun() {
+    fetch("/api/runs/latest")
+      .then(function (response) { return response.json(); })
+      .then(function (latest) {
+        if (!latest || !latest.runId) { renderRunStatus(null); return; }
+        showRunError(null);
+        if (RESOLVED_RUN_STATUSES.includes(latest.status)) { renderRunStatus(latest); return; }
+        // The persisted /api/runs/latest snapshot never carries
+        // approvalContext (run-store.js's persistentRun() strips it before
+        // writing to disk - it is only ever kept in the live in-memory run).
+        // Rendering `latest` directly here would show an approval panel
+        // with every context field blank. pollRun() below does the one
+        // extra fetch against /api/runs/:id (the in-memory, full-context
+        // view) and renders that instead - exactly what poll() already
+        // does after starting a run.
+        activeRunId = latest.runId;
+        pollRun(latest.runId);
+      })
+      .catch(function () { showRunError("Laufstatus gerade nicht verfügbar – läuft der Router noch?"); });
+  }
+
+  function decideApproval(decision) {
+    if (!activeRunId) return;
+    if (runApproveBtn) runApproveBtn.disabled = true;
+    if (runRejectBtn) runRejectBtn.disabled = true;
+    fetch("/api/runs/" + encodeURIComponent(activeRunId) + "/approval/ui", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision: decision, decisionNote: runApprovalNote ? runApprovalNote.value : "", nonce: approvalNonce })
+    })
+      .then(function (response) {
+        return response.json().then(function (run) { return { ok: response.ok, run: run }; });
+      })
+      .then(function (result) {
+        // Ein frischer Nonce kommt auch bei einer fehlgeschlagenen
+        // Entscheidung zurück (z. B. abgelaufener Nonce) - deshalb vor der
+        // ok-Prüfung übernehmen, exakt wie in der bestehenden Test-UI.
+        if (result.run && typeof result.run.approvalNonce === "string") approvalNonce = result.run.approvalNonce;
+        if (!result.ok) {
+          showRunError((result.run && result.run.error && result.run.error.message) || "Freigabeentscheidung fehlgeschlagen.");
+          if (runApproveBtn) runApproveBtn.disabled = false;
+          if (runRejectBtn) runRejectBtn.disabled = false;
+          return;
+        }
+        showRunError(null);
+        renderRunStatus(result.run);
+        if (!POLL_STOP_STATUSES.includes(result.run.status)) pollRun(result.run.runId);
+      })
+      .catch(function () {
+        showRunError("Freigabeentscheidung fehlgeschlagen – ist der Router erreichbar?");
+        if (runApproveBtn) runApproveBtn.disabled = false;
+        if (runRejectBtn) runRejectBtn.disabled = false;
+      });
+  }
+
+  if (runApproveBtn) runApproveBtn.addEventListener("click", function () { decideApproval("approve"); });
+  if (runRejectBtn) runRejectBtn.addEventListener("click", function () { decideApproval("reject"); });
+
+  // Läuft unabhängig davon, welcher Tab beim Laden aktiv ist - ein
+  // wartender oder laufender Lauf soll einen Reload überleben, egal ob
+  // Verlauf gerade sichtbar ist (deckungsgleich mit R12-Anforderung).
+  reattachRun();
 
   // --- Sitzungszusammenfassung (M2, Session Summary Layer) ----------------
   //

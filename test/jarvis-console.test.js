@@ -174,9 +174,17 @@ test("voice input uses local WAV recording, never a browser cloud speech API", (
   assert.ok(!/MediaRecorder/.test(PAGE), "no MediaRecorder - its compressed output needs ffmpeg on whisper-server");
 });
 
-test("the page talks only to its own eight server-side bridges, never to a knowledge, STT or TTS backend directly", () => {
+// U3: the page also talks to /api/runs/... now (run status, reattach, and
+// the existing R9 approval BFF), reusing the same run/history endpoints the
+// pre-existing test UI (01_APP/tests/ai-router-v0_13-test.html) already
+// calls - no new bridge, no knowledge/STT/TTS backend touched directly.
+// "/api/runs/" appears twice (GET /api/runs/:id in pollRun, and the
+// approval BFF POST /api/runs/:id/approval/ui in decideApproval) because
+// both build the id-scoped URL via string concatenation rather than a
+// literal, so the regex below only captures the literal prefix.
+test("the page talks only to its own eleven server-side bridges, never to a knowledge, STT or TTS backend directly", () => {
   const fetchTargets = [...PAGE.matchAll(/fetch\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/ready", "/api/jarvis/session/summary", "/api/jarvis/speak", "/api/jarvis/system", "/api/jarvis/today", "/api/jarvis/transcribe", "/api/jarvis/voice-status"]);
+  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/ready", "/api/jarvis/session/summary", "/api/jarvis/speak", "/api/jarvis/system", "/api/jarvis/today", "/api/jarvis/transcribe", "/api/jarvis/voice-status", "/api/runs/", "/api/runs/", "/api/runs/latest"]);
 });
 
 // --- P2-C: readiness display --------------------------------------------
