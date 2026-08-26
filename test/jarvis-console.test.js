@@ -174,9 +174,9 @@ test("voice input uses local WAV recording, never a browser cloud speech API", (
   assert.ok(!/MediaRecorder/.test(PAGE), "no MediaRecorder - its compressed output needs ffmpeg on whisper-server");
 });
 
-test("the page talks only to its own seven server-side bridges, never to a knowledge, STT or TTS backend directly", () => {
+test("the page talks only to its own eight server-side bridges, never to a knowledge, STT or TTS backend directly", () => {
   const fetchTargets = [...PAGE.matchAll(/fetch\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/ready", "/api/jarvis/speak", "/api/jarvis/system", "/api/jarvis/today", "/api/jarvis/transcribe", "/api/jarvis/voice-status"]);
+  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/ready", "/api/jarvis/session/summary", "/api/jarvis/speak", "/api/jarvis/system", "/api/jarvis/today", "/api/jarvis/transcribe", "/api/jarvis/voice-status"]);
 });
 
 // --- P2-C: readiness display --------------------------------------------
@@ -302,4 +302,37 @@ test("every /api/jarvis/ask call sends the same jarvisSessionId, so voice and te
   assert.equal((PAGE.match(/fetch\(\s*"\/api\/jarvis\/ask"/g) || []).length, 1, "there is exactly one call site to extend");
   assert.ok(/body:\s*JSON\.stringify\(\{\s*question:\s*question,\s*sessionId:\s*jarvisSessionId\s*\}\)/.test(PAGE),
     "the ask call must send both question and jarvisSessionId in the same body");
+});
+
+// --- M2: Sitzungszusammenfassung (Session Summary Layer, UI) ------------
+
+test("the session id is exposed on window so the second script block can reuse it without a second identifier", () => {
+  assert.ok(/window\.jarvisSessionId\s*=\s*jarvisSessionId/.test(PAGE), "jarvisSessionId must be shared via window, not duplicated");
+});
+
+test("the summary button is a manual click trigger, never fetched automatically on tab open or load", () => {
+  assert.ok(/summaryBtn\.addEventListener\("click"/.test(PAGE), "the summary fetch must be a manual click handler");
+  assert.equal((PAGE.match(/fetch\(\s*"\/api\/jarvis\/session\/summary"/g) || []).length, 1, "exactly one call site");
+  const summaryBlockMatch = PAGE.match(/summaryBtn\.addEventListener[\s\S]*?\n {4}\}\);/);
+  assert.ok(summaryBlockMatch, "the summary click handler must exist");
+  assert.ok(!/setInterval|setTimeout/.test(summaryBlockMatch[0]), "no automatic polling of the summary route");
+});
+
+test("the summary request sends the shared jarvisSessionId, not a new or hardcoded id", () => {
+  assert.ok(/body:\s*JSON\.stringify\(\{\s*sessionId:\s*window\.jarvisSessionId\s*\|\|\s*""\s*\}\)/.test(PAGE),
+    "the summary POST body must send window.jarvisSessionId");
+});
+
+test("a null summary (no turns yet / unknown session) renders an honest empty state, not an error", () => {
+  assert.ok(PAGE.includes("Für diese Sitzung liegt noch keine Zusammenfassung vor."));
+});
+
+test("the summary renders as text content, never innerHTML, matching the page's escaping discipline", () => {
+  const renderSummaryMatch = PAGE.match(/function renderSummary[\s\S]*?\n  \}/);
+  assert.ok(renderSummaryMatch, "renderSummary must exist");
+  assert.ok(!/innerHTML/.test(renderSummaryMatch[0]), "summary turns must be rendered via textContent, not innerHTML");
+});
+
+test("the summary card explains it reads a different session view than the local Verlauf list", () => {
+  assert.ok(PAGE.includes("unabhängig vom Verlauf oben"), "the summary card must distinguish itself from the client-side Verlauf list");
 });

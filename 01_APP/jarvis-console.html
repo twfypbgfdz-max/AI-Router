@@ -608,6 +608,16 @@
       </div>
     </div>
   </section>
+
+  <section class="card">
+    <h2>Sitzungszusammenfassung</h2>
+    <p class="card-hint">Fasst dieselbe serverseitige Sitzung zusammen, die <code>/api/jarvis/ask</code> bereits kennt – unabhängig vom Verlauf oben, der nur eine lokale Anzeige ist. Kein automatischer Abruf, keine Speicherung.</p>
+    <div class="row">
+      <button id="summary-btn" type="button">Sitzung zusammenfassen</button>
+      <span class="status" id="summary-status" role="status" aria-live="polite"></span>
+    </div>
+    <div id="summary-content"></div>
+  </section>
 </section>
 
 <p class="foot">
@@ -675,6 +685,10 @@
     return "sess-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
   }
   var jarvisSessionId = generateSessionId();
+  // Geteilt mit dem zweiten <script>-Block unten (Verlauf/Sitzungszusammen-
+  // fassung, M2): dieselbe Session-ID, die /api/jarvis/ask ohnehin schon bei
+  // jedem Aufruf mitschickt - kein zweiter Identifier, keine neue Quelle.
+  window.jarvisSessionId = jarvisSessionId;
 
   var askBtn = document.getElementById("ask-btn");
   var micBtn = document.getElementById("mic-btn");
@@ -2130,6 +2144,66 @@
 
   if (answerEl && window.MutationObserver) {
     new MutationObserver(captureAnswerIfNew).observe(answerEl, { childList: true, characterData: true, subtree: true });
+  }
+
+  // --- Sitzungszusammenfassung (M2, Session Summary Layer) ----------------
+  //
+  // Manuell ausgelöst, kein Hintergrundabruf, kein Caching - dieselbe
+  // Zurückhaltung wie Heute/System oben. Liest über die rein lesende Route
+  // POST /api/jarvis/session/summary (orchestrator/jarvis-session-summary-
+  // handler.js) exakt dieselbe serverseitige Sitzung, die /api/jarvis/ask
+  // bei jedem Aufruf ohnehin schon sieht - kein neuer Ollama-Aufruf, keine
+  // Persistenz (siehe Handler-Kommentar, DEC-003 "Report/Analyse"-Stufe).
+  // window.jarvisSessionId wird vom ersten <script>-Block oben gesetzt.
+  var summaryBtn = document.getElementById("summary-btn");
+  var summaryStatusEl = document.getElementById("summary-status");
+  var summaryContent = document.getElementById("summary-content");
+
+  function renderSummary(summary) {
+    if (!summaryContent) return;
+    clearChildren(summaryContent);
+    if (!summary) {
+      if (summaryStatusEl) summaryStatusEl.textContent = "Für diese Sitzung liegt noch keine Zusammenfassung vor.";
+      return;
+    }
+    if (summaryStatusEl) {
+      summaryStatusEl.textContent = summary.turnCount === 1 ? "1 Frage in dieser Sitzung." : summary.turnCount + " Fragen in dieser Sitzung.";
+    }
+    summary.turns.forEach(function (turn) {
+      var box = document.createElement("div");
+      box.className = "history-entry";
+      var q = document.createElement("div"); q.className = "q"; q.textContent = turn.question || "(ohne Frage)";
+      var a = document.createElement("div"); a.className = "a"; a.textContent = turn.answer;
+      var time = document.createElement("time"); time.textContent = formatAbsoluteTime(turn.at);
+      box.appendChild(q); box.appendChild(a); box.appendChild(time);
+      summaryContent.appendChild(box);
+    });
+    var meta = document.createElement("p");
+    meta.className = "meta-line";
+    meta.textContent = "Erzeugt " + formatAbsoluteTime(summary.generatedAt);
+    summaryContent.appendChild(meta);
+  }
+
+  if (summaryBtn) {
+    summaryBtn.addEventListener("click", function () {
+      summaryBtn.disabled = true;
+      if (summaryStatusEl) summaryStatusEl.textContent = "Wird geladen …";
+      if (summaryContent) clearChildren(summaryContent);
+      fetch("/api/jarvis/session/summary", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId: window.jarvisSessionId || "" })
+      })
+        .then(function (response) { return response.json(); })
+        .then(function (payload) {
+          summaryBtn.disabled = false;
+          renderSummary(payload && payload.summary);
+        })
+        .catch(function () {
+          summaryBtn.disabled = false;
+          if (summaryStatusEl) summaryStatusEl.textContent = "Zusammenfassung fehlgeschlagen – läuft der Router noch?";
+        });
+    });
   }
 })();
 </script>
