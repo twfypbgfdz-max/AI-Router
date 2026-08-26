@@ -131,7 +131,17 @@
   .badge.fail { color: var(--fail-fg); background: var(--fail-bg); border-color: var(--fail-bd); }
   .badge.pending { color: var(--pending-fg); background: var(--pending-bg); border-color: var(--pending-bd); }
 
-  .answer { white-space: pre-wrap; margin: 0 0 4px; }
+  /* U2.5, Priorität C: Systemstatus in der Kopfzeile ist Hintergrundinfo,
+     kein Ergebnis - anders als derselbe .badge-Baustein in der Antwortkarte
+     (#state-badge), der bewusst die volle Aufmerksamkeit behält. Nur Gewicht
+     und Deckkraft gedämpft, Text/Farbe/Bedeutung unverändert. */
+  header .badge { font-weight: 500; opacity: 0.82; font-size: 0.72rem; }
+
+  /* U2.5: Lesbarkeit der Antwort - etwas größer und lockerer als der
+     Fließtext-Standard (0.92rem/1.45), damit eine längere Antwort nicht wie
+     ein Log-Auszug wirkt. Keine Verbreiterung über body max-width hinaus -
+     die bleibt die Messlatte für eine lesbare Zeilenlänge. */
+  .answer { white-space: pre-wrap; margin: 0 0 4px; font-size: 0.98rem; line-height: 1.65; }
   .notice {
     border-radius: var(--radius-md); padding: 12px 14px; margin: 0 0 14px;
     border: 1px solid; font-size: 0.9rem;
@@ -140,12 +150,16 @@
   .notice.fail { color: var(--fail-fg); background: var(--fail-bg); border-color: var(--fail-bd); }
   .notice strong { display: block; margin-bottom: 2px; }
 
+  /* U2.5: eine Spur zurückhaltender als vorher (dünnerer, transparenterer
+     Rand statt voller --border-Deckkraft) - Quellen sollen weiter leicht
+     erreichbar sein (Priorität D), aber nicht optisch mit der Antwort
+     konkurrieren, die sie belegen. */
   .src {
-    background: var(--surface-2); border: 1px solid var(--border);
-    border-radius: var(--radius-md); padding: 11px 13px; margin-top: 10px;
+    background: var(--surface-2); border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    border-radius: var(--radius-md); padding: 10px 13px; margin-top: 8px;
   }
-  .src-head { font-weight: 600; font-size: 0.88rem; margin-bottom: 2px; }
-  .src-meta { color: var(--text-muted); font-size: 0.79rem; }
+  .src-head { font-weight: 600; font-size: 0.86rem; margin-bottom: 2px; }
+  .src-meta { color: var(--text-muted); font-size: 0.78rem; }
   .src-key { font-family: var(--font-mono); color: var(--accent); }
   .foot { color: var(--text-muted); font-size: 0.8rem; margin-top: 26px; }
   .foot code { font-family: var(--font-mono); }
@@ -269,6 +283,44 @@
     .disclosure-body, .disclosure-icon, .panel.panel-enter { transition: none !important; animation: none !important; }
   }
 
+  /* U2.5, Priorität H: der Auto-Vorlesen-Schalter (bisher eine nackte
+     Browser-Checkbox mit Inline-Styles) als richtiger Toggle im Look der
+     restlichen Seite - reine CSS-Umsetzung über eine unsichtbar gelegte,
+     weiterhin voll funktionsfähige echte <input type="checkbox">
+     (id="auto-speak-toggle" bleibt unverändert, das Skript liest weiterhin
+     nur .checked; kein neues Element, keine neue Logik). Etablierts,
+     zugängliches Muster: die Checkbox bleibt fokussierbar und per Tastatur/
+     Screenreader bedienbar, .switch-track/.switch-thumb sind rein
+     dekorativ (aria-hidden). */
+  .voice-pref-row { margin-top: var(--space-2); }
+  .switch-label { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.86rem; color: var(--text-muted); }
+  .switch { position: relative; display: inline-flex; width: 34px; height: 20px; flex: none; }
+  .switch-input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+  /* Der bewegliche "Thumb" ist bewusst kein eigenes verschachteltes Element,
+     sondern ::after auf .switch-track - dieselbe, einfache
+     Geschwister-Kombinator-Kette (.switch-input:checked ~ .switch-track ...)
+     steuert damit Hintergrund, Rand UND Thumb-Position/-Farbe einheitlich,
+     ohne einen zusätzlichen Nachfahren-Selektor auf ein verschachteltes Kind
+     zu benötigen. */
+  .switch-track {
+    position: absolute; inset: 0; border-radius: 999px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    pointer-events: none;
+    transition: background-color 0.18s ease, border-color 0.18s ease;
+  }
+  .switch-track::after {
+    content: "";
+    position: absolute; top: 1px; left: 1px; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--text-muted);
+    transition: transform 0.18s ease, background-color 0.18s ease;
+  }
+  .switch-input:checked ~ .switch-track { background: color-mix(in srgb, var(--accent) 28%, var(--surface-2)); border-color: var(--accent); }
+  .switch-input:checked ~ .switch-track::after { transform: translateX(14px); background: var(--accent); }
+  .switch-input:focus-visible ~ .switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .switch-track, .switch-track::after { transition: none !important; }
+  }
+
   /* --- Heute / Verlauf: echte, rein lesende Daten (DEC-010 Phase 4A) --
      Beide Bereiche zeigen ausschließlich bereits serverseitig (Heute) bzw.
      bereits im Voice Zentrum gerenderte (Verlauf) Werte an - keine eigene
@@ -287,7 +339,16 @@
   }
   .history-entry:first-child { margin-top: 0; }
   .history-entry .q { font-weight: 600; font-size: var(--text-sm); }
-  .history-entry .a { color: var(--text-muted); font-size: var(--text-sm); margin-top: 4px; white-space: pre-wrap; }
+  /* U2.5, Priorität F: eine lange Antwort soll den Verlauf nicht dominieren -
+     vier Zeilen Vorschau, kein Ausklappen (der volle Text bleibt in der
+     Sitzungszusammenfassung erreichbar, die exakt dieselben Turns zeigt).
+     white-space:pre-wrap entfällt dafür bewusst - line-clamp und erhaltene
+     Zeilenumbrüche vertragen sich in der Praxis nicht zuverlässig. */
+  .history-entry .a {
+    color: var(--text-muted); font-size: var(--text-sm); margin-top: 4px;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
   .history-entry time { display: block; margin-top: 6px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); }
 
   /* --- Jarvis-Orb ----------------------------------------------------
@@ -297,13 +358,24 @@
      already decided. The orb is aria-hidden (see markup) and must never be
      the only status a user can read; #ask-status (role="status",
      aria-live="polite") stays the authoritative, always-present text. */
-  .orb-wrap { display: flex; justify-content: center; margin: 4px 0 22px; }
+  /* U2.5, Priorität B: dezenter Ambient-Glow hinter dem Orb statt eines
+     harten Kartenrands direkt darüber - der Orb bekommt dadurch spürbar mehr
+     visuellen "Raum" als Zentrum der Ansicht, ohne dass die Karten selbst
+     ihre Form ändern. radial-gradient statt box-shadow, damit nichts
+     Rechteckiges/Kastiges entsteht. */
+  .orb-wrap {
+    display: flex; justify-content: center; margin: 8px 0 28px;
+    background: radial-gradient(circle at center, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%);
+    padding: 12px 0;
+  }
   #orb {
     position: relative;
-    /* Phase 3: von 76px auf 88px vergrößert - der Orb bleibt das Zentrum
-       der Voice-Ansicht, nicht ein Element neben der Tab-Leiste. Nur ein
-       Zahlenwert, keine Änderung an Struktur oder inset-Verhältnissen. */
-    width: 88px; height: 88px;
+    /* Phase 3: von 76px auf 88px vergrößert. U2.5: auf 104px, damit der Orb
+       gegenüber der Frage-Karte darunter eindeutig das dominante Element
+       bleibt statt nur gleich groß wie ein Icon zu wirken. Nur ein
+       Zahlenwert, keine Änderung an Struktur oder inset-Verhältnissen -
+       jede innere Regel (inset: 8px etc.) skaliert automatisch mit. */
+    width: 104px; height: 104px;
     display: grid; place-items: center;
   }
   #orb .orb-ring {
@@ -439,6 +511,22 @@
     animation: orb-breathe 4.2s ease-in-out infinite;
   }
 
+  /* U2.5, Priorität E: die Frage-Karte bekommt während "thinking" einen
+     leicht angehobenen Rand in Akzentfarbe - eine zusätzliche, ruhige
+     Rückmeldung "hier arbeitet Jarvis gerade" neben Orb-Animation und
+     Statustext, keine eigene Zustandsquelle (liest nur #orb[data-state]
+     über :has() mit, entscheidet nichts selbst). #orb liegt strukturell
+     nicht neben den Karten (siehe Markup), daher :has() auf body-Ebene statt
+     eines direkten Geschwister-Selektors. Browser ohne :has()-Unterstützung
+     zeigen einfach keinen zusätzlichen Rand - Orb und Statustext bleiben in
+     jedem Browser die primäre, ausreichende Rückmeldung. */
+  @supports selector(:has(*)) {
+    body:has(#orb[data-state="thinking"]) #panel-voice .card:first-of-type {
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+      transition: border-color 0.4s ease;
+    }
+  }
+
   @keyframes orb-breathe {
     0%, 100% { transform: scale(0.96); opacity: 0.88; }
     50% { transform: scale(1.04); opacity: 1; }
@@ -532,9 +620,12 @@
   </div>
   <p class="mic-note" id="mic-status" role="status" aria-live="polite" hidden></p>
   <p class="card-hint" id="mic-hint" style="margin-top:10px;">Spracheingabe läuft vollständig lokal über einen separat laufenden whisper-server auf diesem Rechner (eigener Autostart, unabhängig von diesem Server). Das Transkript landet im Textfeld – nichts wird automatisch abgeschickt.</p>
-  <div class="row" style="margin-top:6px;">
-    <label style="display:flex; align-items:center; gap:6px; font-size:0.9em;">
-      <input type="checkbox" id="auto-speak-toggle" />
+  <div class="voice-pref-row">
+    <label class="switch-label">
+      <span class="switch">
+        <input type="checkbox" id="auto-speak-toggle" class="switch-input" />
+        <span class="switch-track" aria-hidden="true"></span>
+      </span>
       Antwort nach Spracheingabe automatisch vorlesen
     </label>
   </div>
