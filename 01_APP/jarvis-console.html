@@ -73,14 +73,23 @@
     }
   }
   * { box-sizing: border-box; }
+  /* U3.5: zwei Breiten statt einer. body ist die große, fast volle
+     Nutzflaeche ("Hauptflaeche" der Ziel-Vorgabe, 1200-1440px) - Header,
+     Tab-Leiste und der Orb duerfen sie ausnutzen. .card behaelt eine eigene,
+     schmalere Lesebreite (siehe .card weiter unten), damit Textzeilen in
+     Frage/Antwort/System nicht ausufern - "einzelne Inhalte duerfen eigene
+     schmalere Lesebreiten behalten". */
   body {
     font-family: var(--font-ui);
     background: var(--bg); color: var(--text);
-    max-width: 680px; margin: 0 auto; padding: 36px 20px 60px;
+    max-width: 1280px; margin: 0 auto; padding: 56px 48px 72px;
     line-height: 1.45;
   }
-  header { margin-bottom: 24px; }
-  h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  @media (max-width: 900px) {
+    body { padding: 40px 24px 56px; }
+  }
+  header { margin-bottom: var(--space-4); text-align: center; }
+  h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 10px; letter-spacing: -0.01em; }
   .sub { color: var(--text-muted); margin: 0; font-size: 0.92rem; }
 
   .card {
@@ -88,7 +97,8 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: 20px 22px;
-    margin-bottom: 16px;
+    margin: 0 auto 16px;
+    max-width: 720px;
     box-shadow: 0 1px 2px #0000000a;
   }
   .card h2 { font-size: 1.05rem; font-weight: 600; margin: 0 0 4px; }
@@ -172,8 +182,8 @@
      ausschließlich Layout und Komponentenstruktur - keine Datenanbindung,
      siehe die Platzhaltertexte in den jeweiligen Panels. */
   .tabs {
-    display: flex; gap: var(--space-2);
-    margin-bottom: var(--space-4);
+    display: flex; justify-content: center; gap: var(--space-4);
+    margin-bottom: var(--space-5);
     border-bottom: 1px solid var(--border);
     overflow-x: auto;
   }
@@ -379,18 +389,21 @@
      ihre Form ändern. radial-gradient statt box-shadow, damit nichts
      Rechteckiges/Kastiges entsteht. */
   .orb-wrap {
-    display: flex; justify-content: center; margin: 8px 0 28px;
+    display: flex; justify-content: center; margin: var(--space-3) 0 var(--space-6);
     background: radial-gradient(circle at center, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%);
-    padding: 12px 0;
+    padding: var(--space-4) 0;
   }
   #orb {
     position: relative;
     /* Phase 3: von 76px auf 88px vergrößert. U2.5: auf 104px, damit der Orb
        gegenüber der Frage-Karte darunter eindeutig das dominante Element
-       bleibt statt nur gleich groß wie ein Icon zu wirken. Nur ein
-       Zahlenwert, keine Änderung an Struktur oder inset-Verhältnissen -
-       jede innere Regel (inset: 8px etc.) skaliert automatisch mit. */
-    width: 104px; height: 104px;
+       bleibt statt nur gleich groß wie ein Icon zu wirken. U3.5: auf
+       --orb-size (200px Desktop) als CSS-Variable statt Festwert, damit der
+       Orb auf der jetzt deutlich größeren Ebene 1 das visuelle Zentrum ist -
+       Mobile überschreibt --orb-size unten (siehe @media max-width:480px).
+       Jede innere Regel (inset: calc(...) etc.) skaliert automatisch mit. */
+    --orb-size: 200px;
+    width: var(--orb-size); height: var(--orb-size);
     display: grid; place-items: center;
   }
   #orb .orb-ring {
@@ -399,7 +412,7 @@
     border: 2px solid transparent;
   }
   #orb .orb-core {
-    position: absolute; inset: 8px;
+    position: absolute; inset: calc(var(--orb-size) * 0.077);
     border-radius: 50%;
     background: radial-gradient(circle at 34% 28%, var(--accent), var(--surface-2) 72%);
     /* Zweischichtiger Glow (Phase 3): enger heller Kern + weicher, breiterer
@@ -424,7 +437,7 @@
      Zuständen, die ihn auch animieren (transcribing/thinking); sonst bliebe
      er in idle/listening/speaking als statischer Fleck stehen. */
   #orb .orb-spin {
-    position: absolute; inset: 8px;
+    position: absolute; inset: calc(var(--orb-size) * 0.077);
     border-radius: 50%;
     overflow: hidden;
     z-index: 1;
@@ -569,13 +582,17 @@
 
   /* --- Mobile (DEC-010 Abschnitt 8) -----------------------------------
      Keine eigene Informationsarchitektur, keine neue Navigation - dieselbe
-     Single-Page-Struktur mit Sections/Tabs, nur enger. Voice Zentrum bleibt
-     dominant: der Orb wird hier bewusst nicht verkleinert. Tabs bleiben
+     Single-Page-Struktur mit Sections/Tabs, nur enger. Tabs bleiben
      horizontal scrollbar (siehe .tabs { overflow-x: auto } oben) statt
-     eines zweiten Navigationsmusters. */
+     eines zweiten Navigationsmusters. U3.5: der Desktop-Orb ist jetzt
+     deutlich größer (--orb-size: 200px) - auf schmalen Geräten wird er
+     entsprechend zurückskaliert (--orb-size), statt bei fixer Größe
+     Bildschirmbreite zu verlieren. */
   @media (max-width: 480px) {
     body { padding: var(--space-4) var(--space-3) var(--space-5); }
     .card { padding: var(--space-3) var(--space-3); }
+    #orb { --orb-size: 132px; }
+    .orb-wrap { margin: var(--space-2) 0 var(--space-4); padding: var(--space-3) 0; }
     .tabs { gap: var(--space-1); }
     .tabs .tab { padding: var(--space-2) var(--space-1) var(--space-2); font-size: var(--text-sm); }
     .row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
@@ -586,18 +603,14 @@
 </head>
 <body>
 <header>
-  <h1>Felix Core – Jarvis</h1>
-  <p class="sub">Fragen an das lokale FELIX_SYSTEM-Wissen. Läuft vollständig auf diesem Rechner, antwortet ausschließlich aus den freigegebenen Vault-Dokumenten und führt keine Aktionen aus.</p>
+  <h1>Felix Core</h1>
+  <!-- U3.5: Ebene 1 zeigt nur noch den kompakten Gesamtstatus. Die
+       ausführliche Beschreibung, die Bereitschafts-Gründe und die separaten
+       Piper-/Whisper-Badges leben unverändert weiter (dieselben Elemente,
+       nur verschoben) im System-Tab - siehe dort "Jarvis-Bereitschaft" und
+       die Disclosure "Über Felix Core". Kein Text/Zustand wurde entfernt,
+       nur aus der ersten Ebene herausgenommen. -->
   <p class="sub" id="jarvis-ready-line"><span class="badge pending" id="jarvis-ready-badge">Prüfe Jarvis-Status …</span></p>
-  <p class="card-hint" id="jarvis-ready-reasons" hidden></p>
-  <!-- Separater, ehrlicher Voice-Status statt eines pauschalen "Voice bereit":
-       Piper (Datei-Check) und Whisper (echter Erreichbarkeits-Check über
-       GET /api/jarvis/voice-status) werden unabhängig voneinander geladen
-       und angezeigt - siehe orchestrator/jarvis-voice-status.js. -->
-  <p class="sub" id="jarvis-voice-line">
-    <span class="badge pending" id="jarvis-piper-badge">Piper TTS: prüfe …</span>
-    <span class="badge pending" id="jarvis-whisper-badge">Whisper STT: prüfe …</span>
-  </p>
 </header>
 
 <nav class="tabs" role="tablist" aria-label="Jarvis-Bereiche">
@@ -624,8 +637,7 @@
 </div>
 
 <section class="card">
-  <h2>Frage</h2>
-  <p class="card-hint">Eine Frage, eine Zeile, höchstens 500 Zeichen. Ohne Fundstelle im Index wird nicht geantwortet – geraten wird nicht.</p>
+  <h2>Was möchtest du wissen?</h2>
   <textarea id="question" maxlength="500" placeholder="Zum Beispiel: Welche Komponente darf als Einzige ins Google Sheet schreiben?" aria-label="Frage an FELIX_SYSTEM"></textarea>
   <div class="row">
     <button id="ask-btn" type="button">Fragen</button>
@@ -634,7 +646,6 @@
     <span class="counter" id="char-counter">0 / 500</span>
   </div>
   <p class="mic-note" id="mic-status" role="status" aria-live="polite" hidden></p>
-  <p class="card-hint" id="mic-hint" style="margin-top:10px;">Spracheingabe läuft vollständig lokal über einen separat laufenden whisper-server auf diesem Rechner (eigener Autostart, unabhängig von diesem Server). Das Transkript landet im Textfeld – nichts wird automatisch abgeschickt.</p>
   <div class="voice-pref-row">
     <label class="switch-label">
       <span class="switch">
@@ -689,6 +700,40 @@
 </section>
 
 <section id="panel-system" role="tabpanel" aria-labelledby="tab-system" class="panel" hidden>
+  <section class="card">
+    <h2>Jarvis-Bereitschaft</h2>
+    <p class="card-hint" id="jarvis-ready-reasons" hidden></p>
+    <!-- Separater, ehrlicher Voice-Status statt eines pauschalen "Voice bereit":
+         Piper (Datei-Check) und Whisper (echter Erreichbarkeits-Check über
+         GET /api/jarvis/voice-status) werden unabhängig voneinander geladen
+         und angezeigt - siehe orchestrator/jarvis-voice-status.js. Dieselben
+         Elemente wie vorher im Header, U3.5 verschiebt sie nur hierher. -->
+    <p class="sub" id="jarvis-voice-line">
+      <span class="badge pending" id="jarvis-piper-badge">Piper TTS: prüfe …</span>
+      <span class="badge pending" id="jarvis-whisper-badge">Whisper STT: prüfe …</span>
+    </p>
+    <div class="accordion">
+      <div class="disclosure" data-disclosure>
+        <button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="disc-about">
+          <span>Über Felix Core</span>
+          <span class="disclosure-icon" aria-hidden="true">⌄</span>
+        </button>
+        <div class="disclosure-body" id="disc-about" aria-hidden="true">
+          <div><p>Fragen an das lokale FELIX_SYSTEM-Wissen. Läuft vollständig auf diesem Rechner, antwortet ausschließlich aus den freigegebenen Vault-Dokumenten und führt keine Aktionen aus. Eine Frage, eine Zeile, höchstens 500 Zeichen – ohne Fundstelle im Index wird nicht geantwortet, geraten wird nicht. Read-only über <code>POST /api/v1/knowledge</code>, der Zugriff läuft serverseitig – dieses Fenster kennt kein Token. Der Index wird nicht automatisch aktualisiert; nach Vault-Änderungen ist <code>npm run rag:reindex</code> nötig.</p></div>
+        </div>
+      </div>
+      <div class="disclosure" data-disclosure>
+        <button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="disc-voice">
+          <span>Wie funktioniert Sprachein-/ausgabe?</span>
+          <span class="disclosure-icon" aria-hidden="true">⌄</span>
+        </button>
+        <div class="disclosure-body" id="disc-voice" aria-hidden="true">
+          <div><p>Spracheingabe läuft vollständig lokal über einen separat laufenden whisper-server auf diesem Rechner (eigener Autostart, unabhängig von diesem Server). Das Transkript landet im Textfeld – nichts wird automatisch abgeschickt.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="card">
     <h2>System</h2>
     <p class="card-hint" id="system-hint">Wird geladen …</p>
@@ -763,11 +808,6 @@
     <div id="summary-content"></div>
   </section>
 </section>
-
-<p class="foot">
-  Read-only über <code>POST /api/v1/knowledge</code>. Der Zugriff läuft serverseitig – dieses Fenster kennt kein Token.
-  Der Index wird nicht automatisch aktualisiert; nach Vault-Änderungen ist <code>npm run rag:reindex</code> nötig.
-</p>
 
 <script>
 (function () {
