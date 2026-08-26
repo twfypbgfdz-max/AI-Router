@@ -532,6 +532,12 @@
   </div>
   <p class="mic-note" id="mic-status" role="status" aria-live="polite" hidden></p>
   <p class="card-hint" id="mic-hint" style="margin-top:10px;">Spracheingabe läuft vollständig lokal über einen separat laufenden whisper-server auf diesem Rechner (eigener Autostart, unabhängig von diesem Server). Das Transkript landet im Textfeld – nichts wird automatisch abgeschickt.</p>
+  <div class="row" style="margin-top:6px;">
+    <label style="display:flex; align-items:center; gap:6px; font-size:0.9em;">
+      <input type="checkbox" id="auto-speak-toggle" />
+      Antwort nach Spracheingabe automatisch vorlesen
+    </label>
+  </div>
   <p class="card-hint" id="jarvis-voice-hint" hidden>Sprachein- oder -ausgabe ist auf diesem Server aktuell nicht vollständig eingerichtet. Die Buttons bleiben nutzbar, ein Versuch kann aber fehlschlagen.</p>
   <p class="card-hint" id="jarvis-unavailable-hint" hidden>Jarvis-Core ist gerade nicht verfügbar. Eine Frage kann trotzdem abgeschickt werden, wird aber voraussichtlich fehlschlagen.</p>
 </section>
@@ -704,6 +710,7 @@
   var speakRow = document.getElementById("speak-row");
   var speakBtn = document.getElementById("speak-btn");
   var speakStatusEl = document.getElementById("speak-status");
+  var autoSpeakToggle = document.getElementById("auto-speak-toggle");
   var orbEl = document.getElementById("orb");
   var orbCooldownEl = document.getElementById("orb-cooldown");
   var micStatusEl = document.getElementById("mic-status");
@@ -1251,11 +1258,30 @@
     speakStatusEl.textContent = "";
   }
 
+  // Auto-Vorlesen: rein clientseitige, nicht persistierte Präferenz - wie
+  // jarvisSessionId bewusst nur im Speicher dieser Seitenladung (kein
+  // localStorage, siehe Session-Regeln oben im Skript), bewusst default AUS
+  // ("kein unkontrolliertes automatisches Abspielen", U2-Vorgabe). Jeder
+  // Neuladen der Seite startet also wieder ausgeschaltet. Gilt ausschließlich
+  // für Antworten auf eine per Spracheingabe gestellte Frage
+  // (lastQuestionWasVoice unten), nicht für getippte Fragen: wer tippt, liest
+  // die Antwort ohnehin gerade auf dem Bildschirm.
+  var lastQuestionWasVoice = false;
+  // Von stopRecordingAndTranscribe gesetzt, sobald ein Transkript ins Feld
+  // eingefügt wurde; erst beim tatsächlichen Absenden (Klick auf "Fragen")
+  // in lastQuestionWasVoice übernommen und danach zurückgesetzt. Löst kein
+  // Auto-Submit aus (siehe dort) - dient ausschließlich dazu, dem Auto-
+  // Vorlesen-Schalter unten zu sagen, ob diese konkrete Antwort auf eine
+  // Spracheingabe folgt.
+  var pendingVoiceTranscript = false;
+
   questionEl.addEventListener("input", function () {
     counterEl.textContent = questionEl.value.length + " / 500";
   });
 
-  askBtn.addEventListener("click", async function () {
+  askBtn.addEventListener("click", askQuestion);
+
+  async function askQuestion() {
     if (jarvisState.state === "thinking" || jarvisState.isCoolingDown()) return;
     var question = questionEl.value.trim();
     if (!question) {
@@ -1263,6 +1289,8 @@
       return;
     }
 
+    lastQuestionWasVoice = pendingVoiceTranscript;
+    pendingVoiceTranscript = false;
     jarvisState.enter("thinking", "Antwort läuft … Das lokale Modell braucht dafür meist einige Sekunden.");
     askBtn.disabled = true;
 
@@ -1313,13 +1341,27 @@
     } else {
       jarvisState.startCooldown(COOLDOWN_SECONDS, "Beantwortet.", askSentAt + COOLDOWN_ANCHOR_MARGIN_MS);
     }
-  });
+
+    // Auto-Vorlesen nur für sprachbasierte Fragen und nur, wenn Felix es
+    // aktiv eingeschaltet hat (Default AUS). Ruft denselben, unveränderten
+    // Klick-Handler von speakBtn auf (dessen eigene Guards - speaking-Flag,
+    // disabled Button, Fehler-Degradierung auf Text - greifen unverändert),
+    // statt dessen Logik hier zu duplizieren.
+    if (lastQuestionWasVoice && autoSpeakToggle.checked && currentAnswerText) {
+      speakBtn.click();
+    }
+  }
 
   // --- Vorlesen (lokal) ---------------------------------------------------
   //
-  // A deliberate, manually-triggered button - never automatic. Sends the
-  // already-read answer text back to the server, plays whatever audio/wav
-  // comes back. No auto-play, no speech loop, no polling.
+  // A deliberate, manually-triggered button by default - never automatic on
+  // its own. Sends the already-read answer text back to the server, plays
+  // whatever audio/wav comes back. No speech loop, no polling. Since U2 the
+  // Auto-Vorlesen-Schalter above can additionally invoke this same, unchanged
+  // click handler programmatically (speakBtn.click(), see askQuestion) after
+  // a voice-originated answer - it never bypasses this handler, so every
+  // safeguard below (speaking-Flag, disabled Button, error degradation)
+  // applies identically either way.
   // currentAnswerText bleibt der unveränderte Rohtext aus payload.answer,
   // inklusive [K#]-Marker - nur #answer zeigt seit Phase 5A (DEC-010
   // Folgearbeit, UI only) eine bereinigte Kopie zum Lesen auf dem Bildschirm
@@ -1619,6 +1661,13 @@
       var combined = existing ? (existing + " " + text) : text;
       questionEl.value = combined.slice(0, 500);
       counterEl.textContent = questionEl.value.length + " / 500";
+      // Bewusst weiterhin kein Auto-Submit hier - siehe bestehenden Test
+      // "a transcribed recording fills the question field but never
+      // auto-submits" (DEC-010-Entscheidung, nicht Teil dieser U2-Änderung).
+      // Was neu ist: der Auto-Vorlesen-Schalter unten merkt sich, dass diese
+      // Frage aus einer Spracheingabe stammt, sobald sie (manuell) abgeschickt
+      // wird - siehe pendingVoiceTranscript.
+      pendingVoiceTranscript = true;
       setMicIdle("Transkript eingefügt – bitte prüfen und dann auf „Fragen“ klicken.");
     } catch (e) {
       setMicError("Übertragung der Aufnahme fehlgeschlagen – läuft der Router noch?");
