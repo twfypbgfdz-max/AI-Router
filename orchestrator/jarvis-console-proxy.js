@@ -1,7 +1,14 @@
 import { EventEmitter } from "node:events";
 import { sendJson } from "./http-utils.js";
-import { handleKnowledgeRequest } from "./knowledge-handler.js";
-import { KNOWLEDGE_TOKEN_ENV_VAR } from "./knowledge-config.js";
+import { createKnowledgeHandler } from "./knowledge-handler.js";
+import {
+  JARVIS_ASK_MAX_CONCURRENT_REQUESTS,
+  JARVIS_ASK_MAX_REQUESTS_PER_WINDOW,
+  JARVIS_ASK_RATE_WINDOW_MS,
+  KNOWLEDGE_ABSOLUTE_TIMEOUT_MS,
+  KNOWLEDGE_SCHEMA_VERSION,
+  KNOWLEDGE_TOKEN_ENV_VAR
+} from "./knowledge-config.js";
 import { fetchCockpitStatus } from "./cockpit-client.js";
 import { matchJarvisDailyIntent } from "./jarvis-daily-intent.js";
 import { buildJarvisDailyContext } from "./jarvis-daily-context.js";
@@ -13,31 +20,48 @@ import { buildActionRequestFromIntent } from "./action/action-intent-bridge.js";
 import { actionPendingStore as defaultActionPendingStore } from "./action/action-pending-store.js";
 import { logger as defaultLogger } from "./logger.js";
 
-// Bridges the browser-facing /jarvis page to POST /api/v1/knowledge.
+// Bridges the browser-facing /jarvis page to the same knowledge-answering
+// engine as POST /api/v1/knowledge, via createKnowledgeHandler
+// (knowledge-handler.js) - not that route's own HTTP entry point, and (since
+// the 2026-08-27 cooldown fix below) not its exported singleton either.
 //
-// That route deliberately rejects any request carrying a browser Origin
-// header and requires a bearer token, so a page can never call it directly -
-// which is the point: the token stays in the server's environment and never
-// reaches a browser. This proxy runs server-side, builds a plain internal
-// request object (no Origin, token attached here from process.env) and
-// passes it into the handler. Exactly the pattern router-console-proxy.js
-// already uses for /api/router/respond.
+// This proxy runs server-side and builds a plain internal request object
+// (no Origin, token attached here from process.env), exactly the pattern
+// router-console-proxy.js already uses for /api/router/respond. A page can
+// never reach the knowledge engine directly - the token stays in the
+// server's environment and never reaches a browser.
 //
 // It relays the knowledge route's observation envelope byte-for-byte,
-// including its state, warnings and HTTP status: the 429 from the route's
-// rate limiter therefore reaches the page as a real 429, so the UI can say
-// "läuft bereits / Limit erreicht" instead of hanging or showing a raw
-// error. This proxy calls the exact same exported singleton
-// (handleKnowledgeRequest) that /api/v1/knowledge's own route uses in
-// server.js - not a second instance - so both routes keep sharing one
-// rate/concurrency budget, exactly as before P6-A. The one addition (P6-A)
-// is a per-call, third-argument option on that same handler (see
-// knowledge-handler.js): only this proxy ever supplies it, built from a
-// read-only Felix Cockpit call plus a deterministic day-intent match on the
-// already-received question - never from anything the page can influence
-// beyond asking a day-shaped question in the first place. server.js's own
-// call site never passes this third argument, so cockpit data can only
-// ever reach a prompt through this one route.
+// including its state, warnings and HTTP status: a 429 from this proxy's
+// own rate limiter therefore reaches the page as a real 429, so the UI can
+// say "läuft bereits / Limit erreicht" instead of hanging or showing a raw
+// error.
+//
+// Real-usage finding (2026-08-27): from P6-A until now, this proxy called
+// the exact exported singleton (handleKnowledgeRequest) that /api/v1/knowledge
+// uses in server.js, so both routes shared one rate/concurrency budget - a
+// deliberate choice at the time, to protect the single, concurrency=1
+// Ollama instance from being double-booked by two consumers. That also
+// meant Jarvis was stuck on /api/v1/knowledge's 60s window, which real
+// use of the /jarvis console showed to be needlessly long for a human
+// asking follow-up questions. This proxy now builds its own
+// createKnowledgeHandler instance (defaultJarvisKnowledgeHandler below)
+// with its own budget (JARVIS_ASK_* in knowledge-config.js: still one
+// concurrent request, one request per window, but a 5s window instead of
+// 60s). /api/v1/knowledge's own singleton in server.js is untouched -
+// still KNOWLEDGE_MAX_CONCURRENT_REQUESTS/KNOWLEDGE_MAX_REQUESTS_PER_WINDOW
+// and the fixed 60s window - so this route can no longer throttle it, or be
+// throttled by it. The two routes can therefore now each have one Ollama
+// call in flight at the same time (2 total, not 1) in the rare case both
+// are used concurrently; each route's own concurrency=1 budget is otherwise
+// unchanged.
+//
+// operationalContextProviderFn stays this proxy's one addition (P6-A) to
+// the shared knowledge engine: a read-only Felix Cockpit call plus a
+// deterministic day-intent match on the already-received question - never
+// from anything the page can influence beyond asking a day-shaped question
+// in the first place. /api/v1/knowledge's own call site never supplies
+// this, so cockpit data can only ever reach a prompt through this one route.
 const MAX_CONSOLE_BODY_BYTES = 8_192;
 
 // Deterministic first (no network call for the common case of a non-day
@@ -116,24 +140,25 @@ async function readRawBody(request, maxBytes) {
   });
 }
 
-// The exact singleton, called with a third, per-call-only argument - not a
-// second createKnowledgeHandler() instance. This is what keeps
-// /api/v1/knowledge and /api/jarvis/ask on one shared rate/concurrency
-// budget (see knowledge-handler.js's handleKnowledge signature): both
-// routes now genuinely throttle each other again, exactly as they did
-// before P6-A, when jarvis-console-proxy.js happened to call the same
-// function reference for an unrelated reason.
-// callOptions is a third, per-call-only argument (R1 addition) merged on
-// top of the fixed operationalContextProviderFn below - it is how a single
-// request's sessionContextProviderFn reaches handleKnowledgeRequest without
-// baking a specific session into this handler's construction-time closure.
-// server.js's own /api/v1/knowledge route never supplies a third argument
-// to its own handler call, so that route is unaffected either way.
+// A dedicated createKnowledgeHandler() instance, built once at module init -
+// deliberately not server.js's /api/v1/knowledge singleton (see the
+// 2026-08-27 finding in the file header above). Its own JARVIS_ASK_* budget
+// (knowledge-config.js) is what gives the /jarvis console its own, shorter
+// cooldown without touching /api/v1/knowledge's or cc/knowledge's.
+// callOptions is a third, per-call-only argument (R1 addition) - it is how
+// a single request's sessionContextProviderFn reaches this instance without
+// baking a specific session into its construction-time closure.
 function defaultJarvisKnowledgeHandler(env, fetchImpl) {
-  return (request, response, callOptions = {}) => handleKnowledgeRequest(request, response, {
-    operationalContextProviderFn: (question) => jarvisOperationalContextProvider(question, { env, fetchImpl }),
-    ...callOptions
+  const handleJarvisKnowledgeRequest = createKnowledgeHandler({
+    env,
+    maxConcurrentRequests: JARVIS_ASK_MAX_CONCURRENT_REQUESTS,
+    maxRequestsPerWindow: JARVIS_ASK_MAX_REQUESTS_PER_WINDOW,
+    rateWindowMs: JARVIS_ASK_RATE_WINDOW_MS,
+    totalTimeoutMs: KNOWLEDGE_ABSOLUTE_TIMEOUT_MS,
+    schemaVersion: KNOWLEDGE_SCHEMA_VERSION,
+    operationalContextProviderFn: (question) => jarvisOperationalContextProvider(question, { env, fetchImpl })
   });
+  return (request, response, callOptions = {}) => handleJarvisKnowledgeRequest(request, response, callOptions);
 }
 
 export function createJarvisConsoleHandler({

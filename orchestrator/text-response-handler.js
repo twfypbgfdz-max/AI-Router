@@ -168,7 +168,13 @@ export function createTextResponseHandler({
   // When set, overrides whatever intent the caller sent, server-side, before
   // validation. Used by the dedicated structured-report endpoints so the
   // client cannot pick a different report shape.
-  forcedIntent = null
+  forcedIntent = null,
+  // Overrides the rate-limiter's window length. Every existing caller omits
+  // this and keeps the fixed 60s window (TEXT_RESPONSE_RATE_WINDOW_MS) - only
+  // knowledge-service.js's Jarvis-specific instance passes a shorter one (see
+  // JARVIS_ASK_RATE_WINDOW_MS in knowledge-config.js). maxRequestsPerMinute
+  // still governs how many requests fit in that window.
+  rateWindowMs = TEXT_RESPONSE_RATE_WINDOW_MS
 } = {}) {
   let protection = null;
   const protectionState = () => {
@@ -177,7 +183,7 @@ export function createTextResponseHandler({
     protection = Object.freeze({
       rateLimiter: createRateLimiter({
         maximum: config.maxRequestsPerMinute,
-        windowMs: TEXT_RESPONSE_RATE_WINDOW_MS,
+        windowMs: rateWindowMs,
         now: rateNow
       }),
       concurrencyLimiter: createConcurrencyLimiter({ maximum: config.maxConcurrentRequests })

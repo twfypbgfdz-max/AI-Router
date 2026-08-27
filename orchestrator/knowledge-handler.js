@@ -102,7 +102,16 @@ export function createKnowledgeHandler({
   operationalContextProviderFn: defaultOperationalContextProviderFn = noOperationalContext,
   // Constructor-time fallback only, mirroring operationalContextProviderFn
   // above - production never overrides this either.
-  sessionContextProviderFn: defaultSessionContextProviderFn = noSessionContext
+  sessionContextProviderFn: defaultSessionContextProviderFn = noSessionContext,
+  // Overrides this instance's own rate/concurrency budget. server.js's
+  // /api/v1/knowledge singleton never sets these, so it keeps
+  // KNOWLEDGE_MAX_CONCURRENT_REQUESTS/KNOWLEDGE_MAX_REQUESTS_PER_WINDOW and
+  // the fixed 60s window. jarvis-console-proxy.js builds a second, separate
+  // instance of this same factory with its own JARVIS_ASK_* values instead
+  // of reusing the singleton - see that file for why.
+  maxConcurrentRequests = KNOWLEDGE_MAX_CONCURRENT_REQUESTS,
+  maxRequestsPerWindow = KNOWLEDGE_MAX_REQUESTS_PER_WINDOW,
+  rateWindowMs
 } = {}) {
   const answerKnowledgeQuestion = createKnowledgeService({
     env,
@@ -110,21 +119,26 @@ export function createKnowledgeHandler({
     retrieveKnowledgeFn,
     adapterFactory,
     totalTimeoutMs,
-    maxConcurrentRequests: KNOWLEDGE_MAX_CONCURRENT_REQUESTS,
-    maxRequestsPerWindow: KNOWLEDGE_MAX_REQUESTS_PER_WINDOW,
+    maxConcurrentRequests,
+    maxRequestsPerWindow,
+    rateWindowMs,
     schemaVersion: KNOWLEDGE_SCHEMA_VERSION,
     requestIdPrefix: "knowledge"
   });
 
-  // operationalContextProviderFn is a per-call option, not baked into the
-  // handler at construction: this is what lets jarvis-console-proxy.js
-  // reuse the exact same handler instance (and therefore the exact same
-  // rate/concurrency limiter, see createKnowledgeService above) that
-  // /api/v1/knowledge's own singleton export uses, instead of building a
-  // second instance with a second, independent budget. server.js's route
-  // wiring calls this with two arguments only, so the third parameter is
+  // operationalContextProviderFn/sessionContextProviderFn stay per-call
+  // options (not baked into the handler at construction) purely so a single
+  // instance can vary them per request (used by jarvis-console-proxy.js's
+  // own instance for sessionContextProviderFn, which is genuinely
+  // per-request). Real-usage finding (2026-08-27): this mechanism used to be
+  // the reason jarvis-console-proxy.js called this exact exported singleton
+  // instead of building its own instance, sharing one rate/concurrency
+  // budget with /api/v1/knowledge. It no longer does that - see
+  // jarvis-console-proxy.js for why it now builds its own instance with its
+  // own JARVIS_ASK_* budget. server.js's own /api/v1/knowledge route wiring
+  // still calls this with two arguments only, so the third parameter is
   // always undefined there and defaultOperationalContextProviderFn (a
-  // permanent no-op for the production singleton) applies - this route's
+  // permanent no-op for the production singleton) applies - that route's
   // behaviour is unchanged.
   return async function handleKnowledge(request, response, {
     operationalContextProviderFn = defaultOperationalContextProviderFn,

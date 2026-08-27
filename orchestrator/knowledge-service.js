@@ -201,6 +201,12 @@ export function createKnowledgeService({
   retrieveKnowledgeFn = retrieveKnowledge,
   maxConcurrentRequests,
   maxRequestsPerWindow,
+  // Optional: overrides the rate-limiter's window length (default 60s,
+  // TEXT_RESPONSE_RATE_WINDOW_MS). Only jarvis-console-proxy.js's own
+  // knowledge-handler instance passes a shorter one (see
+  // JARVIS_ASK_RATE_WINDOW_MS) - /api/v1/knowledge and cc/knowledge omit it
+  // and keep the fixed 60s window.
+  rateWindowMs,
   totalTimeoutMs,
   maxAnswerBytes = KNOWLEDGE_ANSWER_MAX_BYTES,
   schemaVersion,
@@ -224,7 +230,8 @@ export function createKnowledgeService({
     env: scopedEnv,
     adapterFactory,
     forcedIntent: "knowledge_answer",
-    totalTimeoutMs
+    totalTimeoutMs,
+    rateWindowMs
   });
 
   // question and context must already be validated by the caller's own

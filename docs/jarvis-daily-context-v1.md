@@ -32,17 +32,25 @@ AI-Router / Jarvis, ausschließlich über:
   - rendert den Abschnitt `TAGESKONTEXT` im Prompt, getrennt vom
     CC-`AKTUELLER SYSTEMZUSTAND`-Block.
 
-Wiring ausschließlich in `orchestrator/jarvis-console-proxy.js`. Es baut
-**keine** eigene `createKnowledgeHandler`-Instanz, sondern ruft denselben
-exportierten Singleton (`handleKnowledgeRequest`) wie `/api/v1/knowledge`
-in `server.js` auf und übergibt `operationalContextProviderFn` nur als
-optionales drittes Aufrufargument. Dadurch teilen sich beide Routen
-weiterhin ein einziges Rate-/Concurrency-Budget (siehe
-`orchestrator/knowledge-handler.js`, `handleKnowledge(request, response,
-{ operationalContextProviderFn })`) statt zwei unabhängige zu bekommen. Der
-Cockpit-Aufruf erfolgt serverseitig und ausschließlich dann, wenn
-`matchJarvisDailyIntent` die bereits validierte Frage als Tagesfrage
-erkennt - nie aus einem User-Request-`context`-Feld.
+Wiring ausschließlich in `orchestrator/jarvis-console-proxy.js`. Von P6-A bis
+2026-08-27 baute es **keine** eigene `createKnowledgeHandler`-Instanz,
+sondern rief denselben exportierten Singleton (`handleKnowledgeRequest`) wie
+`/api/v1/knowledge` in `server.js` auf, sodass sich beide Routen ein
+einziges Rate-/Concurrency-Budget teilten. Realer Nutzungstest am
+2026-08-27 zeigte, dass dieses geteilte 60s-Fenster für die menschliche
+`/jarvis`-Konsole unnötig lang war. Seitdem baut die Datei eine **eigene**
+`createKnowledgeHandler`-Instanz mit einem eigenen Budget
+(`JARVIS_ASK_MAX_CONCURRENT_REQUESTS`/`JARVIS_ASK_MAX_REQUESTS_PER_WINDOW`/
+`JARVIS_ASK_RATE_WINDOW_MS` in `orchestrator/knowledge-config.js`: weiterhin
+eine gleichzeitige Anfrage, eine Anfrage pro Fenster, aber ein 5s- statt
+60s-Fenster). `operationalContextProviderFn` wird dieser eigenen Instanz als
+Konstruktor-Option mitgegeben. `/api/v1/knowledge`s eigener Singleton in
+`server.js` ist davon unberührt und bleibt bei
+`KNOWLEDGE_MAX_CONCURRENT_REQUESTS`/`KNOWLEDGE_MAX_REQUESTS_PER_WINDOW` und
+dem festen 60s-Fenster - beide Routen können sich seitdem nicht mehr
+gegenseitig throttlen. Der Cockpit-Aufruf erfolgt serverseitig und
+ausschließlich dann, wenn `matchJarvisDailyIntent` die bereits validierte
+Frage als Tagesfrage erkennt - nie aus einem User-Request-`context`-Feld.
 
 ## Schreibziele
 

@@ -30,5 +30,20 @@ export const KNOWLEDGE_ABSOLUTE_TIMEOUT_MS = 30_000;
 // own in-memory limiter, so one consumer can never exhaust the other's
 // allowance. One request per 60 seconds is a real constraint a UI on this
 // route has to surface honestly rather than hide behind a spinner.
+//
+// Governs POST /api/v1/knowledge only (server.js's own singleton). Left
+// untouched by the Jarvis-specific budget below.
 export const KNOWLEDGE_MAX_CONCURRENT_REQUESTS = 1;
 export const KNOWLEDGE_MAX_REQUESTS_PER_WINDOW = 1;
+
+// Real-usage finding (2026-08-27): a 60s cooldown on the human-facing /jarvis
+// console felt punitive, and the UI's own countdown text had drifted from
+// what the shared knowledge-route limiter actually enforced. Jarvis gets its
+// own, independent budget instead of a shorter shared one, specifically so
+// /api/v1/knowledge's real limit (above) and cc/knowledge's stay exactly
+// what they were. Still one concurrent request and one request per window -
+// only the window itself is shorter, matched to a single human asking
+// follow-up questions rather than to a script.
+export const JARVIS_ASK_MAX_CONCURRENT_REQUESTS = 1;
+export const JARVIS_ASK_MAX_REQUESTS_PER_WINDOW = 1;
+export const JARVIS_ASK_RATE_WINDOW_MS = 5_000;
