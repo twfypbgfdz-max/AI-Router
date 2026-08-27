@@ -88,8 +88,13 @@
   @media (max-width: 900px) {
     body { padding: 40px 24px 56px; }
   }
-  header { margin-bottom: var(--space-4); text-align: center; }
-  h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 10px; letter-spacing: -0.01em; }
+  /* U3.6: Titel und Status auf einer gemeinsamen Zeile statt gestapelt -
+     der Status bleibt über header .badge (Zeile weiter unten) sekundär
+     gewichtet, wandert nur optisch neben statt unter den Titel. flex-wrap
+     sorgt dafür, dass er auf schmalen Breiten sauber in eine zweite Zeile
+     fällt statt zu überlaufen. */
+  header { margin-bottom: var(--space-4); text-align: center; display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: var(--space-2); }
+  h1 { font-size: 1.6rem; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
   .sub { color: var(--text-muted); margin: 0; font-size: 0.92rem; }
 
   .card {
@@ -388,8 +393,12 @@
      visuellen "Raum" als Zentrum der Ansicht, ohne dass die Karten selbst
      ihre Form ändern. radial-gradient statt box-shadow, damit nichts
      Rechteckiges/Kastiges entsteht. */
+  /* U3.6: unterer Abstand von --space-6 (64px) auf --space-5 (40px) verkürzt -
+     Orb und Frage-Karte sollen als eine zusammengehörige Interaktionszone
+     wirken statt isoliert übereinander zu stehen. Ambient-Glow und Größe
+     unverändert. */
   .orb-wrap {
-    display: flex; justify-content: center; margin: var(--space-3) 0 var(--space-6);
+    display: flex; justify-content: center; margin: var(--space-3) 0 var(--space-5);
     background: radial-gradient(circle at center, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%);
     padding: var(--space-4) 0;
   }
@@ -537,6 +546,19 @@
     background: radial-gradient(circle at 34% 28%, var(--fail-fg), var(--surface-2) 72%);
     box-shadow: 0 0 16px 1px color-mix(in srgb, var(--fail-fg) 30%, transparent);
     animation: orb-breathe 4.2s ease-in-out infinite;
+  }
+
+  /* U3.6: nur die Frage-Karte (erste Karte in Voice Zentrum) wird breiter
+     und flacher - bewusst über denselben Scope-Selektor wie die
+     thinking-Randfarbe direkt darunter, statt .card global zu ändern, damit
+     Karten in den übrigen Tabs (System, Verlauf, Projekte) und die
+     Antwort-Karte unverändert bleiben. */
+  #panel-voice .card:first-of-type {
+    max-width: 860px;
+    padding: 16px 24px;
+  }
+  #panel-voice .card:first-of-type textarea {
+    min-height: 64px;
   }
 
   /* U2.5, Priorität E: die Frage-Karte bekommt während "thinking" einen
