@@ -182,9 +182,15 @@ test("voice input uses local WAV recording, never a browser cloud speech API", (
 // approval BFF POST /api/runs/:id/approval/ui in decideApproval) because
 // both build the id-scoped URL via string concatenation rather than a
 // literal, so the regex below only captures the literal prefix.
+// "/api/jarvis/system" appears twice for the same reason /api/runs/ does -
+// two independent, justified call sites, not scope creep: the System-tab's
+// own on-demand fetch (loadSystem(), unchanged), and (2026-08-27)
+// refreshJarvisReadiness()'s own fetch, used to fold the Command Center
+// signal into the top-level readiness badge (see computeReadinessLevel1).
+// Still the same eleven distinct server-side bridges, no new one added.
 test("the page talks only to its own eleven server-side bridges, never to a knowledge, STT or TTS backend directly", () => {
   const fetchTargets = [...PAGE.matchAll(/fetch\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/ready", "/api/jarvis/session/summary", "/api/jarvis/speak", "/api/jarvis/system", "/api/jarvis/today", "/api/jarvis/transcribe", "/api/jarvis/voice-status", "/api/runs/", "/api/runs/", "/api/runs/latest"]);
+  assert.deepEqual(fetchTargets.sort(), ["/api/jarvis/ask", "/api/jarvis/ready", "/api/jarvis/session/summary", "/api/jarvis/speak", "/api/jarvis/system", "/api/jarvis/system", "/api/jarvis/today", "/api/jarvis/transcribe", "/api/jarvis/voice-status", "/api/runs/", "/api/runs/", "/api/runs/latest"]);
 });
 
 // --- P2-C: readiness display --------------------------------------------
@@ -205,10 +211,17 @@ test("the page fetches /api/jarvis/voice-status exactly once on load, not via po
   assert.ok(!/setInterval|setTimeout/.test(PAGE.match(/Voice-Status \(einmalig[\s\S]*?\}\)\(\);/)?.[0] || ""), "no polling around the voice-status fetch");
 });
 
-test("the page renders all three readiness states in plain German using the existing badge/notice styling", () => {
-  assert.ok(PAGE.includes('"Jarvis bereit"'));
-  assert.ok(PAGE.includes('"Jarvis teilweise bereit"'));
-  assert.ok(PAGE.includes('"Jarvis nicht verfügbar"'));
+// Real-usage finding (2026-08-27): the old three-state wording ("Jarvis
+// bereit"/"teilweise bereit"/"nicht verfügbar") never distinguished "voice
+// broken, knowledge fine" from "live/side services degraded, knowledge
+// fine" - both looked identical to "teilweise bereit". Four plain-language
+// Level-1 labels now cover that split; technical reason codes stay in the
+// existing "Technische Details zur Bereitschaft" disclosure, never here.
+test("the page renders all four readiness states in plain German using the existing badge/notice styling", () => {
+  assert.ok(PAGE.includes('"Bereit"'));
+  assert.ok(PAGE.includes('"Teilweise verfügbar"'));
+  assert.ok(PAGE.includes('"Wissensmodus verfügbar"'));
+  assert.ok(PAGE.includes('"Offline"'));
   assert.ok(/<span class="badge[^>]*id="jarvis-ready-badge"/.test(PAGE), "the readiness indicator reuses the existing .badge styling");
 });
 
@@ -229,8 +242,19 @@ test("voice buttons are never disabled or hidden based on readiness", () => {
   assert.ok(!/speakBtn\.(disabled|hidden)/.test(readinessBlockMatch[0]), "readiness must not disable/hide the speak button");
 });
 
+// 2026-08-27: readiness and system are now fetched together (Promise.all,
+// each with its own .catch(() => null)), and the "unbekannt" fallback fires
+// from the combined .then once it sees no usable readiness payload - not
+// from a .catch attached directly to setReadyBadge as before. Both fetches
+// degrading gracefully (rather than throwing) is still the property under
+// test.
 test("a failed readiness fetch is shown dezently and never throws or blocks the rest of the page", () => {
-  assert.ok(/\.catch\(function \(\) \{\s*setReadyBadge\("Jarvis-Status unbekannt", "pending"\);/.test(PAGE));
+  const readinessBlockMatch = PAGE.match(/Jarvis-Readiness[\s\S]*?refreshJarvisReadiness\(\);/);
+  assert.ok(readinessBlockMatch, "the readiness block must exist");
+  const block = readinessBlockMatch[0];
+  assert.ok(/fetch\("\/api\/jarvis\/ready"\)/.test(block), "the readiness fetch must be present");
+  assert.ok(/\.catch\(function \(\) \{ return null; \}\)/.test(block), "a failed fetch must degrade to null, not throw");
+  assert.ok(/setReadyBadge\("Jarvis-Status unbekannt", "pending"\);/.test(block), "no usable readiness payload must fall back to the unbekannt badge");
 });
 
 test("a transcribed recording fills the question field but never auto-submits", () => {
@@ -273,9 +297,9 @@ test("the page carries no token and no authorization header", () => {
 // The honest-rate-limit requirement: the page must name the limit and count
 // down rather than leaving a click looking dead.
 test("the page surfaces the rate limit explicitly with a countdown", () => {
-  assert.ok(/COOLDOWN_SECONDS\s*=\s*60/.test(PAGE), "the 60s budget must be represented");
+  assert.ok(/COOLDOWN_SECONDS\s*=\s*5/.test(PAGE), "the 5s Jarvis-specific budget must be represented");
   assert.ok(PAGE.includes("Nächste Frage in"), "a countdown must be shown");
-  assert.ok(PAGE.includes("eine Anfrage pro 60 Sekunden"), "the limit must be stated in plain words");
+  assert.ok(PAGE.includes("eine Anfrage pro 5 Sekunden"), "the limit must be stated in plain words");
   assert.ok(/response\.status === 429/.test(PAGE), "a 429 must be handled as a limit, not as a generic error");
 });
 

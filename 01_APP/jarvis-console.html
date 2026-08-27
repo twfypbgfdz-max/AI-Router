@@ -702,7 +702,7 @@
     </label>
   </div>
   <p class="card-hint" id="jarvis-voice-hint" hidden>Sprachein- oder -ausgabe ist auf diesem Server aktuell nicht vollständig eingerichtet. Die Buttons bleiben nutzbar, ein Versuch kann aber fehlschlagen.</p>
-  <p class="card-hint" id="jarvis-unavailable-hint" hidden>Jarvis-Core ist gerade nicht verfügbar. Eine Frage kann trotzdem abgeschickt werden, wird aber voraussichtlich fehlschlagen.</p>
+  <p class="card-hint" id="jarvis-unavailable-hint" hidden>Wissensfragen sind momentan nicht verfügbar.</p>
 </section>
 
 <section class="card" id="result-card" hidden>
@@ -891,10 +891,12 @@
     stale: "Daten veraltet"
   });
 
-  // The knowledge route allows one request per 60 seconds (concurrency 1).
-  // That is a real constraint, so the UI states it and counts down instead
-  // of letting a click appear to do nothing.
-  var COOLDOWN_SECONDS = 60;
+  // /api/jarvis/ask allows one request per 5 seconds (concurrency 1) - its
+  // own budget (JARVIS_ASK_* in orchestrator/knowledge-config.js), separate
+  // from /api/v1/knowledge's 60s one since 2026-08-27. That is a real
+  // constraint, so the UI states it and counts down instead of letting a
+  // click appear to do nothing.
+  var COOLDOWN_SECONDS = 5;
 
   // Der Server verbucht seinen Zeitstempel nicht bei Antwortankunft, sondern
   // beim Eintritt in die Textpipeline - also vor der Generierung, aber nach
@@ -908,11 +910,11 @@
   var COOLDOWN_ANCHOR_MARGIN_MS = 2000;
 
   // Eine abgelehnte Anfrage schreibt serverseitig keinen neuen Zeitstempel
-  // fort - das ursprüngliche Fenster gilt weiter. Ein voller neuer 60-s-Block
-  // wäre deshalb falsch und würde einen zu frühen Klick doppelt bestrafen:
-  // offen ist höchstens die Ungenauigkeit des Zuschlags oben. Bleibt es beim
-  // Limit, verlängert sich diese kurze Wartezeit von selbst.
-  var COOLDOWN_RETRY_SECONDS = 5;
+  // fort - das ursprüngliche Fenster gilt weiter. Ein voller neuer
+  // 5-s-Block wäre deshalb falsch und würde einen zu frühen Klick doppelt
+  // bestrafen: offen ist höchstens die Ungenauigkeit des Zuschlags oben.
+  // Bleibt es beim Limit, verlängert sich diese kurze Wartezeit von selbst.
+  var COOLDOWN_RETRY_SECONDS = 2;
 
   // R1 (Session/Context Manager, Felix Core Foundation v2): one session id
   // per page load, held only in this JS variable - never localStorage, so
@@ -978,7 +980,7 @@
   // than a snapshot), and renderStatus() below is the only place that ever
   // writes to statusEl.
   //
-  // "cooldown" is deliberately not entered via .enter(): the 60s ask
+  // "cooldown" is deliberately not entered via .enter(): the 5s ask
   // budget and recording/transcribing are independent in this UI (the mic
   // stays usable while cooldown counts down - only the "Fragen" button is
   // disabled by it, exactly as before this change), so cooldown is tracked
@@ -1050,7 +1052,7 @@
     }
 
     // Orb is a pure renderer: it never decides anything, it only reflects
-    // computeState() plus, during cooldown, how much of the 60s window is
+    // computeState() plus, during cooldown, how much of the 5s window is
     // left. Called from every renderStatus() (ask + mic flows) and,
     // separately, from the Vorlesen click handler when `speaking` toggles -
     // that handler intentionally never touches #ask-status (see comment
@@ -1532,61 +1534,73 @@
     jarvisState.enter("thinking", "Antwort läuft … Das lokale Modell braucht dafür meist einige Sekunden.");
     askBtn.disabled = true;
 
-    var response = null;
-    var payload = null;
-    // Vor dem fetch festgehalten, nicht danach: das ist der Zeitpunkt, an dem
-    // das serverseitige Fenster zu laufen beginnt (siehe
-    // COOLDOWN_ANCHOR_MARGIN_MS oben).
-    var askSentAt = Date.now();
+    // Real-usage finding (2026-08-27): the readiness badge above used to be
+    // fetched once on page load and never again, so a transient state at
+    // load time (e.g. Ollama still starting, see commit 995eb1e) stuck the
+    // badge on a stale reading for the rest of the session, even once
+    // /api/jarvis/ask itself was answering normally again. This finally
+    // block refreshes it after every ask attempt - success, 429 or error -
+    // using the same one readiness fetch call site as the page-load call
+    // (see refreshJarvisReadiness below), not a poll.
     try {
-      response = await fetch("/api/jarvis/ask", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: question, sessionId: jarvisSessionId })
-      });
-      try { payload = await response.json(); } catch (e) { payload = null; }
-    } catch (e) {
-      askBtn.disabled = false;
-      jarvisState.enter("error", "Anfrage fehlgeschlagen – läuft der Router noch?");
-      return;
-    }
+      var response = null;
+      var payload = null;
+      // Vor dem fetch festgehalten, nicht danach: das ist der Zeitpunkt, an
+      // dem das serverseitige Fenster zu laufen beginnt (siehe
+      // COOLDOWN_ANCHOR_MARGIN_MS oben).
+      var askSentAt = Date.now();
+      try {
+        response = await fetch("/api/jarvis/ask", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ question: question, sessionId: jarvisSessionId })
+        });
+        try { payload = await response.json(); } catch (e) { payload = null; }
+      } catch (e) {
+        askBtn.disabled = false;
+        jarvisState.enter("error", "Anfrage fehlgeschlagen – läuft der Router noch?");
+        return;
+      }
 
-    if (!payload) {
-      askBtn.disabled = false;
-      jarvisState.enter("error", "Unlesbare Antwort vom Server.");
-      return;
-    }
+      if (!payload) {
+        askBtn.disabled = false;
+        jarvisState.enter("error", "Unlesbare Antwort vom Server.");
+        return;
+      }
 
-    if (payload.error) {
-      showTransportError(payload.error.code, payload.error.message);
-      askBtn.disabled = false;
-      jarvisState.enter("error", "Abgelehnt.");
-      return;
-    }
+      if (payload.error) {
+        showTransportError(payload.error.code, payload.error.message);
+        askBtn.disabled = false;
+        jarvisState.enter("error", "Abgelehnt.");
+        return;
+      }
 
-    render(payload);
-    jarvisState.enter("idle", "");
+      render(payload);
+      jarvisState.enter("idle", "");
 
-    // 429 is the route's own limiter, not a failure. Die beiden Fälle sind
-    // aber unterschiedlich zu behandeln: eine beantwortete Anfrage hat das
-    // Fenster tatsächlich verbraucht und zählt volle 60 Sekunden ab ihrem
-    // Absendezeitpunkt herunter. Eine abgelehnte hat es nicht verbraucht -
-    // dort läuft das alte Fenster weiter und ist fast abgelaufen, sonst wäre
-    // der Button gar nicht wieder freigegeben gewesen (siehe
-    // COOLDOWN_RETRY_SECONDS oben).
-    if (response.status === 429) {
-      jarvisState.startCooldown(COOLDOWN_RETRY_SECONDS, "Limit erreicht: eine Anfrage pro 60 Sekunden.", Date.now());
-    } else {
-      jarvisState.startCooldown(COOLDOWN_SECONDS, "Beantwortet.", askSentAt + COOLDOWN_ANCHOR_MARGIN_MS);
-    }
+      // 429 is the route's own limiter, not a failure. Die beiden Fälle sind
+      // aber unterschiedlich zu behandeln: eine beantwortete Anfrage hat das
+      // Fenster tatsächlich verbraucht und zählt volle 5 Sekunden ab ihrem
+      // Absendezeitpunkt herunter. Eine abgelehnte hat es nicht verbraucht -
+      // dort läuft das alte Fenster weiter und ist fast abgelaufen, sonst
+      // wäre der Button gar nicht wieder freigegeben gewesen (siehe
+      // COOLDOWN_RETRY_SECONDS oben).
+      if (response.status === 429) {
+        jarvisState.startCooldown(COOLDOWN_RETRY_SECONDS, "Limit erreicht: eine Anfrage pro 5 Sekunden.", Date.now());
+      } else {
+        jarvisState.startCooldown(COOLDOWN_SECONDS, "Beantwortet.", askSentAt + COOLDOWN_ANCHOR_MARGIN_MS);
+      }
 
-    // Auto-Vorlesen nur für sprachbasierte Fragen und nur, wenn Felix es
-    // aktiv eingeschaltet hat (Default AUS). Ruft denselben, unveränderten
-    // Klick-Handler von speakBtn auf (dessen eigene Guards - speaking-Flag,
-    // disabled Button, Fehler-Degradierung auf Text - greifen unverändert),
-    // statt dessen Logik hier zu duplizieren.
-    if (lastQuestionWasVoice && autoSpeakToggle.checked && currentAnswerText) {
-      speakBtn.click();
+      // Auto-Vorlesen nur für sprachbasierte Fragen und nur, wenn Felix es
+      // aktiv eingeschaltet hat (Default AUS). Ruft denselben, unveränderten
+      // Klick-Handler von speakBtn auf (dessen eigene Guards - speaking-Flag,
+      // disabled Button, Fehler-Degradierung auf Text - greifen unverändert),
+      // statt dessen Logik hier zu duplizieren.
+      if (lastQuestionWasVoice && autoSpeakToggle.checked && currentAnswerText) {
+        speakBtn.click();
+      }
+    } finally {
+      refreshJarvisReadiness();
     }
   }
 
@@ -1994,16 +2008,23 @@
     cancelRecording();
   });
 
-  // --- Jarvis-Readiness (einmalig beim Laden) -----------------------------
+  // --- Jarvis-Readiness (beim Laden und nach jeder Frage) -----------------
   //
-  // /api/jarvis/ready is the sole source of truth (see orchestrator/
-  // jarvis-readiness.js) - this only translates its closed
-  // {state, coreReady, voiceReady, reasons} shape into plain German. One
-  // fetch on load, no polling, no WebSocket. A failed fetch is shown just as
-  // dezent as an unknown state and never blocks the rest of the page.
+  // /api/jarvis/ready ist weiterhin die alleinige Quelle für coreReady/
+  // voiceReady/reasons (siehe orchestrator/jarvis-readiness.js), kombiniert
+  // hier mit /api/jarvis/system (Command-Center-Status) zu einem einzigen,
+  // vierstufigen Ebene-1-Label. Kein zeitgesteuertes Nachfragen im Hintergrund:
+  // genau ein Aufruf beim Laden und - real-usage finding 2026-08-27 - genau
+  // ein weiterer Aufruf nach jedem abgeschlossenen askQuestion() (siehe
+  // dessen finally-Block), über denselben, einzigen Aufrufort hier
+  // (refreshJarvisReadiness). Ein fehlgeschlagener Fetch wird so dezent wie
+  // ein unbekannter Zustand gezeigt und blockiert die restliche Seite nie.
   var readyBadge = document.getElementById("jarvis-ready-badge");
   var unavailableHintEl = document.getElementById("jarvis-unavailable-hint");
   var voiceHintEl = document.getElementById("jarvis-voice-hint");
+
+  var HINT_TEXT_UNAVAILABLE = "Wissensfragen sind momentan nicht verfügbar.";
+  var HINT_TEXT_PARTIAL_LIVE = "Einige Live-Funktionen sind eingeschränkt.";
 
   function setReadyBadge(text, kind) {
     readyBadge.textContent = text;
@@ -2058,31 +2079,68 @@
     readinessDetailWrap.hidden = false;
   }
 
-  function applyReadiness(payload) {
-    if (payload.state === "ready") {
-      setReadyBadge("Jarvis bereit", "ok");
-    } else if (payload.state === "partial") {
-      setReadyBadge("Jarvis teilweise bereit", "warn");
-    } else {
-      setReadyBadge("Jarvis nicht verfügbar", "fail");
-      unavailableHintEl.hidden = false;
+  // Reine Kombinations-Funktion, kein neuer Backend-Zustand: state/
+  // voiceReady/reasons kommen unverändert aus /api/jarvis/ready,
+  // commandCenterState/status unverändert aus /api/jarvis/system (beide
+  // bereits bestehende, unveränderte Endpunkte). Fünf Fälle aus der
+  // Aufgabenstellung (A-E), auf vier Ebene-1-Texte abgebildet:
+  //  - state !== "unavailable" ist Voraussetzung für alles außer "Offline" -
+  //    ein wirklich kaputter Wissenspfad (Chat/Embedding/Index fehlt oder
+  //    inkompatibel/beschädigt) ist immer "Offline" (D/E), unabhängig von
+  //    Voice oder Command Center.
+  //  - voiceReady === false bei sonst intaktem Kern ist "Wissensmodus
+  //    verfügbar" (C) - Text funktioniert vollständig, Sprache nicht.
+  //  - ein veralteter RAG-Index (reason "index_stale") oder ein nicht
+  //    "ok" meldendes Command Center ist "Teilweise verfügbar" (B) -
+  //    Wissen funktioniert, Live-/Nebendienste sind eingeschränkt.
+  //  - alles andere ist "Bereit" (A).
+  function computeReadinessLevel1(readiness, system) {
+    if (!readiness || typeof readiness.state !== "string") {
+      return { text: "Jarvis-Status unbekannt", kind: "pending", hint: null };
     }
-    renderReadinessStatus(payload.reasons);
-    if (payload.voiceReady === false) voiceHintEl.hidden = false;
+    if (readiness.state === "unavailable") {
+      return { text: "Offline", kind: "fail", hint: HINT_TEXT_UNAVAILABLE };
+    }
+    if (readiness.voiceReady === false) {
+      return { text: "Wissensmodus verfügbar", kind: "warn", hint: null };
+    }
+    var reasons = readiness.reasons || [];
+    var indexStale = reasons.indexOf("index_stale") !== -1;
+    var systemDegraded = !system || system.commandCenterState !== "ok" || !system.status ||
+      system.status.overallStatus !== "ok" || system.status.aiRouterOverallStatus !== "ok";
+    if (indexStale || systemDegraded) {
+      return { text: "Teilweise verfügbar", kind: "warn", hint: HINT_TEXT_PARTIAL_LIVE };
+    }
+    return { text: "Bereit", kind: "ok", hint: null };
   }
 
-  fetch("/api/jarvis/ready")
-    .then(function (response) { return response.json(); })
-    .then(function (payload) {
-      if (!payload || typeof payload.state !== "string") {
+  function applyReadiness(readiness, system) {
+    var level1 = computeReadinessLevel1(readiness, system);
+    setReadyBadge(level1.text, level1.kind);
+    unavailableHintEl.textContent = level1.hint || "";
+    unavailableHintEl.hidden = !level1.hint;
+    renderReadinessStatus(readiness && readiness.reasons);
+    voiceHintEl.hidden = !(readiness && readiness.voiceReady === false);
+  }
+
+  // Ein Aufrufort für beide fetch(...)-Literale (siehe Kommentar oben) -
+  // wird beim Laden UND aus askQuestion()s finally-Block gerufen, nie
+  // zeitgesteuert im Hintergrund.
+  function refreshJarvisReadiness() {
+    var readinessResult = fetch("/api/jarvis/ready").then(function (response) { return response.json(); }).catch(function () { return null; });
+    var systemResult = fetch("/api/jarvis/system").then(function (response) { return response.json(); }).catch(function () { return null; });
+    return Promise.all([readinessResult, systemResult]).then(function (results) {
+      var readiness = results[0];
+      var system = results[1];
+      if (!readiness || typeof readiness.state !== "string") {
         setReadyBadge("Jarvis-Status unbekannt", "pending");
         return;
       }
-      applyReadiness(payload);
-    })
-    .catch(function () {
-      setReadyBadge("Jarvis-Status unbekannt", "pending");
+      applyReadiness(readiness, system);
     });
+  }
+
+  refreshJarvisReadiness();
 
   // --- Voice-Status (einmalig beim Laden, separater Fetch) -----------------
   //
