@@ -209,6 +209,30 @@
   }
   .panel[hidden] { display: none; }
 
+  /* U3.7: sekundäre Tabs (Heute/Projekte/System/Verlauf) kompakter als das
+     Voice Zentrum - weniger Innenabstand pro Karte, damit sie weniger nach
+     großem Dashboard aussehen. Bewusst nur über diese vier Panel-IDs
+     gescoped, nicht global auf .card, damit Voice Zentrum und die
+     Antwort-Karte unverändert bleiben (siehe Kommentar bei
+     #panel-voice .card:first-of-type weiter unten). */
+  #panel-heute .card, #panel-projekte .card, #panel-system .card, #panel-verlauf .card {
+    padding: 14px 18px;
+    margin-bottom: 12px;
+  }
+  #panel-heute .card-hint, #panel-projekte .card-hint, #panel-system .card-hint, #panel-verlauf .card-hint {
+    margin-bottom: 8px;
+  }
+
+  /* Kleiner Text-Link innerhalb eines card-hint, z. B. "Details im System" -
+     ein <button>, damit Tastatur/Screenreader ihn wie jede andere Aktion auf
+     der Seite behandeln, nur wie ein Link gestylt. */
+  .link-inline {
+    background: none; border: 0; padding: 0; margin: 0;
+    color: var(--accent); font: inherit; font-weight: 600;
+    text-decoration: underline; cursor: pointer;
+  }
+  .link-inline:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
   /* Dezenter Eintritts-Übergang beim Tab-Wechsel statt hartem Umschalten -
      ausgelöst per JS (siehe zweiter <script>-Block), nicht automatisch,
      weil ein reines hidden->sichtbar keine transition auslösen kann. */
@@ -706,7 +730,7 @@
 <section id="panel-projekte" role="tabpanel" aria-labelledby="tab-projekte" class="panel" hidden>
   <section class="card card--empty">
     <h2>Projekte</h2>
-    <p class="card-hint">Noch keine Verbindung zum Vault-Projektregister.</p>
+    <p class="card-hint">Noch keine Projektdaten verbunden.</p>
     <div class="accordion">
       <div class="disclosure" data-disclosure>
         <button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="disc-projekte">
@@ -724,17 +748,31 @@
 <section id="panel-system" role="tabpanel" aria-labelledby="tab-system" class="panel" hidden>
   <section class="card">
     <h2>Jarvis-Bereitschaft</h2>
-    <p class="card-hint" id="jarvis-ready-reasons" hidden></p>
-    <!-- Separater, ehrlicher Voice-Status statt eines pauschalen "Voice bereit":
-         Piper (Datei-Check) und Whisper (echter Erreichbarkeits-Check über
-         GET /api/jarvis/voice-status) werden unabhängig voneinander geladen
-         und angezeigt - siehe orchestrator/jarvis-voice-status.js. Dieselben
-         Elemente wie vorher im Header, U3.5 verschiebt sie nur hierher. -->
-    <p class="sub" id="jarvis-voice-line">
-      <span class="badge pending" id="jarvis-piper-badge">Piper TTS: prüfe …</span>
-      <span class="badge pending" id="jarvis-whisper-badge">Whisper STT: prüfe …</span>
-    </p>
+    <!-- U3.7: die fünf Bereitschafts-Bausteine (Chat-Modell, Embedding,
+         RAG-Index, Piper, Whisper) als kompakte Statuszeilen statt eines
+         Fließtexts aus GET /api/jarvis/ready (reasons) - der volle,
+         technische Wortlaut je Reason-Code (READINESS_REASON_TEXT) bleibt
+         unverändert erhalten, nur jetzt hinter der Disclosure unten statt auf
+         Ebene 1. Piper/Whisper: dieselben zwei Werte wie vorher
+         (GET /api/jarvis/voice-status, siehe orchestrator/
+         jarvis-voice-status.js), nur als Zeile statt als Badge-Pille. -->
+    <div class="info-panel" id="jarvis-readiness-panel">
+      <div class="info-panel-row"><span class="k">Ollama</span><span class="v" id="jarvis-status-ollama">prüfe …</span></div>
+      <div class="info-panel-row"><span class="k">Embedding</span><span class="v" id="jarvis-status-embedding">prüfe …</span></div>
+      <div class="info-panel-row"><span class="k">RAG-Index</span><span class="v" id="jarvis-status-index">prüfe …</span></div>
+      <div class="info-panel-row"><span class="k">Piper TTS</span><span class="v" id="jarvis-status-piper">prüfe …</span></div>
+      <div class="info-panel-row"><span class="k">Whisper STT</span><span class="v" id="jarvis-status-whisper">prüfe …</span></div>
+    </div>
     <div class="accordion">
+      <div class="disclosure" data-disclosure id="jarvis-readiness-detail-wrap" hidden>
+        <button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="disc-readiness">
+          <span>Technische Details zur Bereitschaft</span>
+          <span class="disclosure-icon" aria-hidden="true">⌄</span>
+        </button>
+        <div class="disclosure-body" id="disc-readiness" aria-hidden="true">
+          <div><p id="jarvis-readiness-detail-text"></p></div>
+        </div>
+      </div>
       <div class="disclosure" data-disclosure>
         <button type="button" class="disclosure-trigger" aria-expanded="false" aria-controls="disc-about">
           <span>Über Felix Core</span>
@@ -822,7 +860,7 @@
 
   <section class="card">
     <h2>Sitzungszusammenfassung</h2>
-    <p class="card-hint">Fasst dieselbe serverseitige Sitzung zusammen, die <code>/api/jarvis/ask</code> bereits kennt – unabhängig vom Verlauf oben, der nur eine lokale Anzeige ist. Kein automatischer Abruf, keine Speicherung.</p>
+    <p class="card-hint">Fasst die aktuelle Jarvis-Sitzung kompakt zusammen – unabhängig vom Verlauf oben.</p>
     <div class="row">
       <button id="summary-btn" type="button">Sitzung zusammenfassen</button>
       <span class="status" id="summary-status" role="status" aria-live="polite"></span>
@@ -1964,7 +2002,6 @@
   // fetch on load, no polling, no WebSocket. A failed fetch is shown just as
   // dezent as an unknown state and never blocks the rest of the page.
   var readyBadge = document.getElementById("jarvis-ready-badge");
-  var readyReasonsEl = document.getElementById("jarvis-ready-reasons");
   var unavailableHintEl = document.getElementById("jarvis-unavailable-hint");
   var voiceHintEl = document.getElementById("jarvis-voice-hint");
 
@@ -1973,30 +2010,64 @@
     readyBadge.className = "badge " + kind;
   }
 
-  function renderReadyReasons(reasons) {
-    if (!reasons || reasons.length === 0) {
-      readyReasonsEl.hidden = true;
-      readyReasonsEl.textContent = "";
+  // U3.7: die drei Kern-Bereitschaftsgründe (Chat-Modell/Ollama, Embedding,
+  // RAG-Index) als kurzes Statuswort je Zeile statt als Fließtext-Satz - der
+  // volle Satz aus READINESS_REASON_TEXT bleibt unverändert erhalten, nur
+  // jetzt in der Disclosure "Technische Details zur Bereitschaft" statt auf
+  // Ebene 1. Kein neuer Zustand erfunden: jedes Label hier ist ein Fragment
+  // des bereits vorhandenen READINESS_REASON_TEXT-Satzes für denselben Code.
+  var statusOllamaEl = document.getElementById("jarvis-status-ollama");
+  var statusEmbeddingEl = document.getElementById("jarvis-status-embedding");
+  var statusIndexEl = document.getElementById("jarvis-status-index");
+  var readinessDetailWrap = document.getElementById("jarvis-readiness-detail-wrap");
+  var readinessDetailText = document.getElementById("jarvis-readiness-detail-text");
+
+  var OLLAMA_REASON_LABEL = { answer_provider_unavailable: "Nicht erreichbar", answer_model_unavailable: "Modell fehlt" };
+  var EMBEDDING_REASON_LABEL = { embedding_model_unavailable: "Nicht verfügbar" };
+  var INDEX_REASON_LABEL = {
+    index_missing: "Fehlt", index_stale: "Veraltet",
+    index_incompatible: "Nicht kompatibel", index_error: "Fehlerhaft"
+  };
+  // Die drei Voice-Reason-Codes gehören zu den eigenen Piper/Whisper-Zeilen
+  // unten (setStatusValue über /api/jarvis/voice-status), nicht zu diesem
+  // Fließtext-Rest - sonst stünde derselbe Fakt doppelt in der Disclosure.
+  var VOICE_REASON_CODES = { WHISPER_NOT_CONFIGURED: true, PIPER_NOT_CONFIGURED: true, PIPER_UNAVAILABLE: true };
+
+  function firstLabel(dict, reasons, fallback) {
+    for (var i = 0; i < reasons.length; i++) {
+      if (dict[reasons[i]]) return dict[reasons[i]];
+    }
+    return fallback;
+  }
+
+  function renderReadinessStatus(reasons) {
+    reasons = reasons || [];
+    if (statusOllamaEl) statusOllamaEl.textContent = firstLabel(OLLAMA_REASON_LABEL, reasons, "Verfügbar");
+    if (statusEmbeddingEl) statusEmbeddingEl.textContent = firstLabel(EMBEDDING_REASON_LABEL, reasons, "Verfügbar");
+    if (statusIndexEl) statusIndexEl.textContent = firstLabel(INDEX_REASON_LABEL, reasons, "Aktuell");
+
+    if (!readinessDetailWrap || !readinessDetailText) return;
+    var coreReasons = reasons.filter(function (reason) { return !VOICE_REASON_CODES[reason]; });
+    if (coreReasons.length === 0) {
+      readinessDetailWrap.hidden = true;
       return;
     }
-    readyReasonsEl.hidden = false;
-    readyReasonsEl.textContent = reasons.map(function (reason) {
+    readinessDetailText.textContent = coreReasons.map(function (reason) {
       return READINESS_REASON_TEXT[reason] || reason;
-    }).join(" · ");
+    }).join(" ");
+    readinessDetailWrap.hidden = false;
   }
 
   function applyReadiness(payload) {
     if (payload.state === "ready") {
       setReadyBadge("Jarvis bereit", "ok");
-      renderReadyReasons([]);
     } else if (payload.state === "partial") {
       setReadyBadge("Jarvis teilweise bereit", "warn");
-      renderReadyReasons(payload.reasons);
     } else {
       setReadyBadge("Jarvis nicht verfügbar", "fail");
-      renderReadyReasons(payload.reasons);
       unavailableHintEl.hidden = false;
     }
+    renderReadinessStatus(payload.reasons);
     if (payload.voiceReady === false) voiceHintEl.hidden = false;
   }
 
@@ -2021,33 +2092,32 @@
   // jarvis-readiness.js), this one is the sole place that actually checks
   // whether whisper-server answers. One fetch on load, no polling - the
   // same "never blocks the rest of the page" contract as jarvis/ready.
-  var piperBadge = document.getElementById("jarvis-piper-badge");
-  var whisperBadge = document.getElementById("jarvis-whisper-badge");
+  // U3.7: dieselben zwei Werte wie vorher, jetzt als Statuszeile im
+  // Jarvis-Bereitschaft-Panel statt als eigene Badge-Pille.
+  var statusPiperEl = document.getElementById("jarvis-status-piper");
+  var statusWhisperEl = document.getElementById("jarvis-status-whisper");
 
-  var PIPER_STATE_TEXT = { ready: "bereit", unavailable: "nicht verfügbar" };
-  var PIPER_STATE_KIND = { ready: "ok", unavailable: "fail" };
-  var WHISPER_STATE_TEXT = { active: "aktiv", configured: "konfiguriert", unavailable: "nicht verfügbar" };
-  var WHISPER_STATE_KIND = { active: "ok", configured: "warn", unavailable: "fail" };
+  var PIPER_STATE_TEXT = { ready: "Bereit", unavailable: "Nicht verfügbar" };
+  var WHISPER_STATE_TEXT = { active: "Aktiv", configured: "Konfiguriert", unavailable: "Nicht verfügbar" };
 
-  function setVoiceBadge(el, label, stateTextMap, stateKindMap, state) {
-    el.textContent = label + ": " + (stateTextMap[state] || state);
-    el.className = "badge " + (stateKindMap[state] || "pending");
+  function setStatusValue(el, stateTextMap, state) {
+    if (el) el.textContent = stateTextMap[state] || "Unbekannt";
   }
 
   fetch("/api/jarvis/voice-status")
     .then(function (response) { return response.json(); })
     .then(function (payload) {
       if (!payload || typeof payload.whisper !== "string" || typeof payload.piper !== "string") {
-        setVoiceBadge(piperBadge, "Piper TTS", {}, {}, "unbekannt");
-        setVoiceBadge(whisperBadge, "Whisper STT", {}, {}, "unbekannt");
+        setStatusValue(statusPiperEl, {}, "unbekannt");
+        setStatusValue(statusWhisperEl, {}, "unbekannt");
         return;
       }
-      setVoiceBadge(piperBadge, "Piper TTS", PIPER_STATE_TEXT, PIPER_STATE_KIND, payload.piper);
-      setVoiceBadge(whisperBadge, "Whisper STT", WHISPER_STATE_TEXT, WHISPER_STATE_KIND, payload.whisper);
+      setStatusValue(statusPiperEl, PIPER_STATE_TEXT, payload.piper);
+      setStatusValue(statusWhisperEl, WHISPER_STATE_TEXT, payload.whisper);
     })
     .catch(function () {
-      setVoiceBadge(piperBadge, "Piper TTS", {}, {}, "unbekannt");
-      setVoiceBadge(whisperBadge, "Whisper STT", {}, {}, "unbekannt");
+      setStatusValue(statusPiperEl, {}, "unbekannt");
+      setStatusValue(statusWhisperEl, {}, "unbekannt");
     });
 })();
 </script>
@@ -2146,7 +2216,7 @@
   var heuteContent = document.getElementById("heute-content");
 
   var COCKPIT_STATE_TEXT = {
-    unconfigured: "Cockpit ist nicht konfiguriert.",
+    unconfigured: "Keine Tagesdaten verbunden.",
     unavailable: "Cockpit ist gerade nicht erreichbar."
   };
   var FRESH_STATES = { fresh: true, stale: true };
@@ -2217,6 +2287,25 @@
     return d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
   }
 
+  // Kleiner sekundärer Link statt langer Erklärung, warum "Heute" leer ist -
+  // die technische Ursache (Cockpit nicht konfiguriert/erreichbar) steht
+  // bereits ehrlich im System-Tab, ein zweiter Absatz hier wäre Dopplung.
+  function addSystemDetailLink(parent) {
+    var p = document.createElement("p");
+    p.className = "card-hint";
+    p.style.margin = "0";
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "link-inline";
+    btn.textContent = "Details im System";
+    btn.addEventListener("click", function () {
+      var systemTab = document.getElementById("tab-system");
+      if (systemTab) activateTab(systemTab);
+    });
+    p.appendChild(btn);
+    parent.appendChild(p);
+  }
+
   function renderHeute(payload) {
     if (!heuteContent) return;
     clearChildren(heuteContent);
@@ -2224,6 +2313,7 @@
     if (!payload || payload.cockpitState !== "ok" || !payload.context) {
       var reason = payload && COCKPIT_STATE_TEXT[payload.cockpitState];
       if (heuteHint) { heuteHint.textContent = reason || "Für heute liegt nichts vor."; heuteHint.hidden = false; }
+      if (reason) addSystemDetailLink(heuteContent);
       return;
     }
     if (heuteHint) heuteHint.hidden = true;
