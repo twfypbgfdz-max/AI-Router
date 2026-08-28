@@ -235,6 +235,78 @@
           "forbiddenPatterns": []
         }
       }
+    },
+    {
+      "id": "T11",
+      "question": "Welche Komponenten gehören aktuell zu Felix Core und welche Rolle hat jede davon?",
+      "expected": {
+        "states": ["partial"],
+        "knowledgeStates": ["available"],
+        "warningIncludes": [],
+        "warningExcludes": [],
+        "evidenceAnyOf": [
+          { "sourceDoc": "00_System/FELIX_SYSTEM_Architektur_Index.md", "informationClass": "project_context", "sectionValidity": "current", "sectionIncludes": "Systemübersicht" },
+          { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-006-Felix-Core-Vertragsebene.md", "informationClass": "architecture_rule", "sectionValidity": "current" }
+        ],
+        "answer": {
+          "concepts": [
+            { "id": "ai_router_named_as_component", "anyOf": ["ai-router"] },
+            { "id": "cockpit_named_as_component", "anyOf": ["felix-cockpit", "cockpit"] },
+            { "id": "command_center_named_as_component", "anyOf": ["command center"] }
+          ],
+          "forbiddenPatterns": [
+            { "id": "felix_core_only_contract_layer", "pattern": "\\bfelix core ist (?:ausschliesslich|nur) (?:die )?vertragsebene\\b" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "T12",
+      "question": "Was wurde zuletzt an der Jarvis-Oberfläche geändert?",
+      "expected": {
+        "states": ["partial"],
+        "knowledgeStates": ["available"],
+        "warningIncludes": [],
+        "warningExcludes": ["current_state_not_verified"],
+        "evidenceAnyOf": [
+          { "sourceDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md", "informationClass": "project_context", "sectionValidity": "current", "sectionIncludes": "Jarvis-Oberfläche" }
+        ],
+        "answer": {
+          "concepts": [
+            { "id": "jarvis_ui_recent_change_topic", "anyOf": ["session-summary-anzeige", "session-summary", "verlauf-tab", "primare oberflache", "primary interface", "sekundare oberflache", "secondary ui", "38bcbcb"] }
+          ],
+          "forbiddenPatterns": []
+        }
+      }
+    },
+    {
+      "id": "T13",
+      "question": "Was wurde am 01.01.2026 an der Jarvis-Oberfläche geändert?",
+      "expected": {
+        "states": ["partial"],
+        "knowledgeStates": ["available"],
+        "warningIncludes": [],
+        "warningExcludes": [],
+        "evidenceAnyOf": [
+          { "sourceDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md", "informationClass": "project_context", "sectionValidity": "current", "sectionIncludes": "Jarvis-Oberfläche" },
+          { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-010-Jarvis-Interface-Architecture.md", "informationClass": "architecture_rule", "sectionValidity": "current" }
+        ],
+        "answer": {
+          "concepts": [
+            {
+              "id": "no_change_documented_for_that_date",
+              "anyOf": ["nicht dokumentiert", "nicht belegt"],
+              "patterns": [
+                "\\bkeine\\b[^.!?\\n]{0,40}anderungen\\b[^.!?\\n]{0,60}\\b(dokumentiert|vorgenommen|erfolgt|belegt|bekannt|nachweisbar)\\b",
+                "\\b(nicht|keine)\\b[^.!?\\n]{0,40}\\b(dokumentiert|belegt|nachweisbar)\\b"
+              ]
+            }
+          ],
+          "forbiddenPatterns": [
+            { "id": "invented_change_on_unverified_date", "pattern": "\\bam 01\\.01\\.2026\\b[^.!?\\n]{0,80}\\b(wurde|wurden)\\b[^.!?\\n]{0,80}\\b(hinzugefugt|geandert|eingefuhrt|redesignt|umgesetzt)\\b" }
+          ]
+        }
+      }
     }
   ]
 }

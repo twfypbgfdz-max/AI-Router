@@ -161,6 +161,16 @@
       "question": "Wie viel habe ich im letzten Monat für Lebensmittel ausgegeben?",
       "expectedDoc": null,
       "note": "Finanzthema. 60_Finanzen/ steht auf der harten Denylist und darf auch bei niedriger Schwelle nie treffen."
+    },
+    {
+      "id": "Q27",
+      "question": "Was hat sich zuletzt an der Jarvis-UI geändert?",
+      "expectedDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md"
+    },
+    {
+      "id": "Q28",
+      "question": "Welche letzten Änderungen gab es an der Jarvis-Oberfläche?",
+      "expectedDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md"
     }
   ]
 }
