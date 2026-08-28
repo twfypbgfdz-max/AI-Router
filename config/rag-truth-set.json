@@ -307,6 +307,96 @@
           ]
         }
       }
+    },
+    {
+      "id": "T14",
+      "question": "Darf Felix Overnight ohne explizite Freigabe im Start-Prompt pushen?",
+      "expected": {
+        "states": ["partial"],
+        "knowledgeStates": ["available"],
+        "warningIncludes": [],
+        "warningExcludes": [],
+        "evidenceAnyOf": [
+          { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-013-Felix-Overnight-Run-Autorisierung.md", "informationClass": "architecture_rule", "sectionValidity": "current" }
+        ],
+        "answer": {
+          "concepts": [
+            { "id": "push_blocked_without_authorization", "anyOf": ["nein", "bleibt der push blockiert", "push ist blockiert", "push blockiert", "darf nicht pushen", "nicht pushen"] }
+          ],
+          "forbiddenPatterns": []
+        }
+      }
+    },
+    {
+      "id": "T15",
+      "question": "Kann eine nachträgliche Änderung von state.json auf push: true ein neues Push-Recht begründen?",
+      "expected": {
+        "states": ["partial"],
+        "knowledgeStates": ["available"],
+        "warningIncludes": [],
+        "warningExcludes": [],
+        "evidenceAnyOf": [
+          { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-013-Felix-Overnight-Run-Autorisierung.md", "informationClass": "architecture_rule", "sectionValidity": "current" }
+        ],
+        "answer": {
+          "concepts": [
+            {
+              "id": "state_json_cannot_grant_rights",
+              "anyOf": ["nein", "kein neues push-recht", "keine zusatzliche berechtigung", "keine berechtigung", "niemals zusatzliche berechtigung", "erzeugt keine berechtigung", "begrundet keine berechtigung", "niemals ein recht", "dient lediglich der protokollierung"],
+              "patterns": ["\\b(?:kein\\w*|niemals)[^.!?\\n]{0,30}push-recht\\w*\\b"]
+            }
+          ],
+          "forbiddenPatterns": [
+            { "id": "state_json_wrongly_grants_push", "pattern": "\\bstate\\.json\\b[^.!?\\n]{0,60}\\berzeugt\\b[^.!?\\n]{0,20}\\b(?:push[- ]recht|berechtigung)\\b" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "T16",
+      "question": "Ist ein Memory Candidate laut DEC-014 eine zitierfähige Authority Source?",
+      "expected": {
+        "states": ["partial"],
+        "knowledgeStates": ["available"],
+        "warningIncludes": [],
+        "warningExcludes": [],
+        "evidenceAnyOf": [
+          { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-014-Episodisches-Memory-und-kontrollierte-Session-Uebernahme.md", "informationClass": "architecture_rule", "sectionValidity": "current" }
+        ],
+        "answer": {
+          "concepts": [
+            {
+              "id": "memory_candidate_not_citable",
+              "anyOf": ["nein", "nicht zitierfahig", "niemals eine zitierfahige", "nicht rag-vertrauenswurdig"],
+              "patterns": ["\\b(?:nie|niemals|nicht)\\b[^.!?\\n]{0,20}zitierfahig\\w*"]
+            }
+          ],
+          "forbiddenPatterns": [
+            { "id": "memory_candidate_wrongly_citable", "pattern": "\\bmemory candidate ist (?:eine )?zitierfahig\\w*\\b" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "T17",
+      "question": "Entsteht ein Memory Candidate laut DEC-014 automatisch bei Sessionende?",
+      "expected": {
+        "states": ["partial"],
+        "knowledgeStates": ["available"],
+        "warningIncludes": [],
+        "warningExcludes": [],
+        "evidenceAnyOf": [
+          { "sourceDoc": "10_Apps/90_Entscheidungen/DEC-014-Episodisches-Memory-und-kontrollierte-Session-Uebernahme.md", "informationClass": "architecture_rule", "sectionValidity": "current" }
+        ],
+        "answer": {
+          "concepts": [
+            { "id": "memory_candidate_not_automatic", "anyOf": ["nein", "nicht automatisch", "ausschliesslich nach einer expliziten", "kein automatischer"] }
+          ],
+          "forbiddenPatterns": [
+            { "id": "memory_candidate_wrongly_automatic", "pattern": "\\bentsteht automatisch\\b" }
+          ]
+        }
+      }
     }
   ]
 }

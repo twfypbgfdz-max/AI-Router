@@ -27,6 +27,8 @@
     { "relativePath": "10_Apps/90_Entscheidungen/DEC-009-Jarvis-Communication-Contract.md", "addedAt": "2026-08-18", "addedBy": "felix", "informationClass": "architecture_rule" },
     { "relativePath": "10_Apps/90_Entscheidungen/DEC-010-Jarvis-Interface-Architecture.md", "addedAt": "2026-08-18", "addedBy": "felix", "informationClass": "architecture_rule" },
     { "relativePath": "10_Apps/90_Entscheidungen/DEC-011-Aufgaben-Datenhoheit.md", "addedAt": "2026-08-18", "addedBy": "felix", "informationClass": "architecture_rule" },
-    { "relativePath": "10_Apps/90_Entscheidungen/DEC-012-Interaktions-und-Boot-Erlebnis-Grenze.md", "addedAt": "2026-08-18", "addedBy": "felix", "informationClass": "architecture_rule" }
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-012-Interaktions-und-Boot-Erlebnis-Grenze.md", "addedAt": "2026-08-18", "addedBy": "felix", "informationClass": "architecture_rule" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-013-Felix-Overnight-Run-Autorisierung.md", "addedAt": "2026-08-28", "addedBy": "felix", "informationClass": "architecture_rule" },
+    { "relativePath": "10_Apps/90_Entscheidungen/DEC-014-Episodisches-Memory-und-kontrollierte-Session-Uebernahme.md", "addedAt": "2026-08-28", "addedBy": "felix", "informationClass": "architecture_rule" }
   ]
 }

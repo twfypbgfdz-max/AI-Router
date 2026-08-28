@@ -235,10 +235,10 @@ test("truth-set loader rejects an invalid semantic concept regex", () => {
   assert.throws(() => loadFrom(badRegex), /answer_concept_pattern_regex_invalid/);
 });
 
-test("the committed truth set has thirteen real, contract-valid cases with split allowlist assertions", () => {
+test("the committed truth set has seventeen real, contract-valid cases with split allowlist assertions", () => {
   const allowedDocuments = new Set(loadAllowlist(RAG_ALLOWLIST_FILE).documents.map((entry) => entry.relativePath));
   const loaded = loadTruthSet(undefined, { allowedDocuments });
-  assert.equal(loaded.cases.length, 13);
+  assert.equal(loaded.cases.length, 17);
   assert.deepEqual(loaded.cases.slice(0, 2).map((entry) => entry.id), ["T01", "T02"]);
   assert.notEqual(loaded.cases[0].question, loaded.cases[1].question);
   for (const entry of loaded.cases) {

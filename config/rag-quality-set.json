@@ -171,6 +171,26 @@
       "id": "Q28",
       "question": "Welche letzten Änderungen gab es an der Jarvis-Oberfläche?",
       "expectedDoc": "10_Apps/01_Aktive-Projekte/AI-Router.md"
+    },
+    {
+      "id": "Q29",
+      "question": "Darf Felix Overnight ohne explizite Freigabe pushen?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-013-Felix-Overnight-Run-Autorisierung.md"
+    },
+    {
+      "id": "Q30",
+      "question": "Kann state.json selbst neue Push-Rechte erzeugen?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-013-Felix-Overnight-Run-Autorisierung.md"
+    },
+    {
+      "id": "Q31",
+      "question": "Ist ein Memory Candidate eine zitierfähige Quelle?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-014-Episodisches-Memory-und-kontrollierte-Session-Uebernahme.md"
+    },
+    {
+      "id": "Q32",
+      "question": "Wird ein Memory Candidate automatisch bei Sessionende erzeugt?",
+      "expectedDoc": "10_Apps/90_Entscheidungen/DEC-014-Episodisches-Memory-und-kontrollierte-Session-Uebernahme.md"
     }
   ]
 }

@@ -501,7 +501,9 @@ test("every entry in the real allowlist carries a known information class", () =
   // were added to close the RAG-DEC coverage gap (see
   // orchestrator/knowledge/rag-dec-coverage.js) - 10 -> 16 documents; DEC-011
   // and DEC-012 (new decisions from F3) were then added on top - 16 -> 18.
-  assert.equal(allowlist.documents.length, 18, "the reviewed allowlist holds exactly 18 documents");
+  // M6 (2026-08-28): DEC-013 and DEC-014 closed the same coverage gap again
+  // - 18 -> 20.
+  assert.equal(allowlist.documents.length, 20, "the reviewed allowlist holds exactly 20 documents");
   for (const entry of allowlist.documents) {
     assert.ok(INFORMATION_CLASSES.includes(entry.informationClass),
       `${entry.relativePath} has an unknown information class: ${entry.informationClass}`);
