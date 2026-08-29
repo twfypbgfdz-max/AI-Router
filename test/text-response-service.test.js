@@ -199,11 +199,29 @@ test("upstream abort reaches the adapter and stops the response", async () => {
   assert.equal(observedSignal.aborted, true);
 });
 
+test("a provider-reported truncation is surfaced end-to-end as response.answer.truncated", async () => {
+  const { adapter } = successfulAdapter({ text: "Cut off mid-sent", truncated: true });
+  const result = await serviceWith(adapter).respond(validTextResponseRequest(), {
+    signal: new AbortController().signal
+  });
+  assert.equal(result.truncated, true);
+  const response = buildTextResponseSuccess(result, { durationMs: 5 });
+  assert.equal(response.answer.truncated, true);
+});
+
+test("an adapter result missing the truncated field fails closed as adapter_result_shape", async () => {
+  const adapter = { async generateText() { return { text: "Answer", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }; } };
+  await assert.rejects(
+    serviceWith(adapter).respond(validTextResponseRequest(), { signal: new AbortController().signal }),
+    (error) => error.code === "PROVIDER_RESPONSE_INVALID" && error.safeDetails.reason === "adapter_result_shape"
+  );
+});
+
 test("invalid, structured, oversized and HTML adapter outputs are rejected", async () => {
   const invalidResults = [
-    { text: "Answer", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }, toolCall: { name: "shell" } },
-    { text: "<script>alert(1)</script>", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
-    { text: "Answer", usage: { inputTokens: 10, outputTokens: 801, totalTokens: 811 } }
+    { text: "Answer", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }, truncated: false, toolCall: { name: "shell" } },
+    { text: "<script>alert(1)</script>", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }, truncated: false },
+    { text: "Answer", usage: { inputTokens: 10, outputTokens: 801, totalTokens: 811 }, truncated: false }
   ];
   for (const result of invalidResults) {
     const adapter = { async generateText() { return result; } };
@@ -221,7 +239,8 @@ test("provider text above the character limit remains rejected", async () => {
     async generateText() {
       return {
         text: "x".repeat(8_001),
-        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+        truncated: false
       };
     }
   };

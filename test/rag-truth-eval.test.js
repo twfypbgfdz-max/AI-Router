@@ -146,6 +146,54 @@ test("T02 keeps requiring the server-validated DEC-012 evidence source", () => {
   assert.ok(evaluated.failedAssertions.includes("cited_evidence"));
 });
 
+function t13Fixture(answer) {
+  const allowedDocuments = new Set(loadAllowlist(RAG_ALLOWLIST_FILE).documents.map((entry) => entry.relativePath));
+  const testCase = loadTruthSet(RAG_TRUTH_SET_FILE, { allowedDocuments }).cases.find((entry) => entry.id === "T13");
+  const source = {
+    sourceDoc: "10_Apps/01_Aktive-Projekte/AI-Router.md",
+    section: "AI-Router > Jarvis-Oberfläche",
+    similarity: 0.7
+  };
+  return {
+    testCase,
+    payload: {
+      state: "partial",
+      knowledgeState: "available",
+      answer,
+      warnings: [],
+      sources: [source]
+    },
+    retrieval: {
+      knowledgeState: "available",
+      results: [{
+        ...source,
+        informationClass: "project_context",
+        sectionValidity: "current"
+      }]
+    }
+  };
+}
+
+test("T13 accepts correctly hedged answers despite singular/plural, genus and synonym variation", () => {
+  const accepted = [
+    "Für den 01.01.2026 ist an der Jarvis-Oberfläche keine spezifische Änderung vorgenommen worden.",
+    "Es gibt keinen expliziten Änderungsbericht zur Jarvis-Oberfläche für den 01.01.2026.",
+    "Für die Jarvis-Oberfläche sind zum 01.01.2026 keine Änderungen gemeldet."
+  ];
+  for (const answer of accepted) {
+    const fixture = t13Fixture(answer);
+    const evaluated = evaluateTruthSample(fixture.testCase, fixture);
+    assert.equal(evaluated.verdict, "pass", `${answer} -> ${JSON.stringify(evaluated.failedAssertions)}`);
+  }
+});
+
+test("T13 still rejects an invented change on the unverified date", () => {
+  const fixture = t13Fixture("Am 01.01.2026 wurde die Jarvis-Oberfläche komplett redesignt.");
+  const evaluated = evaluateTruthSample(fixture.testCase, fixture);
+  assert.equal(evaluated.verdict, "fail");
+  assert.ok(evaluated.failedAssertions.includes("forbidden:invented_change_on_unverified_date"));
+});
+
 test("source authority metadata is recovered only from the production retrieval snapshot", () => {
   const sources = enrichCitedSources(payload().sources, retrieval().results);
   assert.equal(sources[0].informationClass, "project_context");

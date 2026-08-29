@@ -1,9 +1,15 @@
 import { TextResponseError } from "../text-response-error.js";
 
 export const DEFAULT_BASE_URL = "http://localhost:11434";
+export const DEFAULT_NUM_CTX = 6_144;
 const MAX_PROVIDER_BODY_BYTES = 1_048_576;
 const ADAPTER_INPUT_FIELDS = new Set(["instructions", "question", "context", "maxOutputTokens", "signal", "structuredOutputSchema"]);
-const ADAPTER_RESULT_FIELDS = new Set(["text", "usage"]);
+const ADAPTER_RESULT_FIELDS = new Set(["text", "usage", "truncated"]);
+// Ollama always sets done_reason once done:true. "stop" is a normal model-
+// initiated end of turn; "length" means num_predict was hit mid-answer. Any
+// other value is unrecognized - fail closed and treat it as unverified
+// completeness rather than silently reporting the answer as whole.
+const COMPLETE_DONE_REASONS = new Set(["stop"]);
 const USAGE_FIELDS = new Set(["inputTokens", "outputTokens", "totalTokens"]);
 const MESSAGE_FIELDS = new Set(["role", "content"]);
 
@@ -73,6 +79,13 @@ function extractText(payload) {
   return message.content;
 }
 
+function extractTruncated(payload) {
+  const reason = payload.done_reason;
+  if (reason === undefined || reason === null) return false;
+  if (reason === "length") return true;
+  return !COMPLETE_DONE_REASONS.has(reason);
+}
+
 async function readProviderJson(response) {
   const declared = Number(response.headers?.get?.("content-length") || 0);
   if (Number.isFinite(declared) && declared > MAX_PROVIDER_BODY_BYTES) {
@@ -119,8 +132,9 @@ function normalizeFetchError(error, signal) {
   });
 }
 
-export function createOllamaTextAdapter({ model, baseUrl = DEFAULT_BASE_URL, fetchImpl = globalThis.fetch } = {}) {
-  if (typeof model !== "string" || !model || typeof baseUrl !== "string" || !baseUrl || typeof fetchImpl !== "function") {
+export function createOllamaTextAdapter({ model, baseUrl = DEFAULT_BASE_URL, numCtx = DEFAULT_NUM_CTX, fetchImpl = globalThis.fetch } = {}) {
+  if (typeof model !== "string" || !model || typeof baseUrl !== "string" || !baseUrl
+    || !Number.isSafeInteger(numCtx) || numCtx < 1 || typeof fetchImpl !== "function") {
     throw new TextResponseError("PROVIDER_NOT_CONFIGURED", "The text provider is not configured.");
   }
   const endpoint = `${baseUrl.replace(/\/+$/, "")}/api/chat`;
@@ -141,7 +155,7 @@ export function createOllamaTextAdapter({ model, baseUrl = DEFAULT_BASE_URL, fet
         messages: providerMessages(input.instructions, input.question, input.context),
         stream: false,
         ...(input.structuredOutputSchema ? { format: input.structuredOutputSchema } : {}),
-        options: { num_predict: input.maxOutputTokens }
+        options: { num_predict: input.maxOutputTokens, temperature: 0, num_ctx: numCtx }
       };
       try {
         const response = await fetchImpl(endpoint, {
@@ -159,7 +173,7 @@ export function createOllamaTextAdapter({ model, baseUrl = DEFAULT_BASE_URL, fet
           });
         }
         const payload = await readProviderJson(response);
-        const result = Object.freeze({ text: extractText(payload), usage: extractUsage(payload) });
+        const result = Object.freeze({ text: extractText(payload), usage: extractUsage(payload), truncated: extractTruncated(payload) });
         exactFields(result, ADAPTER_RESULT_FIELDS, "PROVIDER_RESPONSE_INVALID", "Provider response is invalid.");
         exactFields(result.usage, USAGE_FIELDS, "PROVIDER_RESPONSE_INVALID", "Provider usage metadata is invalid.");
         return result;
@@ -172,6 +186,8 @@ export function createOllamaTextAdapter({ model, baseUrl = DEFAULT_BASE_URL, fet
 
 export const ollamaTextAdapterInternals = Object.freeze({
   defaultBaseUrl: DEFAULT_BASE_URL,
+  defaultNumCtx: DEFAULT_NUM_CTX,
   extractText,
-  extractUsage
+  extractUsage,
+  extractTruncated
 });

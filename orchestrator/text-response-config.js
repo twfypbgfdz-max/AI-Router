@@ -1,4 +1,4 @@
-import { DEFAULT_BASE_URL as OLLAMA_DEFAULT_BASE_URL } from "./provider-adapters/ollama-text.js";
+import { DEFAULT_BASE_URL as OLLAMA_DEFAULT_BASE_URL, DEFAULT_NUM_CTX as OLLAMA_DEFAULT_NUM_CTX } from "./provider-adapters/ollama-text.js";
 import { parseOllamaLoopbackUrl } from "./ollama-loopback.js";
 import { TextResponseError } from "./text-response-error.js";
 
@@ -26,6 +26,14 @@ export const TEXT_RESPONSE_MAX_COMBINED_CHARS = 12_000;
 export const TEXT_RESPONSE_MAX_INPUT_TOKENS = 4_000;
 export const TEXT_RESPONSE_MAX_OUTPUT_TOKENS = 800;
 export const TEXT_RESPONSE_MAX_TOTAL_TOKENS = 4_800;
+// Ollama defaults its runtime context window (num_ctx) to 4096 tokens unless
+// a request sets it explicitly, regardless of a model's larger trained
+// context length (qwen2.5:7b-instruct supports 32768). That default is below
+// TEXT_RESPONSE_MAX_TOTAL_TOKENS=4800, so the code-level input+output budget
+// could exceed the engine's actual window. Set explicitly with headroom for
+// chat-template/special-token overhead the character-based token estimate
+// does not account for - not an arbitrarily large window.
+export const OLLAMA_TEXT_NUM_CTX = OLLAMA_DEFAULT_NUM_CTX;
 export const TEXT_RESPONSE_MAX_OUTPUT_CHARS = 8_000;
 export const TEXT_RESPONSE_DEFAULT_PROVIDER_TIMEOUT_MS = 15_000;
 // Outer ceiling for the whole request (body parse + provider call + response
@@ -180,6 +188,7 @@ export function loadOllamaTextProviderConfig(env = process.env) {
     modelAlias: OLLAMA_TEXT_MODEL_ALIAS,
     publicModel: TEXT_RESPONSE_PUBLIC_MODEL,
     timeoutMs,
+    numCtx: OLLAMA_TEXT_NUM_CTX,
     inputUsdPerMillionTokens: 0,
     outputUsdPerMillionTokens: 0,
     maxCostUsd: TEXT_RESPONSE_MAX_COST_USD

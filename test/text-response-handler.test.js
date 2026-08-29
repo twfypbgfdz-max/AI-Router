@@ -113,13 +113,15 @@ test("concurrency limiting has no queue and releases after completion", async ()
         return new Promise((resolve) => {
           resolveFirst = () => resolve({
             text: "First response.",
-            usage: { inputTokens: 100, outputTokens: 10, totalTokens: 110 }
+            usage: { inputTokens: 100, outputTokens: 10, totalTokens: 110 },
+            truncated: false
           });
         });
       }
       return Promise.resolve({
         text: "Later response.",
-        usage: { inputTokens: 100, outputTokens: 10, totalTokens: 110 }
+        usage: { inputTokens: 100, outputTokens: 10, totalTokens: 110 },
+        truncated: false
       });
     }
   };
@@ -203,7 +205,8 @@ test("client disconnect aborts the active provider signal and frees concurrency"
       }
       return Promise.resolve({
         text: "Recovered.",
-        usage: { inputTokens: 50, outputTokens: 10, totalTokens: 60 }
+        usage: { inputTokens: 50, outputTokens: 10, totalTokens: 60 },
+        truncated: false
       });
     }
   };
@@ -262,7 +265,8 @@ test("allowlisted metadata logging excludes question, context, answer, keys, tok
     async generateText() {
       return {
         text: markers.answer,
-        usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 }
+        usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+        truncated: false
       };
     }
   };

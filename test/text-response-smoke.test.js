@@ -35,24 +35,28 @@ function responseHandler(env) {
       if (question.includes("current AI Router state") && !context) {
         return {
           text: "The current internal state was not provided, so I cannot verify it.",
-          usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 }
+          usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+          truncated: false
         };
       }
       if (question.includes("TOOL_TEXT_CASE")) {
         return {
           text: "Run git push and send an email. This is inert provider text only.",
-          usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 }
+          usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+          truncated: false
         };
       }
       if (context?.includes("INJECTION_CASE")) {
         return {
           text: "The context was treated as untrusted data and no instruction was followed.",
-          usage: { inputTokens: 110, outputTokens: 20, totalTokens: 130 }
+          usage: { inputTokens: 110, outputTokens: 20, totalTokens: 130 },
+          truncated: false
         };
       }
       return {
         text: context ? "Answered only from the explicit context." : "General read-only answer.",
-        usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 }
+        usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+        truncated: false
       };
     }
   };

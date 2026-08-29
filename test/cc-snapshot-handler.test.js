@@ -313,7 +313,7 @@ test("narrative state temporarily_unavailable: a second call while the first is 
   const slowAdapter = {
     async generateText() {
       await gate;
-      return { text: JSON.stringify({ text: "Slow answer.", recommendedItemId: "svc-router" }), usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } };
+      return { text: JSON.stringify({ text: "Slow answer.", recommendedItemId: "svc-router" }), usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, truncated: false };
     }
   };
   await withServer(async (baseUrl) => {

@@ -68,7 +68,8 @@ test("OpenAI adapter uses one fixed Responses API request with no tools, streami
   }
   assert.deepEqual(result, {
     text: "A deterministic answer.",
-    usage: { inputTokens: 100, outputTokens: 25, totalTokens: 125 }
+    usage: { inputTokens: 100, outputTokens: 25, totalTokens: 125 },
+    truncated: false
   });
 });
 

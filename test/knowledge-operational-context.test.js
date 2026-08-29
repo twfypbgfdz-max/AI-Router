@@ -50,7 +50,7 @@ function operationalOnlyAdapter({ answer = "Dein Fokus heute: Plateau-Brecher te
     adapter: {
       async generateText(input) {
         calls.push(input);
-        return { text: JSON.stringify({ answer, citedSources }), usage: { inputTokens: 50, outputTokens: 10, totalTokens: 60 } };
+        return { text: JSON.stringify({ answer, citedSources }), usage: { inputTokens: 50, outputTokens: 10, totalTokens: 60 }, truncated: false };
       }
     }
   };

@@ -99,7 +99,7 @@ export function buildTextResponseSuccess(result, { durationMs = 0 } = {}) {
     text: result.answerText,
     structured: result.structured ?? null,
     trust: "untrusted_provider_text",
-    truncated: false
+    truncated: result.truncated === true
   };
   response.provider = {
     providerId: result.provider.providerId,

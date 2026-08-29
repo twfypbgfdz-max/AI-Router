@@ -41,14 +41,15 @@ export function externalContext(overrides = {}) {
   };
 }
 
-export function successfulAdapter({ text = "A safe plain-text answer.", usage } = {}) {
+export function successfulAdapter({ text = "A safe plain-text answer.", usage, truncated = false } = {}) {
   const calls = [];
   const adapter = {
     async generateText(input) {
       calls.push(input);
       return {
         text,
-        usage: usage || { inputTokens: 120, outputTokens: 30, totalTokens: 150 }
+        usage: usage || { inputTokens: 120, outputTokens: 30, totalTokens: 150 },
+        truncated
       };
     }
   };

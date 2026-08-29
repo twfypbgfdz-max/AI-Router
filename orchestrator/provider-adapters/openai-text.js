@@ -3,7 +3,7 @@ import { TextResponseError } from "../text-response-error.js";
 const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
 const MAX_PROVIDER_BODY_BYTES = 1_048_576;
 const ADAPTER_INPUT_FIELDS = new Set(["instructions", "question", "context", "maxOutputTokens", "signal"]);
-const ADAPTER_RESULT_FIELDS = new Set(["text", "usage"]);
+const ADAPTER_RESULT_FIELDS = new Set(["text", "usage", "truncated"]);
 const USAGE_FIELDS = new Set(["inputTokens", "outputTokens", "totalTokens"]);
 const PASSIVE_OUTPUT_ITEM_TYPES = new Set(["reasoning"]);
 const ACTION_FIELDS = new Set([
@@ -211,7 +211,10 @@ export function createOpenAITextAdapter({ apiKey, model, fetchImpl = globalThis.
           });
         }
         const payload = await readProviderJson(response);
-        const result = Object.freeze({ text: extractText(payload), usage: extractUsage(payload) });
+        // extractText already rejects any response/message status other than
+        // "completed" as PROVIDER_RESPONSE_INVALID, so a result reaching this
+        // point was never truncated by the output-token limit.
+        const result = Object.freeze({ text: extractText(payload), usage: extractUsage(payload), truncated: false });
         exactFields(result, ADAPTER_RESULT_FIELDS, "PROVIDER_RESPONSE_INVALID", "Provider response is invalid.");
         exactFields(result.usage, USAGE_FIELDS, "PROVIDER_RESPONSE_INVALID", "Provider usage metadata is invalid.");
         return result;

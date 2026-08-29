@@ -297,8 +297,9 @@
               "id": "no_change_documented_for_that_date",
               "anyOf": ["nicht dokumentiert", "nicht belegt"],
               "patterns": [
-                "\\bkeine\\b[^.!?\\n]{0,40}anderungen\\b[^.!?\\n]{0,60}\\b(dokumentiert|vorgenommen|erfolgt|belegt|bekannt|nachweisbar)\\b",
-                "\\b(nicht|keine)\\b[^.!?\\n]{0,40}\\b(dokumentiert|belegt|nachweisbar)\\b"
+                "\\bkeine?[nrm]?\\b[^.!?\\n]{0,40}\\banderung(?:en)?\\b[^.!?\\n]{0,60}\\b(dokumentiert|vorgenommen|erfolgt|belegt|bekannt|nachweisbar|gemeldet)\\b",
+                "\\b(nicht|keine?[nrm]?)\\b[^.!?\\n]{0,40}\\b(dokumentiert|belegt|nachweisbar)\\b",
+                "\\bkein\\w*\\b[^.!?\\n]{0,40}\\banderungsbericht\\b"
               ]
             }
           ],

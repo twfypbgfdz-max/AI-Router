@@ -103,7 +103,8 @@ export function structuredSnapshotAdapter({ text = "Der Service-Ausfall hat die 
         calls.push(input);
         return {
           text: JSON.stringify({ text, recommendedItemId }),
-          usage: { inputTokens: 50, outputTokens: 20, totalTokens: 70 }
+          usage: { inputTokens: 50, outputTokens: 20, totalTokens: 70 },
+          truncated: false
         };
       }
     },

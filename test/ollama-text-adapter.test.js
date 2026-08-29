@@ -61,12 +61,15 @@ test("Ollama adapter uses one fixed chat request against the configured base URL
   assert.equal(body.model, "qwen2.5:7b-instruct");
   assert.equal(body.stream, false);
   assert.equal(body.options.num_predict, 800);
+  assert.equal(body.options.temperature, 0);
+  assert.equal(body.options.num_ctx, 6144);
   assert.deepEqual(body.messages.map((message) => message.role), ["system", "user", "user"]);
   assert.equal(body.messages[1].content, "What is deterministic routing?");
   assert.equal(body.messages[2].content, "Explicit context only.");
   assert.deepEqual(result, {
     text: "A deterministic answer.",
-    usage: { inputTokens: 100, outputTokens: 25, totalTokens: 125 }
+    usage: { inputTokens: 100, outputTokens: 25, totalTokens: 125 },
+    truncated: false
   });
 });
 
@@ -88,8 +91,7 @@ test("Ollama adapter passes a native structured-output schema as format without 
   await adapter.generateText(adapterInput({ structuredOutputSchema: schema }));
   const body = JSON.parse(calls[0].body);
   assert.deepEqual(body.format, schema);
-  assert.deepEqual(body.options, { num_predict: 800 });
-  assert.equal(Object.hasOwn(body.options, "temperature"), false);
+  assert.deepEqual(body.options, { num_predict: 800, temperature: 0, num_ctx: 6144 });
   assert.equal(Object.hasOwn(body.options, "seed"), false);
 });
 
@@ -120,6 +122,37 @@ test("an incomplete response (done: false) is rejected fail-closed", async () =>
   const payload = ollamaPayload("Partial answer.");
   payload.done = false;
   await assertInvalidPayload(payload, "provider_response_incomplete");
+});
+
+test("a normal, complete response (done_reason: stop) is not truncated", async () => {
+  const adapter = adapterForPayload(ollamaPayload("Complete answer.", { promptEvalCount: 50, evalCount: 10 }));
+  const result = await adapter.generateText(adapterInput());
+  assert.equal(result.truncated, false);
+});
+
+test("an output-limit cutoff (done_reason: length) is returned, but flagged as truncated", async () => {
+  const payload = ollamaPayload("The answer was cut off mid", { promptEvalCount: 50, evalCount: 800 });
+  payload.done_reason = "length";
+  const adapter = adapterForPayload(payload);
+  const result = await adapter.generateText(adapterInput());
+  assert.equal(result.text, "The answer was cut off mid");
+  assert.equal(result.truncated, true);
+});
+
+test("an unrecognized done_reason fails closed as unverified completeness, not silently marked complete", async () => {
+  const payload = ollamaPayload("Answer after an unexpected stop.");
+  payload.done_reason = "content_filter";
+  const adapter = adapterForPayload(payload);
+  const result = await adapter.generateText(adapterInput());
+  assert.equal(result.truncated, true);
+});
+
+test("a missing done_reason keeps the existing, backward-compatible complete behaviour", async () => {
+  const payload = ollamaPayload("Answer with no done_reason.");
+  delete payload.done_reason;
+  const adapter = adapterForPayload(payload);
+  const result = await adapter.generateText(adapterInput());
+  assert.equal(result.truncated, false);
 });
 
 test("tool calls in the response are rejected fail-closed", async () => {

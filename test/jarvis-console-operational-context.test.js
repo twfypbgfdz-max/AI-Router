@@ -114,7 +114,7 @@ test("end-to-end: the /jarvis proxy answers a day question purely from cockpit d
     adapterFactory: () => ({
       async generateText(input) {
         seenAdapterInputs.push(input);
-        return { text: JSON.stringify({ answer: "Dein Fokus heute: Plateau-Brecher testen.", citedSources: [] }), usage: { inputTokens: 40, outputTokens: 10, totalTokens: 50 } };
+        return { text: JSON.stringify({ answer: "Dein Fokus heute: Plateau-Brecher testen.", citedSources: [] }), usage: { inputTokens: 40, outputTokens: 10, totalTokens: 50 }, truncated: false };
       }
     }),
     operationalContextProviderFn: (question) => jarvisOperationalContextProvider(question, { env, fetchImpl })
@@ -168,7 +168,7 @@ test("a present-state day question with a Cockpit context gets no refusal rule i
     adapterFactory: () => ({
       async generateText(input) {
         seenAdapterInputs.push(input);
-        return { text: JSON.stringify({ answer: "Fokus: Training. Offen: Projekt-Notizen sortieren.", citedSources: [] }), usage: { inputTokens: 40, outputTokens: 10, totalTokens: 50 } };
+        return { text: JSON.stringify({ answer: "Fokus: Training. Offen: Projekt-Notizen sortieren.", citedSources: [] }), usage: { inputTokens: 40, outputTokens: 10, totalTokens: 50 }, truncated: false };
       }
     }),
     operationalContextProviderFn: (question) => jarvisOperationalContextProvider(question, { env, fetchImpl })

@@ -21,7 +21,7 @@ import {
 } from "./structured-response-schema.js";
 
 const SAFE_ROUTES = new Set(["analysis", "content_generation", "general_chat", "knowledge_query", "planning"]);
-const ADAPTER_RESULT_FIELDS = new Set(["text", "usage"]);
+const ADAPTER_RESULT_FIELDS = new Set(["text", "usage", "truncated"]);
 const USAGE_FIELDS = new Set(["inputTokens", "outputTokens", "totalTokens"]);
 
 // The only place a provider id is mapped to its config loader + adapter
@@ -62,6 +62,11 @@ function usageNumber(value, field) {
 function validatedAdapterResult(value, inputTokenEstimate) {
   exactObject(value, ADAPTER_RESULT_FIELDS, "adapter_result_shape");
   exactObject(value.usage, USAGE_FIELDS, "usage_metadata_invalid");
+  if (typeof value.truncated !== "boolean") {
+    throw new TextResponseError("PROVIDER_RESPONSE_INVALID", "Provider response is invalid.", {
+      safeDetails: { reason: "adapter_result_shape" }
+    });
+  }
   if (typeof value.text !== "string") {
     throw new TextResponseError("PROVIDER_RESPONSE_INVALID", "Provider response did not contain text.", {
       safeDetails: { reason: "non_text_provider_output" }
@@ -103,6 +108,7 @@ function validatedAdapterResult(value, inputTokenEstimate) {
   return Object.freeze({
     text,
     usage,
+    truncated: value.truncated,
     billedInputTokens: usage.inputTokens ?? inputTokenEstimate,
     billedOutputTokens: usage.outputTokens ?? estimateTextTokens(text)
   });
@@ -222,6 +228,7 @@ export function createTextResponseService({
           modelAlias: providerConfig.modelAlias
         }),
         usage: result.usage,
+        truncated: result.truncated,
         inputTokenEstimate,
         worstCaseCostUsd,
         calculatedCostUsd

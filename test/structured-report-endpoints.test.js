@@ -23,7 +23,8 @@ test("the project-status endpoint forces its intent regardless of what the clien
       calls.push(input);
       return {
         text: JSON.stringify({ summary: "On track.", keyFacts: ["Green build."], openQuestions: [], risks: [] }),
-        usage: { inputTokens: 50, outputTokens: 20, totalTokens: 70 }
+        usage: { inputTokens: 50, outputTokens: 20, totalTokens: 70 },
+        truncated: false
       };
     }
   };
@@ -59,7 +60,8 @@ test("the git-changes endpoint forces its intent and validates the commits schem
           commits: [{ ref: "abc123", description: "Add Ollama adapter." }],
           risks: ["Not load-tested yet."]
         }),
-        usage: { inputTokens: 80, outputTokens: 30, totalTokens: 110 }
+        usage: { inputTokens: 80, outputTokens: 30, totalTokens: 110 },
+        truncated: false
       };
     }
   };
@@ -78,7 +80,7 @@ test("the git-changes endpoint forces its intent and validates the commits schem
 });
 
 test("a malformed structured answer is rejected fail-closed and logged as failed, not answered", async () => {
-  const adapter = { async generateText() { return { text: "not json", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }; } };
+  const adapter = { async generateText() { return { text: "not json", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }, truncated: false };  } };
   const entries = [];
   const { handler, logEntries } = handlerWith({ forcedIntent: "project_status_report", adapter, logEntries: entries });
   const exchange = fakeHttpExchange({ body: validTextResponseRequest() });
@@ -93,7 +95,7 @@ test("a malformed structured answer is rejected fail-closed and logged as failed
 test("a well-formed JSON answer with the wrong shape is still rejected fail-closed", async () => {
   const adapter = {
     async generateText() {
-      return { text: JSON.stringify({ summary: "ok" }), usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } };
+      return { text: JSON.stringify({ summary: "ok" }), usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }, truncated: false };
     }
   };
   const { handler } = handlerWith({ forcedIntent: "project_status_report", adapter });

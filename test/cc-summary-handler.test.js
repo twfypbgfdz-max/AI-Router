@@ -279,7 +279,7 @@ test("no parallel summary calls: a second call while the first is in flight is r
     async generateText() {
       started += 1;
       await gate;
-      return { text: "Slow answer.", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } };
+      return { text: "Slow answer.", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, truncated: false };
     }
   };
   await withServer(async (baseUrl) => {

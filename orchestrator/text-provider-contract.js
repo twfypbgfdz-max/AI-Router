@@ -3,11 +3,13 @@ import { TextResponseError } from "./text-response-error.js";
 // The provider-adapter interface every text-generation provider adapter must
 // implement (see provider-adapters/openai-text.js and provider-adapters/ollama-text.js).
 //
-// generateText(input) -> Promise<{ text: string, usage: TextProviderUsage }>
+// generateText(input) -> Promise<{ text: string, usage: TextProviderUsage, truncated: boolean }>
 //
 // input:  { instructions: string, question: string, context: string|null,
 //           maxOutputTokens: number, signal: AbortSignal }
 // usage:  { inputTokens: number|null, outputTokens: number|null, totalTokens: number|null }
+// truncated: true only when the provider itself reports the answer was cut
+//            off by the output-token limit (never a text-heuristic guess).
 //
 // Adapters must throw TextResponseError (using the PROVIDER_* codes from
 // text-response-response.js) instead of raw errors, so callers can react the
@@ -18,7 +20,7 @@ import { TextResponseError } from "./text-response-error.js";
 export const TEXT_PROVIDER_ADAPTER_INPUT_FIELDS = Object.freeze([
   "instructions", "question", "context", "maxOutputTokens", "signal"
 ]);
-export const TEXT_PROVIDER_ADAPTER_RESULT_FIELDS = Object.freeze(["text", "usage"]);
+export const TEXT_PROVIDER_ADAPTER_RESULT_FIELDS = Object.freeze(["text", "usage", "truncated"]);
 export const TEXT_PROVIDER_ADAPTER_USAGE_FIELDS = Object.freeze(["inputTokens", "outputTokens", "totalTokens"]);
 
 // Non-throwing structural check: does this look like a text-provider adapter

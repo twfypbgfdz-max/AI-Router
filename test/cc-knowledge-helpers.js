@@ -54,7 +54,8 @@ export function structuredAdapter({ answer = "Der AI-Router führt keine folgenr
         calls.push(input);
         return {
           text: JSON.stringify({ answer, citedSources }),
-          usage: { inputTokens: 100, outputTokens: 30, totalTokens: 130 }
+          usage: { inputTokens: 100, outputTokens: 30, totalTokens: 130 },
+          truncated: false
         };
       }
     },
@@ -63,7 +64,7 @@ export function structuredAdapter({ answer = "Der AI-Router führt keine folgenr
 }
 
 export function textAdapter(text) {
-  return { async generateText() { return { text, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }; } };
+  return { async generateText() { return { text, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }, truncated: false }; } };
 }
 
 // A minimal, correctly-behaving fake HTTP request/response pair for
