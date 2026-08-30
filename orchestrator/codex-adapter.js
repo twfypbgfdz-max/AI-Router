@@ -53,7 +53,12 @@ export async function resolveCodexExecutable({ spawnImpl = spawn } = {}) {
 }
 
 export function buildCodexArgs(repository) {
-  return ["-C", repository, "-s", "read-only", "-a", "never", "exec", "--ephemeral", "--ignore-user-config", "--strict-config", "--json", "--color", "never", "-"];
+  // --strict-config is no longer a valid `codex exec` argument as of the
+  // locally installed codex-cli 0.130.0-alpha.5 (`codex exec --help` no
+  // longer lists it; a real run with it present fails with exit code 2,
+  // "unexpected argument '--strict-config' found") - removed here, every
+  // other flag was verified present in that same --help output.
+  return ["-C", repository, "-s", "read-only", "-a", "never", "exec", "--ephemeral", "--ignore-user-config", "--json", "--color", "never", "-"];
 }
 
 export function terminateProcessTree(child, { spawnImpl = spawn, timeoutMs = PROCESS_KILL_TIMEOUT_MS } = {}) {

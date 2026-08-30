@@ -8,6 +8,7 @@ import {
   buildCodexArgs,
   buildChildEnv,
   buildCodexPrompt,
+  CODEX_FALLBACK,
   CODEX_SAFETY_INSTRUCTION,
   resolveCodexExecutable,
   runCodex,
@@ -15,6 +16,32 @@ import {
 } from "../orchestrator/codex-adapter.js";
 
 test("Codex arguments are fixed to read-only mode", () => { const args = buildCodexArgs("C:\\repo"); assert.ok(args.includes("read-only")); assert.ok(args.includes("--json")); assert.ok(!args.includes("--search")); assert.ok(!args.includes("--add-dir")); assert.ok(!args.includes("--dangerously-bypass-approvals-and-sandbox")); });
+
+// Codex compatibility fix (2026-08-30): --strict-config is not a valid
+// `codex exec` argument on the locally installed codex-cli 0.130.0-alpha.5
+// (confirmed against a real `codex exec --help`; a real run with it present
+// failed with exit code 2, "unexpected argument '--strict-config' found").
+// This locks in both the removal and that every other read-only/sandbox
+// flag this adapter relies on is still exactly what is sent to the process.
+test("Codex arguments never include the removed --strict-config flag", () => {
+  const args = buildCodexArgs("C:\\repo");
+  assert.ok(!args.includes("--strict-config"));
+});
+
+test("Codex arguments still request the full read-only/sandboxed, non-interactive contract", () => {
+  const args = buildCodexArgs("C:\\repo");
+  assert.deepEqual(args, ["-C", "C:\\repo", "-s", "read-only", "-a", "never", "exec", "--ephemeral", "--ignore-user-config", "--json", "--color", "never", "-"]);
+});
+
+// Windows fallback path (2026-08-30 compatibility fix): CODEX_FALLBACK used
+// to point at a per-version hashed subfolder (...\bin\<hash>\codex.exe) that
+// no longer exists after a Codex update - CODEX_CLI_NOT_FOUND on every real
+// run without a manual CODEX_EXECUTABLE override. The stable, non-hashed
+// launcher path is what a real install keeps current across updates.
+test("CODEX_FALLBACK points at the stable, non-versioned launcher path", () => {
+  assert.equal(CODEX_FALLBACK, "C:\\Users\\felil\\AppData\\Local\\OpenAI\\Codex\\bin\\codex.exe");
+  assert.ok(!/\\bin\\[0-9a-f]{16}\\/i.test(CODEX_FALLBACK), "must not pin a per-version hashed subfolder");
+});
 
 function fakeProcess(properties = {}) { const process = new EventEmitter(); return Object.assign(process, { pid: 42, exitCode: null, killed: false, kill() { this.killed = true; } }, properties); }
 

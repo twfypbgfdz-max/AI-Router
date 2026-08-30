@@ -3,7 +3,12 @@ import { fileURLToPath } from "node:url";
 
 export const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const ALLOWED_REPOSITORIES = [REPOSITORY_ROOT];
-export const CODEX_FALLBACK = "C:\\Users\\felil\\AppData\\Local\\OpenAI\\Codex\\bin\\a7c12ebff69fb123\\codex.exe";
+// Stable, non-versioned launcher path. The hashed per-version subfolder this
+// used to point at (...\bin\<hash>\codex.exe) is replaced on every Codex
+// update and stops existing once superseded - this path is the one the
+// installer keeps current across updates (verified 2026-08-30 against a real
+// local install, codex-cli 0.130.0-alpha.5).
+export const CODEX_FALLBACK = "C:\\Users\\felil\\AppData\\Local\\OpenAI\\Codex\\bin\\codex.exe";
 export const DEFAULT_TIMEOUT_MS = 120_000;
 export const MOCK_TIMEOUT_MS = 3_000;
 export const MAX_TASK_LENGTH = 8_000;
