@@ -10,6 +10,14 @@ export const ALLOWED_REPOSITORIES = [REPOSITORY_ROOT];
 // local install, codex-cli 0.130.0-alpha.5).
 export const CODEX_FALLBACK = "C:\\Users\\felil\\AppData\\Local\\OpenAI\\Codex\\bin\\codex.exe";
 export const DEFAULT_TIMEOUT_MS = 120_000;
+// Dedicated budget for the real, single-adapter codex-cli run only (see
+// run-service.js's create()). Deliberately separate from DEFAULT_TIMEOUT_MS,
+// which still governs every mock/simulated workflow run unchanged - a real
+// read-only analysis of a whole repository routinely needs longer than 120s
+// (verified 2026-08-30: two real "Prüf den AI-Router" runs both exceeded
+// 120s and were killed mid-analysis; a trivial one-line prompt finished
+// under 100s). 5 minutes is a bounded step up, not an unlimited budget.
+export const CODEX_RUN_TIMEOUT_MS = 300_000;
 export const MOCK_TIMEOUT_MS = 3_000;
 export const MAX_TASK_LENGTH = 8_000;
 export const MAX_CONTEXT_LENGTH = 1_000;

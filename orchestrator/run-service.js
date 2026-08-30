@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { DEFAULT_TIMEOUT_MS, MAX_EVENT_COUNT, MAX_JSONL_LINE_LENGTH, MAX_RESULT_LENGTH, MOCK_TIMEOUT_MS, PROCESS_SETTLE_TIMEOUT_MS, REPOSITORY_ROOT } from "./config.js";
+import { CODEX_RUN_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, MAX_EVENT_COUNT, MAX_JSONL_LINE_LENGTH, MAX_RESULT_LENGTH, MOCK_TIMEOUT_MS, PROCESS_SETTLE_TIMEOUT_MS, REPOSITORY_ROOT } from "./config.js";
 import { captureGitState, compareGitState } from "./git-safety.js";
 import { CODEX_SAFETY_INSTRUCTION, resolveCodexExecutable, runCodex } from "./codex-adapter.js";
 import { buildAdapterInput, buildAdapterOutput } from "./adapter-contract.js";
@@ -23,6 +23,24 @@ const ACTIVE = new Set(["validating", "queued", "running"]);
 const FAILED = new Set(["failed", "timed_out"]);
 const ADAPTER_NAMES = new Set(["mock", "codex-cli"]);
 const CODEX_START_RETRY_ERROR_CODE = "CODEX_PROCESS_START_FAILED";
+// Bug D (2026-08-30): the real codex-cli process can legitimately produce a
+// complete, successful result while ALSO tripping one of these two, verified
+// non-fatal parser/process conditions:
+//   - stderr_truncated: a verbose, non-fatal internal Codex log line can
+//     exceed MAX_STDERR_LENGTH (see codex-adapter.js).
+//   - jsonl_line_too_large: a large intermediate JSONL line (observed: a
+//     tool-output/file-read event, not the final answer) can exceed
+//     MAX_JSONL_LINE_LENGTH and gets dropped by the parser (see jsonl.js) -
+//     confirmed via a real "Prüf den AI-Router" run whose final
+//     item.completed/agent_message text was complete and unaffected.
+// Treating either alone (or both together) as fatal turned a genuinely
+// successful, complete analysis into a false "failed". These are the ONLY
+// issues ever excluded from the fatal check below - every other adapter
+// issue, and any of these combined with an unlisted issue, stays fatal.
+const NON_FATAL_ADAPTER_ISSUES = new Set(["stderr_truncated", "jsonl_line_too_large"]);
+function hasFatalAdapterIssues(issues) {
+  return Array.isArray(issues) && issues.some((issue) => !NON_FATAL_ADAPTER_ISSUES.has(issue));
+}
 
 function runCodexContract({ repository, task, runId, executable, retryAttempt = 0 }) {
   const input = buildAdapterInput({
@@ -32,7 +50,7 @@ function runCodexContract({ repository, task, runId, executable, retryAttempt = 
     taskType: "read_only_codex",
     safeInstruction: CODEX_SAFETY_INSTRUCTION,
     workingDirectory: repository,
-    timeoutMs: DEFAULT_TIMEOUT_MS,
+    timeoutMs: CODEX_RUN_TIMEOUT_MS,
     maxOutputBytes: MAX_JSONL_LINE_LENGTH,
     retryAttempt
   });
@@ -130,7 +148,11 @@ export class RunService {
     routePlan.executionAdapter = adapterName;
     if (this.activeRunId) throw new Error("A router run is already active.");
     const mode = adapterName === "mock" ? (simulationMode || "success") : null;
-    const timeoutMs = adapterName === "mock" && mode === "timeout" ? MOCK_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+    // Codex gets its own, longer budget (CODEX_RUN_TIMEOUT_MS) - a real
+    // read-only repo analysis routinely needs more than DEFAULT_TIMEOUT_MS.
+    // Every mock/simulated workflow run keeps DEFAULT_TIMEOUT_MS exactly as
+    // before (MOCK_TIMEOUT_MS only for the dedicated timeout-simulation mode).
+    const timeoutMs = adapterName === "codex-cli" ? CODEX_RUN_TIMEOUT_MS : (adapterName === "mock" && mode === "timeout" ? MOCK_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
     const createdAt = new Date().toISOString();
     const approvalContext = createApprovalContext(request.task, routePlan);
     const approval = routePlan.approvalRequired ? { required: true, status: "pending", requestedAt: createdAt, decidedAt: null, decision: null, decisionNote: "", approvedAction: "", consumed: false } : null;
@@ -210,7 +232,11 @@ export class RunService {
         const integrity = this.git.compareGitState(run.gitBefore, after);
         const safeEvents = reduceEvents(result.events);
         if (!integrity.safe) return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorCode: "READ_ONLY_VIOLATION_DETECTED", errorSummary: `Read-only integrity check failed: ${integrity.changed.join(", ")}`, events: safeEvents });
-        if (result.exitCode !== 0 || result.issues?.length || !result.resultSummary) return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorCode: "ADAPTER_FAILED", errorSummary: sanitizeText(result.stderr || result.issues?.join(", ") || "No final adapter response.", 500), events: safeEvents });
+        if (result.exitCode !== 0 || hasFatalAdapterIssues(result.issues) || !result.resultSummary) return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorCode: "ADAPTER_FAILED", errorSummary: sanitizeText(result.stderr || result.issues?.join(", ") || "No final adapter response.", 500), events: safeEvents });
+        // stderr_truncated (the one non-fatal issue) is kept visible as a
+        // warning rather than silently dropped - same bounded, safe-text
+        // shape every other run warning already uses.
+        if (result.issues?.includes("stderr_truncated")) run.warnings = [...run.warnings, "Adapter-Ausgabe (stderr) wurde beim Sammeln gekuerzt; das Endergebnis war dennoch vollstaendig."];
         return this.update(run, "succeeded", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, resultSummary: sanitizeText(result.resultSummary, MAX_RESULT_LENGTH), events: safeEvents });
       } catch (error) {
         if (run.cancelRequested) return run;
