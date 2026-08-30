@@ -257,11 +257,15 @@ test("a failed readiness fetch is shown dezently and never throws or blocks the 
   assert.ok(/setReadyBadge\("Jarvis-Status unbekannt", "pending"\);/.test(block), "no usable readiness payload must fall back to the unbekannt badge");
 });
 
-test("a transcribed recording fills the question field but never auto-submits", () => {
+test("a transcribed recording fills the question field and auto-submits through the shared ask path", () => {
   assert.ok(/questionEl\.value\s*=/.test(PAGE), "the transcript must be written into the existing question field");
-  const transcribeBlockMatch = PAGE.match(/stopRecordingAndTranscribe[\s\S]*?\n {2}\}/);
+  const transcribeBlockMatch = PAGE.match(/async function stopRecordingAndTranscribe[\s\S]*?\n {2}\}/);
   assert.ok(transcribeBlockMatch, "the transcribe completion handler must exist");
-  assert.ok(!/fetch\(\s*"\/api\/jarvis\/ask"/.test(transcribeBlockMatch[0]), "transcription must never itself call /api/jarvis/ask");
+  const block = transcribeBlockMatch[0];
+  assert.ok(!/fetch\(\s*"\/api\/jarvis\/ask"/.test(block), "transcription must never itself call /api/jarvis/ask - it must reuse askQuestion() instead");
+  assert.ok(/askQuestion\(\);/.test(block), "a non-empty transcript must auto-submit via the same askQuestion() the Senden button uses, not a second submit path");
+  assert.ok(/if \(!trimmed\)/.test(block), "an empty or whitespace-only transcript must not auto-submit");
+  assert.ok(/isCoolingDown\(\)/.test(block), "auto-submit must respect an active ask cooldown instead of racing it");
 });
 
 test("the mic button sends audio/wav, not JSON", () => {

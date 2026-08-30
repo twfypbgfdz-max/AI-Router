@@ -579,10 +579,69 @@
      Antwort-Karte unverändert bleiben. */
   #panel-voice .card:first-of-type {
     max-width: 860px;
-    padding: 16px 24px;
+    padding: 10px 18px;
+  }
+  /* Jarvis-Command-Bar (2026-08-30, UI-only): die Frage-Karte wird zur
+     kompakten Voice-first-Eingabezeile statt eines vollen Formulars - h2
+     wird ein kleines, zurückhaltendes Label statt einer dominanten
+     Überschrift, das Textfeld startet einzeilig (rows="1" im Markup - ohne
+     das Attribut fällt eine <textarea> auf ihre intrinsische Zweizeilen-
+     Standardhöhe zurück, min-height allein reicht dafür nicht) und begrenzt
+     seine Wachstumshöhe, die Buttonzeile rückt enger zusammen, und die
+     Sekundärzeile (Vorlesen-Toggle + Hinweise) verliert sichtbares Gewicht.
+     Alles weiterhin ausschließlich über denselben :first-of-type-Scope wie
+     oben - keine der übrigen Karten oder Tabs ist betroffen. */
+  #panel-voice .card:first-of-type h2 {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-muted);
+    margin: 0 0 4px;
   }
   #panel-voice .card:first-of-type textarea {
-    min-height: 64px;
+    min-height: 36px;
+    max-height: 120px;
+    padding: 8px 10px;
+    font-size: var(--text-base);
+  }
+  #panel-voice .card:first-of-type .row {
+    margin-top: 5px;
+    gap: 8px;
+  }
+  #panel-voice .card:first-of-type .row button {
+    padding: 5px 14px;
+    font-size: 0.86rem;
+  }
+  /* Senden bleibt der Fallback-Weg (getippte/korrigierte Fragen), Aufnahme
+     ist der primäre - siehe Reihenfolge im Markup. Ghost-Stil grenzt beide
+     optisch ab, ohne die globale .button-Regel (Tabs, Vorlesen, andere
+     Karten) anzufassen. */
+  #panel-voice .card:first-of-type #ask-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  /* Aktive Aufnahme bekommt einen ruhigen Fokusring statt einer Animation -
+     derselbe :has()-Trick wie beim thinking-Kartenrand weiter unten, mit
+     demselben Fallback (kein :has() -> kein Ring, Orb+Status bleiben
+     ausreichend). */
+  @supports selector(:has(*)) {
+    body:has(#orb[data-state="listening"]) #mic-btn {
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+    }
+  }
+  #panel-voice .card:first-of-type .mic-note {
+    margin-top: 4px;
+  }
+  #panel-voice .card:first-of-type .voice-pref-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin-top: 3px;
+  }
+  #panel-voice .card:first-of-type .voice-pref-row .card-hint {
+    margin: 0;
+    font-size: var(--text-xs);
   }
 
   /* U2.5, Priorität E: die Frage-Karte bekommt während "thinking" einen
@@ -683,11 +742,11 @@
 </div>
 
 <section class="card">
-  <h2>Was möchtest du wissen?</h2>
-  <textarea id="question" maxlength="500" placeholder="Zum Beispiel: Welche Komponente darf als Einzige ins Google Sheet schreiben?" aria-label="Frage an FELIX_SYSTEM"></textarea>
+  <h2>Jarvis fragen</h2>
+  <textarea id="question" rows="1" maxlength="500" placeholder="Zum Beispiel: Welche Komponente darf als Einzige ins Google Sheet schreiben?" aria-label="Frage an FELIX_SYSTEM"></textarea>
   <div class="row">
-    <button id="ask-btn" type="button">Fragen</button>
     <button id="mic-btn" type="button">Aufnahme starten</button>
+    <button id="ask-btn" type="button">Senden</button>
     <span class="status" id="ask-status" role="status" aria-live="polite">Bereit.</span>
     <span class="counter" id="char-counter">0 / 500</span>
   </div>
@@ -700,9 +759,9 @@
       </span>
       Antwort nach Spracheingabe automatisch vorlesen
     </label>
+    <p class="card-hint" id="jarvis-voice-hint" hidden>Sprachein- oder -ausgabe ist auf diesem Server aktuell nicht vollständig eingerichtet. Die Buttons bleiben nutzbar, ein Versuch kann aber fehlschlagen.</p>
+    <p class="card-hint" id="jarvis-unavailable-hint" hidden>Wissensfragen sind momentan nicht verfügbar.</p>
   </div>
-  <p class="card-hint" id="jarvis-voice-hint" hidden>Sprachein- oder -ausgabe ist auf diesem Server aktuell nicht vollständig eingerichtet. Die Buttons bleiben nutzbar, ein Versuch kann aber fehlschlagen.</p>
-  <p class="card-hint" id="jarvis-unavailable-hint" hidden>Wissensfragen sind momentan nicht verfügbar.</p>
 </section>
 
 <section class="card" id="result-card" hidden>
@@ -1521,8 +1580,16 @@
 
   askBtn.addEventListener("click", askQuestion);
 
+  // Gemeinsamer Absende-Pfad für getippte Fragen (Klick auf "Senden") und
+  // den Voice-Auto-Submit nach stopRecordingAndTranscribe unten - keine
+  // zweite Fetch-/Submit-Logik. "transcribing" gehört bewusst mit in die
+  // Guard-Bedingung: ohne sie könnte ein Klick auf "Senden" während laufender
+  // Transkription (askBtn ist zwar währenddessen disabled, ein bereits
+  // ausgelöster Klick-Handler-Aufruf kurz davor wäre aber nicht durch die
+  // reine UI-Disable-Eigenschaft gestoppt) einen zweiten, mit der
+  // Spracheingabe wettlaufenden Request auslösen.
   async function askQuestion() {
-    if (jarvisState.state === "thinking" || jarvisState.isCoolingDown()) return;
+    if (jarvisState.state === "thinking" || jarvisState.state === "transcribing" || jarvisState.isCoolingDown()) return;
     var question = questionEl.value.trim();
     if (!question) {
       jarvisState.enter("idle", "Bitte eine Frage eingeben.");
@@ -1856,9 +1923,14 @@
   // beiden enter(...)-Aufrufe bleiben deshalb ohne eigenen Text (siehe
   // renderStatus). Der Orb zeigt den Fehler weiterhin an, der laufende
   // Countdown in #ask-status wird dabei aber nicht mehr verdeckt.
+  // askBtn.disabled folgt hier bewusst weiterhin dem Cooldown und nicht
+  // pauschal "false": ein Mikrofon-Abschluss (idle/error) während ein Ask-
+  // Cooldown noch läuft darf den Senden-Button nicht vorzeitig freigeben -
+  // sonst würde er die 5s-Sperre aus startCooldown/stopCooldown umgehen.
   function setMicIdle(text) {
     micBtn.disabled = false;
     micBtn.textContent = "Aufnahme starten";
+    askBtn.disabled = jarvisState.isCoolingDown();
     setMicMessage(text, "");
     jarvisState.enter("idle", "");
   }
@@ -1866,6 +1938,7 @@
   function setMicError(text, detail) {
     micBtn.disabled = false;
     micBtn.textContent = "Aufnahme starten";
+    askBtn.disabled = jarvisState.isCoolingDown();
     setMicMessage(text, "fail", detail);
     jarvisState.enter("error", "");
   }
@@ -1874,6 +1947,10 @@
     if (jarvisState.state !== "listening") return;
     micBtn.disabled = true;
     micBtn.textContent = "Aufnahme starten";
+    // Verhindert den in askQuestion() beschriebenen Wettlauf schon auf
+    // UI-Ebene: ein Klick auf "Senden" während der Transkription trifft auf
+    // einen disabled Button, nicht nur auf den State-Guard.
+    askBtn.disabled = true;
     jarvisState.enter("transcribing", "Transkribiere …");
 
     var wavBlob = recordedChunks.length ? encodeWav(recordedChunks, recordedSampleRate) : null;
@@ -1913,14 +1990,36 @@
       var combined = existing ? (existing + " " + text) : text;
       questionEl.value = combined.slice(0, 500);
       counterEl.textContent = questionEl.value.length + " / 500";
-      // Bewusst weiterhin kein Auto-Submit hier - siehe bestehenden Test
-      // "a transcribed recording fills the question field but never
-      // auto-submits" (DEC-010-Entscheidung, nicht Teil dieser U2-Änderung).
-      // Was neu ist: der Auto-Vorlesen-Schalter unten merkt sich, dass diese
-      // Frage aus einer Spracheingabe stammt, sobald sie (manuell) abgeschickt
-      // wird - siehe pendingVoiceTranscript.
+
+      // Auto-Submit nach Sprachaufnahme (2026-08-30, ausdrücklicher Wunsch
+      // für genau diesen Voice-Abschluss-Schritt). Löst die bisherige
+      // "kein Auto-Submit"-Regel ab, die nur als Code-/Test-Kommentar hier
+      // existierte - eine Prüfung von DEC-010 am 2026-08-30 (vollständig
+      // gelesen, inkl. Volltextsuche über alle Vault-DECs nach "Submit"/
+      // "absenden") ergab: DEC-010 selbst trifft dazu keine Aussage, die
+      // frühere Zuschreibung "DEC-010-Entscheidung" im Code war falsch.
+      // Kein Vault-Dokument war betroffen, keine DEC-Änderung nötig. Ein
+      // nicht-leeres Transkript geht direkt in denselben askQuestion()-Pfad
+      // wie ein manueller Klick auf "Senden" - keine zweite Submit-Logik.
+      // Blockiert askQuestion() gerade (Cooldown oder eine bereits laufende
+      // Anfrage), wird NICHT automatisch gesendet - das Transkript bleibt
+      // stattdessen im Feld stehen, und der Nutzer sendet manuell.
+      var trimmed = questionEl.value.trim();
+      if (!trimmed) {
+        setMicIdle("Keine Sprache erkannt.");
+        return;
+      }
+      if (jarvisState.state === "thinking" || jarvisState.isCoolingDown()) {
+        setMicIdle("Transkript eingefügt – bitte kurz warten und dann senden.");
+        return;
+      }
       pendingVoiceTranscript = true;
-      setMicIdle("Transkript eingefügt – bitte prüfen und dann auf „Fragen“ klicken.");
+      micBtn.disabled = false;
+      // Verlässt "transcribing" - askQuestion()s eigener Guard (siehe dort)
+      // würde einen Aufruf mitten in "transcribing" sonst selbst blockieren.
+      jarvisState.enter("idle", "");
+      setMicMessage("Transkript erkannt – wird gesendet …", "");
+      askQuestion();
     } catch (e) {
       setMicError("Übertragung der Aufnahme fehlgeschlagen – läuft der Router noch?");
     }
