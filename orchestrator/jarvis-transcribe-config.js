@@ -18,15 +18,26 @@ export const WHISPER_SERVER_URL_ENV_VAR = "AI_ROUTER_WHISPER_SERVER_URL";
 // Jarvis surface.
 export const JARVIS_TRANSCRIBE_LANGUAGE = "de";
 
-// The exact vocabulary prompt verified during the 2026-08-13 architecture
-// review to fix whisper.cpp's two observed German-audio failure modes on
-// project vocabulary ("Core" -> "Korn", "Vault" -> "Volt") with the small
-// model - both were corrected by this prompt in that test, with no
+// The vocabulary prompt verified during the 2026-08-13 architecture review to
+// fix whisper.cpp's observed German-audio failure modes on project
+// vocabulary ("Core" -> "Korn", "Vault" -> "Volt") with the small model - the
+// original terms were corrected by this prompt in that test, with no
 // measurable latency cost. Passed to whisper-server as the --prompt /
 // "prompt" form field, which biases decoding without appearing in the
 // output text itself.
+//
+// Extended 2026-08-30 (voice smoke test, real failure): a spoken question
+// containing "Google Sheet" / "sheet-update-gateway" / "KI-Projektsteuerung"
+// was mistranscribed and the RAG path correctly answered "nicht beantwortet"
+// on the resulting garbage text - the same typed question answered
+// correctly, isolating the failure to the STT step, not RAG/routing/answer
+// logic (all left untouched). The original list simply predates this set of
+// terms. Same mechanism as before, no parameter or model change.
 export const JARVIS_TRANSCRIBE_VOCAB_PROMPT =
-  "Felix Core, FELIX_SYSTEM, Vault, Jarvis, AI-Router, Command Center, Plateau-Brecher, Obsidian.";
+  "Felix Core, FELIX_SYSTEM, Vault, Jarvis, AI-Router, Command Center, " +
+  "Plateau-Brecher, Obsidian, Google Sheet, KI-Projektsteuerung, " +
+  "sheet-update-gateway, Single Source of Truth, RAG, Ollama, Whisper, " +
+  "Approval, Run.";
 
 // Bounds a mono 16-bit PCM WAV clip at typical browser sample rates
 // (44.1/48 kHz) to roughly 60-70s - matched to the page's own client-side

@@ -29,6 +29,21 @@ function truncate(text) {
     : text;
 }
 
+// 2026-08-30 voice smoke test, real failure: whisper-server's JSON response
+// can contain an internal segment-break newline (e.g. "...Google Sheet\n
+// schreiben?") that survives untouched through `.trim()` (which only strips
+// leading/trailing whitespace) and reaches the shared knowledge-contract
+// validator's single-line rule (hasControlCharacters in
+// cc-context-fields.js), which correctly rejects ANY \r/\n anywhere in the
+// string - by design, not a bug, and deliberately left unchanged. The fix
+// belongs here, at the STT output, not in that shared validator: collapse
+// any run of \r/\n into a single space, then collapse any other whitespace
+// run the same way, before the existing trim/truncate. Purely mechanical -
+// no rewording, no spelling correction, no semantic change.
+function normalizeTranscript(text) {
+  return text.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ");
+}
+
 export function createJarvisTranscribeService({
   env = process.env,
   fetchImpl = globalThis.fetch,
@@ -71,10 +86,10 @@ export function createJarvisTranscribeService({
       throw new JarvisTranscribeError("WHISPER_INVALID_RESPONSE", "The local whisper-server response has no transcript text.");
     }
 
-    return { text: truncate(body.text.trim()) };
+    return { text: truncate(normalizeTranscript(body.text).trim()) };
   }
 
   return { transcribe };
 }
 
-export const transcribeInternals = Object.freeze({ inferenceUrl, truncate });
+export const transcribeInternals = Object.freeze({ inferenceUrl, truncate, normalizeTranscript });

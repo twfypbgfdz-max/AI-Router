@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createJarvisTranscribeService } from "../orchestrator/jarvis-transcribe-service.js";
+import { createJarvisTranscribeService, transcribeInternals } from "../orchestrator/jarvis-transcribe-service.js";
 import { WHISPER_SERVER_URL_ENV_VAR, JARVIS_TRANSCRIBE_MAX_TEXT_CHARS } from "../orchestrator/jarvis-transcribe-config.js";
 
 const CONFIGURED_ENV = { [WHISPER_SERVER_URL_ENV_VAR]: "http://127.0.0.1:8399" };
@@ -54,6 +54,22 @@ test("posts to <base>/inference with the German language, fixed vocabulary promp
   assert.ok(String(form.get("prompt")).includes("FELIX_SYSTEM"));
 });
 
+// 2026-08-30 voice smoke test: a real spoken question containing these
+// terms was mistranscribed and RAG correctly reported "nicht beantwortet"
+// on the garbage result - the same question typed answered correctly, so
+// the fix belongs at the STT vocabulary prompt, not in RAG/threshold/answer
+// logic (see jarvis-transcribe-config.js). This pins the extended prompt so
+// a future edit cannot silently drop these terms again.
+test("the vocabulary prompt covers the Felix Core domain terms found missing in the 2026-08-30 voice smoke test", async () => {
+  const { impl, calls } = fakeFetch();
+  const service = createJarvisTranscribeService({ env: CONFIGURED_ENV, fetchImpl: impl });
+  await service.transcribe({ audio: Buffer.from([1]), contentType: "audio/wav" });
+  const prompt = String(calls[0].options.body.get("prompt"));
+  for (const term of ["Google Sheet", "KI-Projektsteuerung", "sheet-update-gateway", "Single Source of Truth", "RAG", "Ollama", "Whisper", "Approval", "Run"]) {
+    assert.ok(prompt.includes(term), `vocabulary prompt must include "${term}"`);
+  }
+});
+
 test("strips a trailing slash from the configured base URL", async () => {
   const { impl, calls } = fakeFetch();
   const service = createJarvisTranscribeService({ env: { [WHISPER_SERVER_URL_ENV_VAR]: "http://127.0.0.1:8399/" }, fetchImpl: impl });
@@ -99,6 +115,31 @@ test("trims whitespace and truncates an oversized transcript defensively", async
   const result = await service.transcribe({ audio: Buffer.from([1]), contentType: "audio/wav" });
   assert.equal(result.text.length, JARVIS_TRANSCRIBE_MAX_TEXT_CHARS);
   assert.ok(!result.text.startsWith(" "));
+});
+
+// 2026-08-30 voice smoke test, real failure: a spoken question was
+// transcribed correctly (63 chars, right words) but the auto-submitted
+// request was rejected with VALIDATION_FAILED ("hoechstens 500 Zeichen,
+// eine Zeile, ..."). Traced to whisper-server returning an internal
+// segment-break newline that survived the old `.trim()`-only handling and
+// hit the knowledge-contract's single-line rule (hasControlCharacters in
+// cc-context-fields.js) - a real, deliberate security/shape rule that is
+// NOT changed here. The fix is this service normalizing its own STT output
+// before it ever reaches that shared validator.
+test("collapses an internal newline from whisper-server into a single space", async () => {
+  const { impl } = fakeFetch({ json: { text: "Welche Komponente darf als einzige ins Google Sheet\nschreiben?" } });
+  const service = createJarvisTranscribeService({ env: CONFIGURED_ENV, fetchImpl: impl });
+  const result = await service.transcribe({ audio: Buffer.from([1]), contentType: "audio/wav" });
+  assert.equal(result.text, "Welche Komponente darf als einzige ins Google Sheet schreiben?");
+  assert.ok(!/[\r\n]/.test(result.text), "no control character (\\r or \\n) may survive into the outgoing text");
+});
+
+test("normalizeTranscript collapses CRLF, bare LF, repeated whitespace and trims edges", () => {
+  const { normalizeTranscript } = transcribeInternals;
+  assert.equal(normalizeTranscript("Google Sheet\nschreiben?"), "Google Sheet schreiben?");
+  assert.equal(normalizeTranscript("Google Sheet\r\nschreiben?"), "Google Sheet schreiben?");
+  assert.equal(normalizeTranscript("Google   Sheet\t\tschreiben?"), "Google Sheet schreiben?");
+  assert.equal(normalizeTranscript("  Google Sheet schreiben?  ").trim(), "Google Sheet schreiben?");
 });
 
 test("aborts the request once the timeout elapses", async () => {
