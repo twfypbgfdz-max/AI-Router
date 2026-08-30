@@ -11,6 +11,8 @@
     "rag:quality": "node scripts/rag-quality-eval.js",
     "rag:truth": "node scripts/rag-truth-eval.js",
     "rag:dec-coverage": "node scripts/rag-dec-coverage.js",
-    "knowledge:parity": "node scripts/knowledge-parity-check.js"
+    "knowledge:parity": "node scripts/knowledge-parity-check.js",
+    "docs:sync-allowlist": "node scripts/sync-readme-allowlist.js",
+    "docs:check-allowlist": "node scripts/sync-readme-allowlist.js --check"
   }
 }
