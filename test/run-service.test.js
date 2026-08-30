@@ -151,6 +151,24 @@ test("1. exitCode=0 + full result + only jsonl_line_too_large -> succeeded", asy
   assert.equal(run.resultSummary, "Vollstaendige Analyse.");
 });
 
+// J1.3 Phase 2D: non-fatal must not mean invisible - jsonl_line_too_large,
+// same as stderr_truncated, must remain visible as a bounded warning, never
+// silently swallowed just because the run still succeeded.
+test("5. jsonl_line_too_large stays visible as a warning on an otherwise successful run", async () => {
+  const service = codexService(async () => ({ exitCode: 0, issues: ["jsonl_line_too_large"], stderr: "", events: [], resultSummary: "Vollstaendige Analyse." }));
+  const run = await runToTerminal(service);
+  assert.equal(run.status, "succeeded");
+  assert.ok(run.warnings.some((w) => w.toLowerCase().includes("zwischen") || w.toLowerCase().includes("gross")), "jsonl_line_too_large must remain visible as a warning, not disappear");
+});
+
+test("both non-fatal issues together each produce their own visible warning", async () => {
+  const service = codexService(async () => ({ exitCode: 0, issues: ["jsonl_line_too_large", "stderr_truncated"], stderr: "cut off", events: [], resultSummary: "Vollstaendige Analyse." }));
+  const run = await runToTerminal(service);
+  assert.equal(run.status, "succeeded");
+  assert.ok(run.warnings.some((w) => w.includes("stderr")));
+  assert.ok(run.warnings.some((w) => w.toLowerCase().includes("zwischen") || w.toLowerCase().includes("gross")));
+});
+
 test("2. exitCode=0 + full result + jsonl_line_too_large + stderr_truncated -> succeeded", async () => {
   const service = codexService(async () => ({ exitCode: 0, issues: ["jsonl_line_too_large", "stderr_truncated"], stderr: "cut off", events: [], resultSummary: "Vollstaendige Analyse." }));
   const run = await runToTerminal(service);

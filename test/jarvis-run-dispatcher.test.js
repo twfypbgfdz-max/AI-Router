@@ -151,6 +151,41 @@ test("safeJarvisPlanView never carries the raw prompt or originalRequest text", 
   assert.ok(!serialized.includes("Prüf den AI-Router"));
 });
 
+// J1.3 Hardening (Phase 2A): safeJarvisPlanView() must never leak the local
+// absolute repository path project-registry.js carries internally - only
+// { id, name } is safe over HTTP. dispatchJarvisRun() must still receive
+// that same path internally for RunService (repository: plan.project.project.path).
+test("1. safeJarvisPlanView never carries a local absolute repository path (resolved project)", () => {
+  const plan = planJarvisRequest({ question: "Prüf den AI-Router." });
+  assert.equal(plan.project.status, "resolved");
+  assert.ok(plan.project.project.path, "the underlying J1.1 plan must still carry the real path internally");
+  const view = safeJarvisPlanView(plan);
+  assert.deepEqual(Object.keys(view.project.project).sort(), ["id", "name"]);
+  assert.equal(view.project.project.id, "ai-router");
+  const serialized = JSON.stringify(view);
+  assert.ok(!/[A-Za-z]:\\/.test(serialized), "no absolute Windows path may appear anywhere in the safe view");
+});
+
+test("1b. safeJarvisPlanView strips the path from every ambiguous candidate too", () => {
+  const plan = planJarvisRequest({ question: "Prüf die Trainingsapp." });
+  assert.equal(plan.project.status, "ambiguous");
+  assert.ok(plan.project.candidates.length >= 2);
+  assert.ok(plan.project.candidates.every((c) => c.path));
+  const view = safeJarvisPlanView(plan);
+  for (const candidate of view.project.candidates) assert.deepEqual(Object.keys(candidate).sort(), ["id", "name"]);
+  assert.ok(!/[A-Za-z]:\\/.test(JSON.stringify(view)));
+});
+
+test("2. dispatchJarvisRun still passes the real repository path to RunService internally", async () => {
+  const plan = planJarvisRequest({ question: "Prüf den AI-Router." });
+  const service = fakeRunService();
+  const created = [];
+  const originalCreate = service.create.bind(service);
+  service.create = async (input) => { created.push(input); return originalCreate(input); };
+  await dispatchJarvisRun(plan, { runService: service });
+  assert.equal(created[0].repository, plan.project.project.path);
+});
+
 test("a plan whose prompt text alone would trip the approval gate is refused before any run is created", async () => {
   // J1.1's own governance field is computed from the short ORIGINAL question
   // (see request-planner.js), not from the full generated prompt that

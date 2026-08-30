@@ -233,10 +233,12 @@ export class RunService {
         const safeEvents = reduceEvents(result.events);
         if (!integrity.safe) return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorCode: "READ_ONLY_VIOLATION_DETECTED", errorSummary: `Read-only integrity check failed: ${integrity.changed.join(", ")}`, events: safeEvents });
         if (result.exitCode !== 0 || hasFatalAdapterIssues(result.issues) || !result.resultSummary) return this.update(run, "failed", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, errorCode: "ADAPTER_FAILED", errorSummary: sanitizeText(result.stderr || result.issues?.join(", ") || "No final adapter response.", 500), events: safeEvents });
-        // stderr_truncated (the one non-fatal issue) is kept visible as a
-        // warning rather than silently dropped - same bounded, safe-text
-        // shape every other run warning already uses.
+        // J1.3: both non-fatal issues are kept visible as warnings rather
+        // than silently dropped - same bounded, safe-text shape every other
+        // run warning already uses. Non-fatal must never mean invisible; no
+        // raw stderr/JSONL content is included, only a fixed, safe sentence.
         if (result.issues?.includes("stderr_truncated")) run.warnings = [...run.warnings, "Adapter-Ausgabe (stderr) wurde beim Sammeln gekuerzt; das Endergebnis war dennoch vollstaendig."];
+        if (result.issues?.includes("jsonl_line_too_large")) run.warnings = [...run.warnings, "Ein einzelnes Zwischen-Ereignis der Analyse war zu gross und wurde verworfen; das Endergebnis war dennoch vollstaendig."];
         return this.update(run, "succeeded", { finishedAt: new Date().toISOString(), exitCode: result.exitCode, resultSummary: sanitizeText(result.resultSummary, MAX_RESULT_LENGTH), events: safeEvents });
       } catch (error) {
         if (run.cancelRequested) return run;

@@ -42,7 +42,7 @@ import { handleJarvisSessionStatus } from "./jarvis-session-status-handler.js";
 import { handleJarvisSessionSummary } from "./jarvis-session-summary-handler.js";
 import { handleJarvisVoiceStatus } from "./jarvis-voice-status-handler.js";
 import { planJarvisRequest } from "./jarvis/request-planner.js";
-import { dispatchJarvisRun, safeJarvisPlanView } from "./jarvis/run-dispatcher.js";
+import { dispatchJarvisRun, safeJarvisPlanView, buildJarvisRunResult } from "./jarvis/run-dispatcher.js";
 import { sessionStore } from "./session/session-store.js";
 import { buildSessionContext } from "./session/session-context.js";
 
@@ -304,11 +304,41 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
       try {
         const dispatch = await dispatchJarvisRun(plan, { runService: service, source: "local" });
         safeLog("jarvis_run_dispatched", { taskClass: plan.taskClass, status: dispatch.status });
+        // J1.3 (Phase 6, optional): one bounded session turn recording that a
+        // run was started - never the eventual result (not known yet, the
+        // run is still async) and never raw agent output. sessionId-gated,
+        // same "no session -> no wiring, storage failure never breaks an
+        // already-successful response" posture as jarvis-console-proxy.js's
+        // own appendTurn call.
+        if (sessionId) {
+          const projectName = plan.project?.project?.name || plan.project?.project?.id || "dem Projekt";
+          try {
+            await sessionStore.appendTurn(sessionId, {
+              question,
+              answer: `Codex-Analyse fuer ${projectName} gestartet (Run ${dispatch.runId}, read-only). Das Ergebnis ist ueber GET /api/jarvis/run/${dispatch.runId} abrufbar, sobald der Lauf abgeschlossen ist.`
+            });
+          } catch { /* session storage failing must never break an already-dispatched run */ }
+        }
         return sendJson(response, 202, { schemaVersion: SCHEMA_VERSION, plan: safeJarvisPlanView(plan), run: dispatch });
       } catch (error) {
         safeLog("jarvis_run_rejected", { taskClass: plan.taskClass, code: error.code || "INTERNAL_ERROR" });
         return sendJson(response, error instanceof RouterError ? 422 : 400, { schemaVersion: SCHEMA_VERSION, plan: safeJarvisPlanView(plan), ...buildResponse(null, error) });
       }
+    }
+
+    // J1.3 - Jarvis Result Ingestion. Read-only, no token: same trust level
+    // as the other GET /api/jarvis/* routes (e.g. /api/jarvis/today,
+    // /api/jarvis/session-status) - it only reads already-authorized local
+    // process state, it cannot start or change anything. Reuses the exact
+    // same in-memory lookup GET /api/runs/:id already uses (service.get()) -
+    // RunService/run-store remain the only source of truth, no second result
+    // store. Returns 200 with a null-shaped body for an unknown runId,
+    // mirroring GET /api/runs/:id's own not-found convention.
+    const jarvisRunResultMatch = pathname.match(/^\/api\/jarvis\/run\/([^/]+)$/);
+    if (request.method === "GET" && jarvisRunResultMatch) {
+      const result = buildJarvisRunResult(service.get(jarvisRunResultMatch[1]));
+      safeLog("jarvis_run_result_checked", { found: String(Boolean(result)) });
+      return sendJson(response, 200, { schemaVersion: SCHEMA_VERSION, result });
     }
 
     if (request.method === "GET" && pathname === "/api/cockpit-status") return sendJson(response, 200, projectCockpitStatus(service.cockpitContext()));
