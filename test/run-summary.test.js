@@ -17,7 +17,7 @@ test("projectRunSummary exposes only the allowlisted safe metadata fields", () =
   const summary = projectRunSummary(richRun);
   assert.deepEqual(Object.keys(summary).sort(), [
     "adapter", "approvalState", "durationMs", "finishedAt", "requestId", "resultAvailable",
-    "retryCount", "riskLevel", "route", "runId", "safeErrorCode", "schemaVersion", "startedAt",
+    "retryCount", "riskLevel", "route", "runId", "safeErrorCode", "schemaVersion", "sessionId", "startedAt",
     "status", "success", "warningsCount", "workflowType",
     "selectedProviderId", "selectedModelId", "providerWorkflowProfile", "providersUsed", "providerCount",
     "simulatedProviderCount", "realLocalAdapterUsed", "providerSelectionMode", "providerFallbackUsed", "providerWarningsCount"

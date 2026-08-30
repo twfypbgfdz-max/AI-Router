@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { MAX_CONTEXT_LENGTH, MAX_PROJECT_LENGTH, MAX_SOURCE_LENGTH, MAX_TASK_LENGTH } from "./config.js";
 import { ALLOWED_ACTION_TYPES, ALLOWED_ADAPTERS, ALLOWED_PROVIDER_IDS, ALLOWED_PROVIDER_WORKFLOW_PROFILES, ALLOWED_REQUESTED_MODES, ALLOWED_SOURCES, SCHEMA_VERSION } from "./policy.js";
+import { isValidSessionId } from "./session/session-store.js";
 
 export class RouterError extends Error {
   constructor(code, message, { retryable = false, safeDetails = null } = {}) { super(message); this.code = code; this.retryable = retryable; this.safeDetails = safeDetails; }
@@ -45,5 +46,11 @@ export function normalizeRunRequest(input = {}) {
     if (typeof rawProfile !== "string" || !ALLOWED_PROVIDER_WORKFLOW_PROFILES.includes(rawProfile)) throw new RouterError("INVALID_REQUEST", "providerProfile is not allowed.");
     providerProfile = rawProfile;
   }
-  return Object.freeze({ schemaVersion, requestId: text(input.requestId, 96, "INVALID_REQUEST", "requestId") || `req_${crypto.randomUUID()}`, task, project: text(input.project, MAX_PROJECT_LENGTH, "INVALID_REQUEST", "project"), requestedMode, requestedAdapter, requestedProvider, source, context: text(input.context, MAX_CONTEXT_LENGTH, "INVALID_REQUEST", "context"), options: Object.freeze({ actionType, simulationMode: input.options?.simulationMode ?? input.simulationMode, providerProfile }), createdAt: new Date().toISOString() });
+  // J1.2: optional correlation to a Jarvis session (see session/session-store.js).
+  // Same fail-closed-but-never-hard-fails posture as that store's own
+  // isValidSessionId - an invalid/malformed value is silently treated as "no
+  // session" rather than rejected, so every existing caller that never sends
+  // it keeps working unchanged.
+  const sessionId = typeof input.sessionId === "string" && isValidSessionId(input.sessionId) ? input.sessionId : null;
+  return Object.freeze({ schemaVersion, requestId: text(input.requestId, 96, "INVALID_REQUEST", "requestId") || `req_${crypto.randomUUID()}`, task, project: text(input.project, MAX_PROJECT_LENGTH, "INVALID_REQUEST", "project"), requestedMode, requestedAdapter, requestedProvider, source, context: text(input.context, MAX_CONTEXT_LENGTH, "INVALID_REQUEST", "context"), options: Object.freeze({ actionType, simulationMode: input.options?.simulationMode ?? input.simulationMode, providerProfile }), sessionId, createdAt: new Date().toISOString() });
 }

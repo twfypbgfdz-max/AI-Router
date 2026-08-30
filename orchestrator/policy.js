@@ -24,7 +24,11 @@ export const ERROR_CODES = Object.freeze(["INVALID_REQUEST", "UNSUPPORTED_SCHEMA
   "APPROVAL_AUTH_REQUIRED", "APPROVAL_SOURCE_UNTRUSTED", "ACTION_RATE_LIMITED",
   // R9 - Run-Approval BFF error code. Missing/invalid/expired/reused nonce
   // on POST /api/runs/:id/approval/ui.
-  "APPROVAL_NONCE_INVALID"]);
+  "APPROVAL_NONCE_INVALID",
+  // J1.2 - Jarvis Run Dispatcher. Fail-closed reason for a plan whose
+  // project mention is not a single, known repository (none/unknown/
+  // ambiguous) - see orchestrator/jarvis/run-dispatcher.js.
+  "PROJECT_NOT_RESOLVED"]);
 
 // --- v0.13 provider layer allowlists (central, closed sets). ---
 // Only mock-local and codex-local-readonly are ever technically executable.

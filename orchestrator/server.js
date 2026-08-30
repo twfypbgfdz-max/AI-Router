@@ -41,6 +41,10 @@ import { handleJarvisSystem } from "./jarvis-system-handler.js";
 import { handleJarvisSessionStatus } from "./jarvis-session-status-handler.js";
 import { handleJarvisSessionSummary } from "./jarvis-session-summary-handler.js";
 import { handleJarvisVoiceStatus } from "./jarvis-voice-status-handler.js";
+import { planJarvisRequest } from "./jarvis/request-planner.js";
+import { dispatchJarvisRun, safeJarvisPlanView } from "./jarvis/run-dispatcher.js";
+import { sessionStore } from "./session/session-store.js";
+import { buildSessionContext } from "./session/session-context.js";
 
 const uiFile = path.join(REPOSITORY_ROOT, "01_APP", "tests", "ai-router-v0_13-test.html");
 const routerConsoleUiFile = path.join(REPOSITORY_ROOT, "01_APP", "router-console.html");
@@ -263,6 +267,49 @@ export function createRouterServer({ service = new RunService(), eventLogger = l
     // the actual Whisper reachability ping deliberately lives here and not
     // inside /api/jarvis/ready.
     if (request.method === "GET" && pathname === "/api/jarvis/voice-status") { safeLog("jarvis_voice_status_checked"); return jarvisVoiceStatusHandler(request, response); }
+
+    // J1.2 - Jarvis Run Dispatcher (2026-08-29 handoff). Additive route, NOT
+    // a change to /api/jarvis/ask: that route's own intent classification
+    // (R2) has no code_analysis/code_implementation concept, and folding
+    // this in would mean refactoring an already heavily audited path for a
+    // small, additive vertical slice. This route turns a free-text question
+    // into a J1.1 plan (planJarvisRequest) and, only for the one shape J1.2
+    // actually executes (code_analysis, read-only, resolved project,
+    // available agent), a real run on the exact SAME RunService instance
+    // /api/runs uses - so the run is visible through the existing
+    // GET /api/runs/:id and /api/history endpoints. Every other shape (an
+    // unresolved/ambiguous project, code_implementation, an unavailable
+    // agent, an approval-gated prompt) fails closed with a safe error; see
+    // orchestrator/jarvis/run-dispatcher.js for why that never silently
+    // falls back to a mock run.
+    if (request.method === "POST" && pathname === "/api/jarvis/run") {
+      if (!isTrustedMutation(request)) return sendJson(response, 403, buildResponse(null, new RouterError("INVALID_REQUEST", "Untrusted local request.")));
+      let body;
+      try { body = await readJsonBody(request); }
+      catch { return sendJson(response, 400, buildResponse(null, new RouterError("INVALID_REQUEST", "Request body must be valid JSON."))); }
+      const question = typeof body?.question === "string" ? body.question : "";
+      const rawSessionId = typeof body?.sessionId === "string" ? body.sessionId : null;
+      const sessionId = rawSessionId && sessionStore.isValidSessionId(rawSessionId) ? rawSessionId : null;
+      let plan;
+      try {
+        plan = planJarvisRequest({
+          question,
+          sessionId,
+          sessionContext: sessionId ? buildSessionContext(sessionStore.getSession(sessionId)) : null
+        });
+      } catch (error) {
+        safeLog("jarvis_run_plan_rejected", { code: error.code || "INTERNAL_ERROR" });
+        return sendJson(response, 400, buildResponse(null, error));
+      }
+      try {
+        const dispatch = await dispatchJarvisRun(plan, { runService: service, source: "local" });
+        safeLog("jarvis_run_dispatched", { taskClass: plan.taskClass, status: dispatch.status });
+        return sendJson(response, 202, { schemaVersion: SCHEMA_VERSION, plan: safeJarvisPlanView(plan), run: dispatch });
+      } catch (error) {
+        safeLog("jarvis_run_rejected", { taskClass: plan.taskClass, code: error.code || "INTERNAL_ERROR" });
+        return sendJson(response, error instanceof RouterError ? 422 : 400, { schemaVersion: SCHEMA_VERSION, plan: safeJarvisPlanView(plan), ...buildResponse(null, error) });
+      }
+    }
 
     if (request.method === "GET" && pathname === "/api/cockpit-status") return sendJson(response, 200, projectCockpitStatus(service.cockpitContext()));
 

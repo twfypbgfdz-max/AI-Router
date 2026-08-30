@@ -77,6 +77,7 @@ export function projectRunSummary(run) {
   return {
     runId: id(run.runId),
     requestId: id(run.requestId),
+    sessionId: typeof run.sessionId === "string" ? id(run.sessionId, 100) : null,
     schemaVersion: Number.isInteger(run.schemaVersion) ? run.schemaVersion : SCHEMA_VERSION,
     route: token(routePlan?.recommendedRoute),
     adapter: token(run.adapter),
@@ -106,6 +107,7 @@ export function sanitizeStoredSummary(entry) {
   return {
     runId: id(entry.runId),
     requestId: id(entry.requestId),
+    sessionId: typeof entry.sessionId === "string" ? id(entry.sessionId, 100) : null,
     schemaVersion: Number.isInteger(entry.schemaVersion) ? entry.schemaVersion : SCHEMA_VERSION,
     route: token(entry.route),
     adapter: token(entry.adapter),
